@@ -2154,7 +2154,7 @@ with st.sidebar:
     st.markdown("---")
     
     # Quick actions
-    st.markdown("## ⚡ Quick Actions")
+    st.markdown("## ⚡ Quick Actions !")
     
     if st.button("🔄 Reset All", help="Reset to original data"):
         success, message = analyzer.reset_to_original()
