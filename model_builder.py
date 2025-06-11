@@ -110,7 +110,7 @@ if fun_mode:
             display: block;
         }
         </style>
-        <img src="https://media.giphy.com/media/v1.Y2lkPWVjZjA1ZTQ3ZHAwN29pbzB5N3Bqb2kwMzgzZGU2YTFsZXphMmlsNWlrb2V5MnNwZyZlcD12MV9naWZzX3JlbGF0ZWQmY3Q9Zw/Basrh159dGwKY/giphy.gif" 
+        <img src="https://media.giphy.com/media/v1.Y2lkPWVjZjA1ZTQ3aXdydWZwbjN1aTY5NDhvZzRwYzhwcnlrb2p3NmRsYng4cHB3OWZvMyZlcD12MV9naWZzX3JlbGF0ZWQmY3Q9Zw/NKEt9elQ5cR68/giphy.gif" 
              alt="Fun Mode GIF" 
              class="full-width-gif" />
         """,
@@ -1371,8 +1371,10 @@ elif st.session_state.processing_step == 'transform':
             st.warning("No numeric columns available for transformation")
         else:
             # Shortcut for distance columns
-            st.markdown("### 🚀 Quick Distance Transformations")
+            st.markdown("### 🚀 Quick Distance + (HPM & Luas Tanah) Transformations")
             distance_columns = [col for col in numeric_columns if 'distance_to_' in col.lower()]
+            distance_columns.append('hpm')
+            distance_columns.append('luas_tanah')
             
             if distance_columns:
                 st.info(f"Found {len(distance_columns)} distance columns: {', '.join(distance_columns)}")
