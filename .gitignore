@@ -1,0 +1,10 @@
+# Ignore Streamlit secrets file
+.streamlit/secrets.toml
+
+# Python cache and environment files
+__pycache__/
+*.pyc
+.env
+
+# macOS system files
+.DS_Store
