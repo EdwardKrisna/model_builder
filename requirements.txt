@@ -11,3 +11,4 @@ scikit-learn
 optuna
 folium
 streamlit-folium
+psycopg2-binary
