@@ -90,52 +90,32 @@ st.set_page_config(
 )
 
 # Custom CSS
-st.markdown("""
-<style>
-    .main-header {
-        font-size: 2.5rem;
-        color: #1f77b4;
-        text-align: center;
-        margin-bottom: 2rem;
-    }
-    .metric-card {
-        background-color: #f0f2f6;
-        padding: 1rem;
-        border-radius: 0.5rem;
-        border-left: 4px solid #3498db;
-        margin: 0.5rem 0;
-    }
-    .success-box {
-        background-color: #d4edda;
-        color: #155724;
-        padding: 0.75rem;
-        border-radius: 0.25rem;
-        border: 1px solid #c3e6cb;
-        margin: 1rem 0;
-    }
-    .warning-box {
-        background-color: #fff3cd;
-        color: #856404;
-        padding: 0.75rem;
-        border-radius: 0.25rem;
-        border: 1px solid #ffeaa7;
-        margin: 1rem 0;
-    }
-    .error-box {
-        background-color: #f8d7da;
-        color: #721c24;
-        padding: 0.75rem;
-        border-radius: 0.25rem;
-        border: 1px solid #f5c6cb;
-        margin: 1rem 0;
-    }
-    .section-divider {
-        border-top: 2px solid #e0e0e0;
-        margin: 2rem 0;
-        padding-top: 1rem;
-    }
-</style>
-""", unsafe_allow_html=True)
+# st.markdown(
+#     "<div style='text-align:center; font-weight:bold; font-size: 3rem; margin-bottom: 1rem;'>RHR MODEL BUILDER 𓀒 𓀓 𓀔</div>", 
+#     unsafe_allow_html=True
+# )
+
+fun_mode = st.sidebar.checkbox("Surprise!", value=False)
+
+if fun_mode:
+    st.markdown(
+        """
+        <style>
+        .full-width-gif {
+            width: 100%;
+            max-height: 200px;
+            object-fit: cover;
+            margin: 0;
+            padding: 0;
+            display: block;
+        }
+        </style>
+        <img src="https://media.giphy.com/media/v1.Y2lkPWVjZjA1ZTQ3ZHAwN29pbzB5N3Bqb2kwMzgzZGU2YTFsZXphMmlsNWlrb2V5MnNwZyZlcD12MV9naWZzX3JlbGF0ZWQmY3Q9Zw/Basrh159dGwKY/giphy.gif" 
+             alt="Fun Mode GIF" 
+             class="full-width-gif" />
+        """,
+        unsafe_allow_html=True,
+    )
 
 @st.cache_resource(show_spinner=False)
 def cached_connect_database():
@@ -153,7 +133,7 @@ def cached_connect_database():
 
 @st.cache_data
 def cached_load_property_data(_engine):
-    query = "SELECT * FROM engineered_property_data"
+    query = "SELECT * FROM engineered_property_data WHERE hpm > 50000 AND hpm < 200000000;"
     df = pd.read_sql(query, _engine)
     return df
 
@@ -257,34 +237,64 @@ class RealEstateAnalyzer:
     def apply_flexible_filters(self, filters):
         """Apply flexible filters based on column types"""
         try:
+            # Start with current data
             filtered_df = self.current_data.copy()
             
-            for column, filter_config in filters.items():
+            # Debug logging
+            print(f"Starting with {len(filtered_df)} records")
+            
+            # Apply filters in logical order: Province → Regency → District → Other
+            filter_order = ['wadmpr', 'wadmkk', 'wadmkc', 'wadmkd']
+            other_filters = {k: v for k, v in filters.items() if k not in filter_order}
+            
+            # Apply geographic filters first in hierarchy order
+            for geo_col in filter_order:
+                if geo_col in filters:
+                    filter_config = filters[geo_col]
+                    if filter_config['type'] == 'categorical' and filter_config['value']:
+                        before_count = len(filtered_df)
+                        filtered_df = filtered_df[filtered_df[geo_col].isin(filter_config['value'])]
+                        after_count = len(filtered_df)
+                        print(f"After {geo_col} filter: {before_count} → {after_count}")
+                        
+                        # If no records left after geographic filtering, stop
+                        if len(filtered_df) == 0:
+                            print(f"No records left after {geo_col} filter!")
+                            break
+            
+            # Apply other filters
+            for column, filter_config in other_filters.items():
                 if column not in filtered_df.columns:
                     continue
-                
+                    
                 filter_type = filter_config['type']
                 filter_value = filter_config['value']
                 
+                before_count = len(filtered_df)
+                
                 if filter_type == 'categorical' and filter_value:
                     filtered_df = filtered_df[filtered_df[column].isin(filter_value)]
-                
+                    
                 elif filter_type == 'numeric_range' and filter_value:
                     min_val, max_val = filter_value
-                    filtered_df = filtered_df[
-                        (filtered_df[column] >= min_val) & 
-                        (filtered_df[column] <= max_val)
-                    ]
+                    
+                    # Handle infinity properly
+                    if min_val == -np.inf:
+                        min_val = filtered_df[column].min()
+                    if max_val == np.inf:
+                        max_val = filtered_df[column].max()
+                    
+                    mask = (filtered_df[column] >= min_val) & (filtered_df[column] <= max_val)
+                    filtered_df = filtered_df[mask]
                 
-                elif filter_type == 'text_contains' and filter_value:
-                    filtered_df = filtered_df[
-                        filtered_df[column].str.contains(filter_value, case=False, na=False)
-                    ]
+                after_count = len(filtered_df)
+                print(f"After {column} filter: {before_count} → {after_count}")
             
             self.current_data = filtered_df
             return True, f"Filtered to {len(filtered_df)} properties"
             
         except Exception as e:
+            print(f"Filter error: {str(e)}")
             return False, f"Filtering failed: {str(e)}"
     
     def clean_data(self, cleaning_options):
@@ -431,6 +441,43 @@ class RealEstateAnalyzer:
             
         except Exception as e:
             return False, f"Shortcut filter failed: {str(e)}"
+    
+    def validate_geographic_filters(self, filters):
+        """Validate that geographic filters are compatible"""
+        
+        geo_filters = {}
+        for col, config in filters.items():
+            if any(geo in col for geo in ['wadmpr', 'wadmkk', 'wadmkc', 'wadmkd']):
+                geo_filters[col] = config
+        
+        if len(geo_filters) <= 1:
+            return True, "Single or no geographic filter - OK"
+        
+        # Test if the combination yields reasonable results
+        test_df = self.current_data.copy()
+        
+        for col, config in geo_filters.items():
+            if config['type'] == 'categorical' and config['value']:
+                before = len(test_df)
+                test_df = test_df[test_df[col].isin(config['value'])]
+                after = len(test_df)
+                
+                reduction_pct = ((before - after) / before) * 100 if before > 0 else 0
+                
+                # Warn if any single geographic filter eliminates >90% of data
+                if reduction_pct > 90:
+                    return False, f"Geographic filter '{col}' eliminates {reduction_pct:.1f}% of data - likely incompatible"
+        
+        final_count = len(test_df)
+        original_count = len(self.current_data)
+        total_reduction = ((original_count - final_count) / original_count) * 100
+        
+        # Warn if combined geographic filters eliminate >95% of data
+        if total_reduction > 95:
+            return False, f"Combined geographic filters eliminate {total_reduction:.1f}% of data - likely incompatible"
+        
+        return True, f"Geographic filters are compatible - {final_count:,} records will remain"
+
         
     def apply_label_encoding(self, column):    
         """Apply label encoding to a column"""
@@ -660,15 +707,24 @@ if 'processing_step' not in st.session_state:
 analyzer = st.session_state.analyzer
 
 # Main App Header
-st.markdown("""
-<h1 style="display: flex; align-items: center; gap: 10px; line-height: 1;">
-  <img src="https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExdWUybHNwbXV3cjd5eG9vbXBxcGs4Y3g1Y29neDdwNDQ2emdhYjd3cSZlcD12MV9naWZzX3NlYXJjaCZjdD1n/uSGobo6DnKmfqYygyk/giphy.gif" 
-       alt="GIF" 
-       style="height: 90px;">
-  <span style="display: inline-block; vertical-align: middle;">RHR MODEL BUILDER 𓀒 𓀓 𓀔</span>
-</h1>
-""", unsafe_allow_html=True)
-
+if fun_mode:
+    st.markdown(
+        """
+        <div style='text-align: center; font-weight: bold; font-size: 3rem; margin-bottom: 1rem;'>
+            RHR MODEL BUILDER 𓀒 𓀓 𓀔
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+else:
+    st.markdown(
+        """
+        <div style='text-align: center; font-weight: bold; font-size: 3rem; margin-bottom: 1rem;'>
+            RHR MODEL BUILDER 
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
 
 # Navigation buttons
 st.markdown("### 🧭 Analysis Workflow")
@@ -755,7 +811,10 @@ st.markdown('<div class="section-divider"></div>', unsafe_allow_html=True)
 
 # Step-based interface
 if st.session_state.processing_step == 'overview':
-    st.markdown('## <img src="https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExaXZod3R3NnJ2cW93MjkycXJ3dTRxeHluYXlkemhwdnVyZTFmOWhibyZlcD12MV9naWZzX3RyZW5kaW5nJmN0PWc/0GtVKtagi2GvWuY3vm/giphy.gif" alt="data gif" style="height:96px; vertical-align:middle;"> Data Overview', unsafe_allow_html=True)
+    if fun_mode:
+        st.markdown('## <img src="https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExaXZod3R3NnJ2cW93MjkycXJ3dTRxeHluYXlkemhwdnVyZTFmOWhibyZlcD12MV9naWZzX3RyZW5kaW5nJmN0PWc/0GtVKtagi2GvWuY3vm/giphy.gif" alt="data gif" style="height:96px; vertical-align:middle;"> Data Overview', unsafe_allow_html=True)
+    else:
+        st.markdown('## Data Overview')
 
     if analyzer.current_data is not None:
         # Data preview
@@ -780,8 +839,11 @@ if st.session_state.processing_step == 'overview':
         st.dataframe(info_df, use_container_width=True)
 
 elif st.session_state.processing_step == 'dtype':
-    st.markdown('## <img src="https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExeDltcWZoZ3dsNTVzZm5xMWR5bXExbGx0cG14eWdudGdpanJtZjBnMCZlcD12MV9naWZzX3NlYXJjaCZjdD1n/xCCqt6qDewWf6zriPX/giphy.gif" alt="data gif" style="height:72px; vertical-align:middle;"> Data Type Management', unsafe_allow_html=True)
-    
+    if fun_mode:
+        st.markdown('## <img src="https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExeDltcWZoZ3dsNTVzZm5xMWR5bXExbGx0cG14eWdudGdpanJtZjBnMCZlcD12MV9naWZzX3NlYXJjaCZjdD1n/xCCqt6qDewWf6zriPX/giphy.gif" alt="data gif" style="height:72px; vertical-align:middle;"> Data Type Management', unsafe_allow_html=True)
+    else:
+        st.markdown('## Data Type Management')
+
     if analyzer.current_data is not None:
         st.markdown("### Change Column Data Types")
         
@@ -819,13 +881,20 @@ elif st.session_state.processing_step == 'dtype':
         st.dataframe(dtype_df, use_container_width=True)
 
 elif st.session_state.processing_step == 'filter':
-    st.markdown('## <img src="https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExd3NmZDV4d3Q2Zm00dXNuZ3J5bDZ4ZmVvYWFhaW1wbWdsNGJxeTZ5OCZlcD12MV9naWZzX3NlYXJjaCZjdD1n/eEjf3t9MeTXZM0d91u/giphy.gif" alt="data gif" style="height:72px; vertical-align:middle;"> Geographic & Data Filtering', unsafe_allow_html=True)
+    if fun_mode:
+        st.markdown('## <img src="https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExd3NmZDV4d3Q2Zm00dXNuZ3J5bDZ4ZmVvYWFhaW1wbWdsNGJxeTZ5OCZlcD12MV9naWZzX3NlYXJjaCZjdD1n/eEjf3t9MeTXZM0d91u/giphy.gif" alt="data gif" style="height:72px; vertical-align:middle;"> Geographic & Data Filtering', unsafe_allow_html=True)
+    else:
+        st.markdown('## Geographic & Data Filtering')
 
     if analyzer.current_data is not None:
+        # Initialize selected_filters dictionary
+        # Initialize selected_filters dictionary
+        selected_filters = {}
+
         # Shortcut Geographic Filters
         st.markdown("### 🚀 Quick Geographic Filters")
         st.info("Pre-defined metropolitan area filters for quick analysis")
-        
+
         shortcut_filters = {
             'bodebek': '🏙️ BODEBEK (Bogor, Depok, Tangerang, Bekasi)',
             'jabodetabek': '🌆 JABODETABEK (Jakarta + surrounding areas)',
@@ -834,15 +903,14 @@ elif st.session_state.processing_step == 'filter':
             'bali': '🏝️ Bali Metropolitan Area',
             'surabaya': '🏢 Surabaya Metropolitan Area'
         }
-        
+
         col1, col2, col3 = st.columns(3)
-        
+
         with col1:
             if st.button(shortcut_filters['bodebek'], use_container_width=True):
                 success, message = analyzer.apply_shortcut_filter('bodebek')
                 if success:
                     st.success(message)
-                    st.session_state.filter_applied = True
                     st.rerun()
                 else:
                     st.error(message)
@@ -851,17 +919,15 @@ elif st.session_state.processing_step == 'filter':
                 success, message = analyzer.apply_shortcut_filter('jabodetabek')
                 if success:
                     st.success(message)
-                    st.session_state.filter_applied = True
                     st.rerun()
                 else:
                     st.error(message)
-        
+
         with col2:
             if st.button(shortcut_filters['jabodetabek_no_kepulauan_seribu'], use_container_width=True):
                 success, message = analyzer.apply_shortcut_filter('jabodetabek_no_kepulauan_seribu')
                 if success:
                     st.success(message)
-                    st.session_state.filter_applied = True
                     st.rerun()
                 else:
                     st.error(message)
@@ -870,17 +936,15 @@ elif st.session_state.processing_step == 'filter':
                 success, message = analyzer.apply_shortcut_filter('bandung')
                 if success:
                     st.success(message)
-                    st.session_state.filter_applied = True
                     st.rerun()
                 else:
                     st.error(message)
-        
+
         with col3:
             if st.button(shortcut_filters['bali'], use_container_width=True):
                 success, message = analyzer.apply_shortcut_filter('bali')
                 if success:
                     st.success(message)
-                    st.session_state.filter_applied = True
                     st.rerun()
                 else:
                     st.error(message)
@@ -889,34 +953,38 @@ elif st.session_state.processing_step == 'filter':
                 success, message = analyzer.apply_shortcut_filter('surabaya')
                 if success:
                     st.success(message)
-                    st.session_state.filter_applied = True
                     st.rerun()
                 else:
                     st.error(message)
-        
+
         st.markdown("---")
-        
+
         # Geographic Filtering (Priority Section)
-        st.markdown("### 🗺️ Manual Geographic Filtering")
-        
+        st.markdown("### 🗺️ Smart Geographic Filtering")
+
+        # Clear geographic filters button
+        if st.button("🗑️ Clear Geographic Filters"):
+            # Clear the multiselect keys to reset selections
+            for key in ['geo_wadmpr', 'geo_wadmkk', 'geo_wadmkc']:
+                if key in st.session_state:
+                    del st.session_state[key]
+            st.rerun()
+
+        # Find geographic columns
         geo_columns = ['wadmpr', 'wadmkk', 'wadmkc', 'wadmkd']
         available_geo_cols = []
-        
-        # Find available geographic columns (case insensitive)
+
         for col in analyzer.current_data.columns:
-            col_upper = col
             for geo in geo_columns:
-                if geo in col_upper:
+                if geo in col:
                     available_geo_cols.append(col)
                     break
-        
-        selected_filters = {}  # Initialize selected_filters here
-        
+
         if available_geo_cols:
             col1, col2, col3 = st.columns(3)
             
             with col1:
-                # Find wadmpr column
+                # Province selection
                 wadmpr_col = None
                 for col in available_geo_cols:
                     if 'wadmpr' in col:
@@ -928,14 +996,13 @@ elif st.session_state.processing_step == 'filter':
                     selected_wadmpr = st.multiselect(
                         f"Select Province ({wadmpr_col})", 
                         wadmpr_options,
-                        default=wadmpr_options[:5] if len(wadmpr_options) > 5 else wadmpr_options,
                         key="geo_wadmpr"
                     )
                     if selected_wadmpr:
                         selected_filters[wadmpr_col] = {'type': 'categorical', 'value': selected_wadmpr}
             
             with col2:
-                # Find wadmkk column
+                # Regency selection (filtered by selected provinces)
                 wadmkk_col = None
                 for col in available_geo_cols:
                     if 'wadmkk' in col:
@@ -943,7 +1010,7 @@ elif st.session_state.processing_step == 'filter':
                         break
                 
                 if wadmkk_col:
-                    # Filter wadmkk based on selected wadmpr
+                    # Filter regencies based on selected provinces
                     if wadmpr_col and selected_wadmpr:
                         available_wadmkk = analyzer.current_data[
                             analyzer.current_data[wadmpr_col].isin(selected_wadmpr)
@@ -955,14 +1022,13 @@ elif st.session_state.processing_step == 'filter':
                     selected_wadmkk = st.multiselect(
                         f"Select Regency/City ({wadmkk_col})", 
                         available_wadmkk,
-                        default=available_wadmkk[:10] if len(available_wadmkk) > 10 else available_wadmkk,
                         key="geo_wadmkk"
                     )
                     if selected_wadmkk:
                         selected_filters[wadmkk_col] = {'type': 'categorical', 'value': selected_wadmkk}
             
             with col3:
-                # Find wadmkc column
+                # District selection (filtered by selected regencies)
                 wadmkc_col = None
                 for col in available_geo_cols:
                     if 'wadmkc' in col:
@@ -970,7 +1036,7 @@ elif st.session_state.processing_step == 'filter':
                         break
                 
                 if wadmkc_col:
-                    # Filter wadmkc based on selected wadmkk
+                    # Filter districts based on selected regencies
                     if wadmkk_col and selected_wadmkk:
                         available_wadmkc = analyzer.current_data[
                             analyzer.current_data[wadmkk_col].isin(selected_wadmkk)
@@ -982,89 +1048,135 @@ elif st.session_state.processing_step == 'filter':
                     selected_wadmkc = st.multiselect(
                         f"Select District ({wadmkc_col})", 
                         available_wadmkc,
-                        default=available_wadmkc[:10] if len(available_wadmkc) > 10 else available_wadmkc,
                         key="geo_wadmkc"
                     )
                     if selected_wadmkc:
                         selected_filters[wadmkc_col] = {'type': 'categorical', 'value': selected_wadmkc}
-        
-        # Additional Flexible Filtering
+
+        # Show current geographic selection summary
+        geographic_filters = {k: v for k, v in selected_filters.items() 
+                            if any(geo in k for geo in ['wadmpr', 'wadmkk', 'wadmkc', 'wadmkd'])}
+
+        if geographic_filters:
+            st.info("📍 **Current Geographic Selection:**")
+            for col, config in geographic_filters.items():
+                level = "Province" if "wadmpr" in col else "Regency" if "wadmkk" in col else "District" if "wadmkc" in col else "Village"
+                st.write(f"- **{level}:** {len(config['value'])} selected")
+            
+            # Preview geographic filtering result
+            preview_geo_df = analyzer.current_data.copy()
+            for col, config in geographic_filters.items():
+                preview_geo_df = preview_geo_df[preview_geo_df[col].isin(config['value'])]
+            
+            geo_reduction = len(analyzer.current_data) - len(preview_geo_df)
+            if geo_reduction > 0:
+                st.success(f"✅ Geographic filters will reduce data by {geo_reduction:,} records → {len(preview_geo_df):,} remaining")
+            else:
+                st.info("ℹ️ Geographic filters don't reduce the current dataset")
+        else:
+            st.info("ℹ️ No geographic filters selected")
+
         st.markdown("### 🔍 Additional Filters")
-        
+
         # Select columns to filter (exclude geographic columns already handled)
-        non_geo_columns = [col for col in analyzer.current_data.columns 
-                          if not any(geo in col for geo in geo_columns)]
-        filter_columns = st.multiselect("Select Additional Columns to Filter", 
-                                       non_geo_columns, 
-                                       key="additional_filter_columns")
-        
+        non_geo_columns = [col for col in analyzer.current_data.columns
+                        if not any(geo in col for geo in geo_columns)]
+        filter_columns = st.multiselect("Select Additional Columns to Filter",
+                                        non_geo_columns,
+                                        key="additional_filter_columns")
+
         for col in filter_columns:
             st.markdown(f"#### Filter: {col}")
             col_dtype = analyzer.current_data[col].dtype
-            
+
             col1, col2 = st.columns(2)
-            
+
             with col1:
                 # Determine filter type based on data type and uniqueness
                 unique_count = analyzer.current_data[col].nunique()
-                
+
                 if col_dtype in ['object', 'category'] or unique_count <= 20:
                     # Categorical filter
                     st.write("**Filter Type: Categorical**")
                     unique_values = sorted(analyzer.current_data[col].dropna().unique())
-                    selected_values = st.multiselect(f"Select {col} values", 
-                                                   unique_values, 
-                                                   default=unique_values,
-                                                   key=f"cat_filter_{col}")
+                    selected_values = st.multiselect(f"Select {col} values",
+                                                    unique_values,
+                                                    default=unique_values,
+                                                    key=f"cat_filter_{col}")
                     if selected_values:
                         selected_filters[col] = {'type': 'categorical', 'value': selected_values}
-                
+
                 elif np.issubdtype(col_dtype, np.number):
-                    # Numeric range filter
+                    # Numeric range filter - using the improved version
                     st.write("**Filter Type: Numeric Range**")
-                    min_val = float(analyzer.current_data[col].min())
-                    max_val = float(analyzer.current_data[col].max())
                     
-                    range_values = st.slider(f"{col} range", 
-                                           min_value=min_val, 
-                                           max_value=max_val, 
-                                           value=(min_val, max_val),
-                                           key=f"num_filter_{col}")
+                    col_data = analyzer.current_data[col].dropna()
+                    data_min = float(col_data.min())
+                    data_max = float(col_data.max())
+                    data_mean = float(col_data.mean())
+                    data_median = float(col_data.median())
                     
-                    if range_values != (min_val, max_val):
-                        selected_filters[col] = {'type': 'numeric_range', 'value': range_values}
-                
-                else:
-                    # Text contains filter
-                    st.write("**Filter Type: Text Contains**")
-                    text_filter = st.text_input(f"Text to search in {col}", 
-                                               key=f"text_filter_{col}")
-                    if text_filter:
-                        selected_filters[col] = {'type': 'text_contains', 'value': text_filter}
-            
+                    # Show current data statistics
+                    st.info(f"📊 Range: {data_min:,.0f} - {data_max:,.0f} | Mean: {data_mean:,.0f} | Median: {data_median:,.0f}")
+                    
+                    # Use number_input for better UX
+                    min_input = st.number_input(
+                        f"Minimum {col}",
+                        min_value=float(data_min),
+                        max_value=float(data_max),
+                        value=float(data_min),
+                        key=f"min_input_{col}"
+                    )
+                    
+                    max_input = st.number_input(
+                        f"Maximum {col}",
+                        min_value=float(data_min),
+                        max_value=float(data_max),
+                        value=float(data_max),
+                        key=f"max_input_{col}"
+                    )
+                    
+                    # Validation and preview
+                    if min_input > max_input:
+                        st.error("❌ Minimum cannot be greater than maximum.")
+                    else:
+                        # Preview how many records will be filtered
+                        filtered_count = len(col_data[(col_data >= min_input) & (col_data <= max_input)])
+                        total_count = len(col_data)
+                        percentage = (filtered_count / total_count) * 100 if total_count > 0 else 0
+                        
+                        st.success(f"✅ Filter Preview: {filtered_count:,} / {total_count:,} records ({percentage:.1f}%)")
+                        
+                        # Only apply filter if it actually changes the range
+                        if min_input != data_min or max_input != data_max:
+                            selected_filters[col] = {
+                                'type': 'numeric_range', 
+                                'value': (float(min_input), float(max_input))
+                            }
+
             with col2:
                 # Show column statistics
                 st.write("**Column Statistics:**")
                 st.write(f"- Data Type: {col_dtype}")
                 st.write(f"- Unique Values: {unique_count:,}")
                 st.write(f"- Missing Values: {analyzer.current_data[col].isnull().sum():,}")
-                
+
                 if np.issubdtype(col_dtype, np.number):
-                    st.write(f"- Min: {analyzer.current_data[col].min():.2f}")
-                    st.write(f"- Max: {analyzer.current_data[col].max():.2f}")
-                    st.write(f"- Mean: {analyzer.current_data[col].mean():.2f}")
-        
+                    col_data = analyzer.current_data[col]
+                    st.write("**Sample Values:**")
+                    st.write(col_data.nlargest(5).tolist())
+
         # Apply filters
         if selected_filters and st.button("🔍 Apply Manual Filters", type="primary"):
             with st.spinner("Applying filters..."):
                 success, message = analyzer.apply_flexible_filters(selected_filters)
+                
                 if success:
                     st.success(message)
-                    st.session_state.filter_applied = True
                     st.rerun()
                 else:
-                    st.error(message)
-        
+                    st.error(f"❌ Filter failed: {message}")
+
         # Show active filters
         if selected_filters:
             st.markdown("### Active Manual Filters")
@@ -1073,6 +1185,10 @@ elif st.session_state.processing_step == 'filter':
                     st.write(f"🗺️ **{col}:** {len(filter_config['value'])} selected")
                 else:
                     st.write(f"**{col}:** {filter_config['type']} = {filter_config['value']}")
+
+        if not selected_filters:
+            st.info("No manual filters applied - use quick filters above or add manual filters below")
+
         
         # Map Visualization (Only after filtering)
         if st.session_state.get('filter_applied', False) or len(analyzer.current_data) < len(analyzer.original_data):
@@ -1199,7 +1315,10 @@ elif st.session_state.processing_step == 'filter':
             st.info("No manual filters applied - use quick filters above or add manual filters below")
 
 elif st.session_state.processing_step == 'clean':
-    st.markdown('## <img src="https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExajh0eW9iZTMxZDZpMGxzbTgxanVicXM4b2YybW5zdDR2cHQzMjFnMiZlcD12MV9naWZzX3NlYXJjaCZjdD1n/NV4cSrRYXXwfUcYnua/giphy.gif" alt="data gif" style="height:72px; vertical-align:middle;"> Data Cleaning', unsafe_allow_html=True)
+    if fun_mode:
+        st.markdown('## <img src="https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExajh0eW9iZTMxZDZpMGxzbTgxanVicXM4b2YybW5zdDR2cHQzMjFnMiZlcD12MV9naWZzX3NlYXJjaCZjdD1n/NV4cSrRYXXwfUcYnua/giphy.gif" alt="data gif" style="height:96px; vertical-align:middle;"> Data Cleaning', unsafe_allow_html=True)
+    else:
+        st.markdown('## Data Cleaning')
 
     if analyzer.current_data is not None:
         col1, col2 = st.columns(2)
@@ -1236,8 +1355,11 @@ elif st.session_state.processing_step == 'clean':
                     st.error(message)
 
 elif st.session_state.processing_step == 'transform':
-    st.markdown('## <img src="https://media.giphy.com/media/v1.Y2lkPWVjZjA1ZTQ3Y25yOXB5MDFqNGlmdmJnenFqandjMzl6YnJscnRseDlzN2poZG1wMiZlcD12MV9naWZzX3NlYXJjaCZjdD1n/EjLTU9HAnnskywtJ9j/giphy.gif" alt="data gif" style="height:96px; vertical-align:middle;"> Variable Transformations', unsafe_allow_html=True)
-    
+    if fun_mode:
+        st.markdown('## <img src="https://media.giphy.com/media/v1.Y2lkPWVjZjA1ZTQ3Y25yOXB5MDFqNGlmdmJnenFqandjMzl6YnJscnRseDlzN2poZG1wMiZlcD12MV9naWZzX3NlYXJjaCZjdD1n/EjLTU9HAnnskywtJ9j/giphy.gif" alt="data gif" style="height:96px; vertical-align:middle;"> Variable Transformations', unsafe_allow_html=True)
+    else:
+        st.markdown('## Variable Transformations')
+
     if analyzer.current_data is not None:
         st.markdown("### Apply Transformations")
         st.info("Select columns to transform. New transformed columns will be added to your dataset and available for OLS modeling.")
@@ -1385,8 +1507,11 @@ elif st.session_state.processing_step == 'transform':
             st.info("No transformations applied yet. Transform some variables to make them available for OLS and ML modeling.")
 
 elif st.session_state.processing_step == 'model':
-    st.markdown('## <img src="https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExd3phdHl3Zm0zZTZoZ2RkdHc5Z3NncHIzaXpjdWI4bmw1YzluMm0ydiZlcD12MV9naWZzX3NlYXJjaCZjdD1n/9ADoZQgs0tyww/giphy.gif" alt="data gif" style="height:72px; vertical-align:middle;"> OLS Regression Analysis', unsafe_allow_html=True)
-    
+    if fun_mode:
+        st.markdown('## <img src="https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExd3phdHl3Zm0zZTZoZ2RkdHc5Z3NncHIzaXpjdWI4bmw1YzluMm0ydiZlcD12MV9naWZzX3NlYXJjaCZjdD1n/9ADoZQgs0tyww/giphy.gif" alt="data gif" style="height:72px; vertical-align:middle;"> OLS Regression Analysis', unsafe_allow_html=True)
+    else:
+        st.markdown('## OLS Regression Analysis')
+
     if analyzer.current_data is not None:
         # Model configuration
         col1, col2 = st.columns(2)
@@ -1603,8 +1728,11 @@ elif st.session_state.processing_step == 'model':
                     st.error(message)
         
 elif st.session_state.processing_step == 'ml':
-    st.markdown('## <img src="https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExbXp3MzdicW9mcWVlYzhycnZ1ZHdoamdvb2xmeTRyZzRrOGo2M2xhNCZlcD12MV9naWZzX3NlYXJjaCZjdD1n/Gf1RA1jNSpbbuDE40m/giphy.gif" alt="data gif" style="height:72px; vertical-align:middle;"> Machine Learning Models', unsafe_allow_html=True)
-    
+    if fun_mode:
+        st.markdown('## <img src="https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExaWZoeTByeWI1YmdsMHU3dnJ3ejNnem04MmM4Zjh5eThvbG10ZjFiaCZlcD12MV9naWZzX3NlYXJjaCZjdD1n/Gf1RA1jNSpbbuDE40m/giphy.gif" alt="data gif" style="height:96px; vertical-align:middle;"> Machine Learning Models', unsafe_allow_html=True)
+    else:
+        st.markdown('## Machine Learning Models')
+
     if analyzer.current_data is not None:
         # Model Configuration
         st.markdown("### 🎯 Model Configuration")
@@ -1982,7 +2110,24 @@ if analyzer.current_data is not None:
 
 # Sidebar with current status and quick actions
 with st.sidebar:
-    st.markdown("## 📊 Current Status")
+    if fun_mode:
+        st.markdown("""
+        <h1 style="
+            display: flex; 
+            flex-direction: column;   /* stack vertically */
+            align-items: center; 
+            gap: 10px; 
+            line-height: 1;
+        ">
+            <img src="https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExdWUybHNwbXV3cjd5eG9vbXBxcGs4Y3g1Y29neDdwNDQ2emdhYjd3cSZlcD12MV9naWZzX3NlYXJjaCZjdD1n/uSGobo6DnKmfqYygyk/giphy.gif" 
+                alt="GIF" 
+                style="height: 120px;">
+            <span style="display: inline-block; vertical-align: middle;">Current Status</span>
+        </h1>
+    """, unsafe_allow_html=True)
+    else:
+        st.markdown('## Current Status')
+    
     
     if analyzer.current_data is not None:
         st.success(f"✅ Data Loaded: {len(analyzer.current_data):,} properties")
