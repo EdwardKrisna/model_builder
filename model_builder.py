@@ -1603,7 +1603,7 @@ elif st.session_state.processing_step == 'model':
                     st.error(message)
         
 elif st.session_state.processing_step == 'ml':
-    st.markdown('## <img src="https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExdmo4MXdyeGNsc2V2MGs0ZTFvNXA1YzlycWw2MDhxZm5hZW8ybjNmYSZlcD12MV9naWZzX3NlYXJjaCZjdD1n/3o7TKpVj5lCPd3CtPi/giphy.gif" alt="data gif" style="height:72px; vertical-align:middle;"> Machine Learning Models', unsafe_allow_html=True)
+    st.markdown('## <img src="https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExbXp3MzdicW9mcWVlYzhycnZ1ZHdoamdvb2xmeTRyZzRrOGo2M2xhNCZlcD12MV9naWZzX3NlYXJjaCZjdD1n/Gf1RA1jNSpbbuDE40m/giphy.gif" alt="data gif" style="height:72px; vertical-align:middle;"> Machine Learning Models', unsafe_allow_html=True)
     
     if analyzer.current_data is not None:
         # Model Configuration
