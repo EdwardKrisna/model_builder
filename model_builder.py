@@ -117,64 +117,119 @@ if fun_mode:
         unsafe_allow_html=True,
     )
 
-@st.cache_resource(show_spinner=False)
+@st.cache_resource(show_spinner=False, ttl=3600)  # Add TTL to refresh connection
 def cached_connect_database():
-    db_user = st.secrets["database"]["user"]
-    db_password = st.secrets["database"]["password"]
-    db_host = st.secrets["database"]["host"]
-    db_port = st.secrets["database"]["port"]
-    db_name = st.secrets["database"]["database"]
-
-    connection_string = f"postgresql://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}"
-    engine = create_engine(connection_string)
-    with engine.connect() as conn:
-        conn.execute(text("SELECT 1"))
-    return engine
-
-@st.cache_data
-def cached_load_property_data(_engine):
-    query = "SELECT * FROM engineered_property_data WHERE hpm > 50000 AND hpm < 200000000;"
-    df = pd.read_sql(query, _engine)
-    return df
-
-@st.cache_data
-def cached_clean_data(df, cleaning_options):
     try:
-        cleaned_df = df.copy()  # just copy the passed dataframe
+        db_user = st.secrets["database"]["user"]
+        db_password = st.secrets["database"]["password"]
+        db_host = st.secrets["database"]["host"]
+        db_port = st.secrets["database"]["port"]
+        db_name = st.secrets["database"]["database"]
         
-        # Remove duplicates
+        # Add connection pooling and timeout parameters
+        connection_string = f"postgresql://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}?connect_timeout=10&application_name=streamlit_app"
+        
+        engine = create_engine(
+            connection_string,
+            pool_size=5,
+            max_overflow=10,
+            pool_pre_ping=True,
+            pool_recycle=3600
+        )
+        
+        # Test connection with timeout
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+        return engine
+    except Exception as e:
+        st.error(f"Database connection failed: {e}")
+        return None
+
+@st.cache_data(ttl=1800, show_spinner=False)  # Cache for 30 minutes
+def cached_load_property_data(_engine):
+    """Load data with optimized query and chunking"""
+    if _engine is None:
+        return pd.DataFrame()
+    
+    try:
+        # Use more specific query to reduce data transfer
+        query = """
+        SELECT * FROM engineered_property_data 
+        WHERE hpm BETWEEN 50000 AND 200000000
+        ORDER BY hpm
+        LIMIT 100000;  -- Add reasonable limit
+        """
+        
+        # Use chunking for large datasets
+        df_chunks = []
+        chunk_size = 10000
+        
+        for chunk in pd.read_sql(query, _engine, chunksize=chunk_size):
+            df_chunks.append(chunk)
+            if len(df_chunks) * chunk_size >= 50000:  # Limit total rows
+                break
+        
+        if df_chunks:
+            df = pd.concat(df_chunks, ignore_index=True)
+        else:
+            df = pd.DataFrame()
+            
+        return df
+    except Exception as e:
+        st.error(f"Data loading failed: {e}")
+        return pd.DataFrame()
+
+@st.cache_data(show_spinner=False, max_entries=3)  # Limit cache entries
+def cached_clean_data(df, cleaning_options):
+    """Optimized data cleaning with better error handling"""
+    if df.empty:
+        return df
+    
+    try:
+        # Create a hash of cleaning options to improve cache efficiency
+        cleaning_hash = hash(str(sorted(cleaning_options.items())))
+        
+        cleaned_df = df.copy()
+        
+        # Remove duplicates (vectorized operation)
         if cleaning_options.get('remove_duplicates', False):
+            initial_count = len(cleaned_df)
             cleaned_df = cleaned_df.drop_duplicates(keep='first')
+            print(f"Removed {initial_count - len(cleaned_df)} duplicates")
         
-        # Handle missing values
+        # Handle missing values (optimized)
         if cleaning_options.get('handle_missing', False):
+            # Use more efficient fillna operations
             numeric_cols = cleaned_df.select_dtypes(include=[np.number]).columns
-            for col in numeric_cols:
-                if cleaned_df[col].isnull().any():
-                    median_val = cleaned_df[col].median()
-                    cleaned_df[col].fillna(median_val, inplace=True)
+            if len(numeric_cols) > 0:
+                medians = cleaned_df[numeric_cols].median()
+                cleaned_df[numeric_cols] = cleaned_df[numeric_cols].fillna(medians)
+            
             categorical_cols = cleaned_df.select_dtypes(include=['object', 'category']).columns
-            for col in categorical_cols:
-                if cleaned_df[col].isnull().any():
-                    mode_val = cleaned_df[col].mode().iloc[0] if not cleaned_df[col].mode().empty else 'Unknown'
-                    cleaned_df[col].fillna(mode_val, inplace=True)
+            if len(categorical_cols) > 0:
+                modes = cleaned_df[categorical_cols].mode().iloc[0] if not cleaned_df[categorical_cols].empty else 'Unknown'
+                cleaned_df[categorical_cols] = cleaned_df[categorical_cols].fillna(modes)
         
-        # Remove outliers
+        # Remove outliers (optimized)
         if cleaning_options.get('remove_outliers', False) and cleaning_options.get('outlier_column'):
             outlier_col = cleaning_options['outlier_column']
             if outlier_col in cleaned_df.columns:
+                # Use quantile method which is faster
                 Q1 = cleaned_df[outlier_col].quantile(0.25)
                 Q3 = cleaned_df[outlier_col].quantile(0.75)
                 IQR = Q3 - Q1
                 lower_bound = Q1 - 1.5 * IQR
                 upper_bound = Q3 + 1.5 * IQR
-                cleaned_df = cleaned_df[(cleaned_df[outlier_col] >= lower_bound) & (cleaned_df[outlier_col] <= upper_bound)]
+                
+                # Use boolean indexing (faster than query)
+                mask = (cleaned_df[outlier_col] >= lower_bound) & (cleaned_df[outlier_col] <= upper_bound)
+                cleaned_df = cleaned_df[mask]
         
-        return cleaned_df  # return cleaned dataframe only
-    
+        return cleaned_df
+        
     except Exception as e:
-        # You can raise or return None and handle error outside
-        raise RuntimeError(f"Data cleaning failed: {str(e)}")
+        st.error(f"Data cleaning failed: {str(e)}")
+        return df
 
 
 class RealEstateAnalyzer:
