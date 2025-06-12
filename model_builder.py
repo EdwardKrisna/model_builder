@@ -1687,20 +1687,6 @@ elif st.session_state.processing_step == 'model':
                         # with col4:
                         #     st.metric("AIC", f"{results['aic']:.2f}")
                         
-                        # VIF Results
-                        if vif_df is not None:
-                            st.markdown("### 📊 Variance Inflation Factors (VIF)")
-                            st.dataframe(vif_df.style.format({'VIF': '{:.2f}'}), use_container_width=True)
-                            
-                            # VIF interpretation
-                            high_vif = vif_df[vif_df['VIF'] > 5]
-                            if not high_vif.empty:
-                                st.warning(f"High VIF detected (>5): {', '.join(high_vif['feature'].tolist())}")
-                        
-                        # # Model summary
-                        # with st.expander("📋 Detailed Model Summary", expanded=False):
-                        #     st.text(results['summary'])
-                        
                         # Coefficients table
                         st.markdown("### 📊 Model Coefficients")
                         coef_df = pd.DataFrame({
@@ -1762,6 +1748,20 @@ elif st.session_state.processing_step == 'model':
                             plt.tight_layout()
                             st.pyplot(fig3)
                         
+                        # VIF Results
+                        if vif_df is not None:
+                            st.markdown("### 📊 Variance Inflation Factors (VIF)")
+                            st.dataframe(vif_df.style.format({'VIF': '{:.2f}'}), use_container_width=True)
+                            
+                            # VIF interpretation
+                            high_vif = vif_df[vif_df['VIF'] > 5]
+                            if not high_vif.empty:
+                                st.warning(f"High VIF detected (>5): {', '.join(high_vif['feature'].tolist())}")
+                        
+                        # # Model summary
+                        # with st.expander("📋 Detailed Model Summary", expanded=False):
+                        #     st.text(results['summary'])
+                        
                         # # Additional diagnostic statistics
                         # st.markdown("### 📊 Diagnostic Statistics")
                         # diag_col1, diag_col2, diag_col3, diag_col4 = st.columns(4)
@@ -1788,7 +1788,7 @@ elif st.session_state.processing_step == 'model':
 
                         # Model summary
                         with st.expander("📋 Detailed Model Summary", expanded=False):
-                            st.text(results['summary'])
+                            st.code(results['summary'])
                         
                         # Export options
                         st.markdown("### 💾 Export Results")
