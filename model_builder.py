@@ -2244,12 +2244,12 @@ with st.sidebar:
         mime="application/json"
     )
 
-# Footer
-st.markdown("---")
-st.markdown("""
-<h1 style="display: flex; align-items: center;">
-    <img src="https://kjpp.rhr.co.id/wp-content/uploads/2020/12/LOGO_KJPP_RHR_1_resize.png" 
-         alt="Logo" style="height:48px; margin-right: 20px;">
-    <span style="font-weight: bold; font-size: 1.5rem;"></span>
-</h1>
-""", unsafe_allow_html=True)
+# # Footer
+# st.markdown("---")
+# st.markdown("""
+# <h1 style="display: flex; align-items: center;">
+#     <img src="https://kjpp.rhr.co.id/wp-content/uploads/2020/12/LOGO_KJPP_RHR_1_resize.png" 
+#          alt="Logo" style="height:48px; margin-right: 20px;">
+#     <span style="font-weight: bold; font-size: 1.5rem;"></span>
+# </h1>
+# """, unsafe_allow_html=True)
