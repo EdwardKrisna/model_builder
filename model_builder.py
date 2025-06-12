@@ -1641,7 +1641,7 @@ elif st.session_state.processing_step == 'model':
             
             # Target variable (Y)
             y_column = st.selectbox("Dependent Variable (Y)", numeric_columns, 
-                                   index=numeric_columns.index('ln_hpm') if 'ln_hpm' in numeric_columns else 'hpm')
+                                   index=numeric_columns.index('ln_hpm') if 'ln_hpm' in numeric_columns else 0)
             
             # Independent variables (X)
             available_x_cols = [col for col in numeric_columns if col != y_column]
@@ -1676,6 +1676,10 @@ elif st.session_state.processing_step == 'model':
                     if results:
                         # Model metrics
                         st.markdown("### 📊 Model Results")
+
+                        # Model summary
+                        with st.expander("📋 Detailed Model Summary", expanded=False):
+                            st.code(results['summary'])
                         
                         col1, col2,= st.columns(2)
                         with col1:
@@ -1757,38 +1761,6 @@ elif st.session_state.processing_step == 'model':
                             high_vif = vif_df[vif_df['VIF'] > 5]
                             if not high_vif.empty:
                                 st.warning(f"High VIF detected (>5): {', '.join(high_vif['feature'].tolist())}")
-                        
-                        # # Model summary
-                        # with st.expander("📋 Detailed Model Summary", expanded=False):
-                        #     st.text(results['summary'])
-                        
-                        # # Additional diagnostic statistics
-                        # st.markdown("### 📊 Diagnostic Statistics")
-                        # diag_col1, diag_col2, diag_col3, diag_col4 = st.columns(4)
-                        
-                        # with diag_col1:
-                        #     st.metric("Mean Residual", f"{residuals.mean():.6f}")
-                        # with diag_col2:
-                        #     st.metric("Std Residual", f"{residuals.std():.4f}")
-                        # with diag_col3:
-                        #     # Durbin-Watson test
-                        #     try:
-                        #         dw_stat = sm.stats.stattools.durbin_watson(residuals)
-                        #         st.metric("Durbin-Watson", f"{dw_stat:.4f}")
-                        #     except:
-                        #         st.metric("Durbin-Watson", "N/A")
-                        # with diag_col4:
-                        #     # Jarque-Bera test for normality
-                        #     try:
-                        #         jb_result = sm.stats.jarque_bera(residuals)
-                        #         jb_pvalue = jb_result[1]
-                        #         st.metric("Jarque-Bera p-value", f"{jb_pvalue:.4f}")
-                        #     except:
-                        #         st.metric("Jarque-Bera p-value", "N/A")
-
-                        # Model summary
-                        with st.expander("📋 Detailed Model Summary", expanded=False):
-                            st.code(results['summary'])
                         
                         # Export options
                         st.markdown("### 💾 Export Results")
