@@ -166,7 +166,7 @@ def cached_load_property_data(_engine):
         
         for chunk in pd.read_sql(query, _engine, chunksize=chunk_size):
             df_chunks.append(chunk)
-            if len(df_chunks) * chunk_size >= 50000:  # Limit total rows
+            if len(df_chunks) * chunk_size >= 200000:  # Limit total rows
                 break
         
         if df_chunks:
