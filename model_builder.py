@@ -231,6 +231,15 @@ def cached_clean_data(df, cleaning_options):
         st.error(f"Data cleaning failed: {str(e)}")
         return df
 
+@st.cache_data(show_spinner=False)
+def get_data_metrics(data_shape, data_memory_usage_sum):
+    """Cache expensive data status calculations"""
+    return {
+        'missing_pct': None,  # Calculate only when needed
+        'memory_mb': data_memory_usage_sum / 1024**2
+    }
+
+
 
 class RealEstateAnalyzer:
     """Flexible Real Estate Analysis System"""
@@ -346,6 +355,8 @@ class RealEstateAnalyzer:
                 print(f"After {column} filter: {before_count} → {after_count}")
             
             self.current_data = filtered_df
+            if 'st' in globals():
+                st.session_state.data_changed = True
             return True, f"Filtered to {len(filtered_df)} properties"
             
         except Exception as e:
@@ -358,6 +369,8 @@ class RealEstateAnalyzer:
         try:
             cleaned_df = cached_clean_data(self.current_data, cleaning_options)
             self.current_data = cleaned_df
+            if 'st' in globals():
+                st.session_state.data_changed = True
             return True, f"Cleaned data: {len(self.current_data)} properties remaining"
         except Exception as e:
             return False, str(e)
@@ -384,6 +397,8 @@ class RealEstateAnalyzer:
                         self.transformed_columns[col] = new_col
             
             self.current_data = transformed_df
+            if 'st' in globals():
+                st.session_state.data_changed = True
             return True, f"Applied {len(transformations)} transformations"
             
         except Exception as e:
@@ -755,11 +770,43 @@ class RealEstateAnalyzer:
 if 'analyzer' not in st.session_state:
     st.session_state.analyzer = RealEstateAnalyzer()
 
-if 'processing_step' not in st.session_state:
-    st.session_state.processing_step = 'overview'
-
 # Get analyzer from session state
 analyzer = st.session_state.analyzer
+
+if st.session_state.processing_step == 'overview':
+    if fun_mode:
+        st.markdown('## <img src="https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExaXZod3R3NnJ2cW93MjkycXJ3dTRxeHluYXlkemhwdnVyZTFmOWhibyZlcD12MV9naWZzX3RyZW5kaW5nJmN0PWc/0GtVKtagi2GvWuY3vm/giphy.gif" alt="data gif" style="height:96px; vertical-align:middle;"> Data Overview', unsafe_allow_html=True)
+    else:
+        st.markdown('## Data Overview')
+
+    if analyzer.current_data is not None:
+        # Data preview (lightweight)
+        st.markdown("### 📋 Data Preview")
+        st.dataframe(analyzer.current_data.head(10), use_container_width=True)
+        
+        # LAZY LOAD HEAVY OPERATIONS
+        if st.button("📊 Show Detailed Statistics") or st.session_state.get('show_overview_stats', False):
+            st.session_state.show_overview_stats = True
+            
+            # Basic statistics for numeric columns (now only when requested)
+            numeric_data = analyzer.current_data.select_dtypes(include=[np.number])
+            if not numeric_data.empty:
+                st.markdown("### 📈 Numeric Columns Statistics")
+                st.dataframe(numeric_data.describe(), use_container_width=True)
+            
+            # Data info (now only when requested)
+            st.markdown("### ℹ️ Column Information")
+            info_df = pd.DataFrame({
+                'Column': analyzer.current_data.columns,
+                'Data Type': [str(dtype) for dtype in analyzer.current_data.dtypes],
+                'Non-Null Count': analyzer.current_data.count(),
+                'Null Count': analyzer.current_data.isnull().sum(),
+                'Unique Values': [analyzer.current_data[col].nunique() for col in analyzer.current_data.columns]
+            })
+            st.dataframe(info_df, use_container_width=True)
+        
+        elif not st.session_state.get('show_overview_stats', False):
+            st.info("👆 Click 'Show Detailed Statistics' to view numeric summaries and column information")
 
 # Main App Header
 if fun_mode:
@@ -801,7 +848,10 @@ for i, (step_key, step_name) in enumerate(workflow_steps):
             st.session_state.processing_step = step_key
 
 # Auto-connect to database on first load
-if not analyzer.connection_status and analyzer.original_data is None:
+if 'data_initialized' not in st.session_state:
+    st.session_state.data_initialized = False
+
+if not st.session_state.data_initialized:
     with st.spinner("Connecting to database..."):
         success, message = analyzer.connect_database()
         if success:
@@ -811,6 +861,7 @@ if not analyzer.connection_status and analyzer.original_data is None:
                 data_success, data_message = analyzer.load_property_data()
                 if data_success:
                     st.markdown(f'<div class="success-box">📊 {data_message}</div>', unsafe_allow_html=True)
+                    st.session_state.data_initialized = True  # Mark as initialized
                 else:
                     st.markdown(f'<div class="error-box">❌ {data_message}</div>', unsafe_allow_html=True)
         else:
@@ -820,24 +871,37 @@ if not analyzer.connection_status and analyzer.original_data is None:
 # Display current data status
 if analyzer.current_data is not None:
     st.markdown("### 📋 Current Data Status")
-    # Create 5 columns: 4 for metrics, 1 for download button
     col1, col2, col3, col4, col5 = st.columns([1,1,1,1,1.5])
+    
+    # Use cached metrics
+    if 'cached_data_metrics' not in st.session_state or st.session_state.get('data_changed', True):
+        # Only calculate when data actually changes
+        memory_sum = analyzer.current_data.memory_usage(deep=True).sum()
+        missing_sum = analyzer.current_data.isnull().sum().sum()
+        total_cells = analyzer.current_data.shape[0] * analyzer.current_data.shape[1]
+        
+        st.session_state.cached_data_metrics = {
+            'memory_mb': memory_sum / 1024**2,
+            'missing_pct': (missing_sum / total_cells * 100) if total_cells > 0 else 0
+        }
+        st.session_state.data_changed = False
+    
+    metrics = st.session_state.cached_data_metrics
     
     with col1:
         st.metric("Properties", f"{len(analyzer.current_data):,}")
     with col2:
         st.metric("Columns", len(analyzer.current_data.columns))
     with col3:
-        missing_pct = (analyzer.current_data.isnull().sum().sum() / 
-                      (analyzer.current_data.shape[0] * analyzer.current_data.shape[1]) * 100)
-        st.metric("Completeness", f"{100-missing_pct:.1f}%")
+        st.metric("Completeness", f"{100-metrics['missing_pct']:.1f}%")
     with col4:
-        st.metric("Memory", f"{analyzer.current_data.memory_usage(deep=True).sum() / 1024**2:.1f} MB")
+        st.metric("Memory", f"{metrics['memory_mb']:.1f} MB")
     
-    if 'excel_data' not in st.session_state:
-        st.session_state.excel_data = None
-
+    # Excel download (unchanged)
     with col5:
+        if 'excel_data' not in st.session_state:
+            st.session_state.excel_data = None
+
         if st.button("💾 Prepare Download Excel"):
             with st.spinner("Preparing Excel data..."):
                 towrite = io.BytesIO()
@@ -859,6 +923,12 @@ if analyzer.current_data is not None:
 if st.button("🔄 Reset to Original Data", help="Reset all changes and start fresh"):
     success, message = analyzer.reset_to_original()
     if success:
+        # Invalidate all caches
+        st.session_state.data_changed = True
+        st.session_state.show_overview_stats = False
+        st.session_state.show_dtype_table = False
+        if 'cached_data_metrics' in st.session_state:
+            del st.session_state.cached_data_metrics
         st.success(message)
         st.rerun()
 
@@ -910,9 +980,7 @@ elif st.session_state.processing_step == 'dtype':
         with col2:
             current_dtype = str(analyzer.current_data[selected_column].dtype)
             st.info(f"Current type: {current_dtype}")
-            
-            new_dtype = st.selectbox("New Data Type", 
-                                   ['numeric', 'categorical', 'string', 'datetime'])
+            new_dtype = st.selectbox("New Data Type", ['numeric', 'categorical', 'string', 'datetime'])
         
         with col3:
             st.write("")
@@ -920,20 +988,36 @@ elif st.session_state.processing_step == 'dtype':
             if st.button("Apply Type Change", type="primary"):
                 success, message = analyzer.change_dtype(selected_column, new_dtype)
                 if success:
+                    # Mark data as changed to refresh cache
+                    st.session_state.data_changed = True
                     st.success(message)
                     st.rerun()
                 else:
                     st.error(message)
         
-        # Show current data types
-        st.markdown("### Current Data Types")
-        dtype_df = pd.DataFrame({
-            'Column': analyzer.current_data.columns,
-            'Data Type': [str(dtype) for dtype in analyzer.current_data.dtypes],
-            'Sample Values': [str(analyzer.current_data[col].dropna().iloc[0]) if not analyzer.current_data[col].dropna().empty else 'N/A' 
-                            for col in analyzer.current_data.columns]
-        })
-        st.dataframe(dtype_df, use_container_width=True)
+        # LAZY LOAD DATA TYPES TABLE
+        if st.button("📋 Show All Data Types") or st.session_state.get('show_dtype_table', False):
+            st.session_state.show_dtype_table = True
+            
+            st.markdown("### Current Data Types")
+            # More efficient sample value extraction
+            sample_values = []
+            for col in analyzer.current_data.columns:
+                non_null_series = analyzer.current_data[col].dropna()
+                if len(non_null_series) > 0:
+                    sample_values.append(str(non_null_series.iloc[0]))
+                else:
+                    sample_values.append('N/A')
+            
+            dtype_df = pd.DataFrame({
+                'Column': analyzer.current_data.columns,
+                'Data Type': [str(dtype) for dtype in analyzer.current_data.dtypes],
+                'Sample Values': sample_values
+            })
+            st.dataframe(dtype_df, use_container_width=True)
+        
+        elif not st.session_state.get('show_dtype_table', False):
+            st.info("👆 Click 'Show All Data Types' to view complete data type information")
 
 elif st.session_state.processing_step == 'filter':
     if fun_mode:
