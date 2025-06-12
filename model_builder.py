@@ -770,43 +770,12 @@ class RealEstateAnalyzer:
 if 'analyzer' not in st.session_state:
     st.session_state.analyzer = RealEstateAnalyzer()
 
+if 'processing_step' not in st.session_state:
+    st.session_state.processing_step = 'overview'
+
 # Get analyzer from session state
 analyzer = st.session_state.analyzer
 
-if st.session_state.processing_step == 'overview':
-    if fun_mode:
-        st.markdown('## <img src="https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExaXZod3R3NnJ2cW93MjkycXJ3dTRxeHluYXlkemhwdnVyZTFmOWhibyZlcD12MV9naWZzX3RyZW5kaW5nJmN0PWc/0GtVKtagi2GvWuY3vm/giphy.gif" alt="data gif" style="height:96px; vertical-align:middle;"> Data Overview', unsafe_allow_html=True)
-    else:
-        st.markdown('## Data Overview')
-
-    if analyzer.current_data is not None:
-        # Data preview (lightweight)
-        st.markdown("### 📋 Data Preview")
-        st.dataframe(analyzer.current_data.head(10), use_container_width=True)
-        
-        # LAZY LOAD HEAVY OPERATIONS
-        if st.button("📊 Show Detailed Statistics") or st.session_state.get('show_overview_stats', False):
-            st.session_state.show_overview_stats = True
-            
-            # Basic statistics for numeric columns (now only when requested)
-            numeric_data = analyzer.current_data.select_dtypes(include=[np.number])
-            if not numeric_data.empty:
-                st.markdown("### 📈 Numeric Columns Statistics")
-                st.dataframe(numeric_data.describe(), use_container_width=True)
-            
-            # Data info (now only when requested)
-            st.markdown("### ℹ️ Column Information")
-            info_df = pd.DataFrame({
-                'Column': analyzer.current_data.columns,
-                'Data Type': [str(dtype) for dtype in analyzer.current_data.dtypes],
-                'Non-Null Count': analyzer.current_data.count(),
-                'Null Count': analyzer.current_data.isnull().sum(),
-                'Unique Values': [analyzer.current_data[col].nunique() for col in analyzer.current_data.columns]
-            })
-            st.dataframe(info_df, use_container_width=True)
-        
-        elif not st.session_state.get('show_overview_stats', False):
-            st.info("👆 Click 'Show Detailed Statistics' to view numeric summaries and column information")
 
 # Main App Header
 if fun_mode:
@@ -942,26 +911,33 @@ if st.session_state.processing_step == 'overview':
         st.markdown('## Data Overview')
 
     if analyzer.current_data is not None:
-        # Data preview
+        # Data preview (lightweight)
         st.markdown("### 📋 Data Preview")
         st.dataframe(analyzer.current_data.head(10), use_container_width=True)
         
-        # Basic statistics for numeric columns
-        numeric_data = analyzer.current_data.select_dtypes(include=[np.number])
-        if not numeric_data.empty:
-            st.markdown("### 📈 Numeric Columns Statistics")
-            st.dataframe(numeric_data.describe(), use_container_width=True)
+        # LAZY LOAD HEAVY OPERATIONS - Only show when requested
+        if st.button("📊 Show Detailed Statistics") or st.session_state.get('show_overview_stats', False):
+            st.session_state.show_overview_stats = True
+            
+            # Basic statistics for numeric columns (now only when requested)
+            numeric_data = analyzer.current_data.select_dtypes(include=[np.number])
+            if not numeric_data.empty:
+                st.markdown("### 📈 Numeric Columns Statistics")
+                st.dataframe(numeric_data.describe(), use_container_width=True)
+            
+            # Data info (now only when requested)
+            st.markdown("### ℹ️ Column Information")
+            info_df = pd.DataFrame({
+                'Column': analyzer.current_data.columns,
+                'Data Type': [str(dtype) for dtype in analyzer.current_data.dtypes],
+                'Non-Null Count': analyzer.current_data.count(),
+                'Null Count': analyzer.current_data.isnull().sum(),
+                'Unique Values': [analyzer.current_data[col].nunique() for col in analyzer.current_data.columns]
+            })
+            st.dataframe(info_df, use_container_width=True)
         
-        # Data info
-        st.markdown("### ℹ️ Column Information")
-        info_df = pd.DataFrame({
-            'Column': analyzer.current_data.columns,
-            'Data Type': [str(dtype) for dtype in analyzer.current_data.dtypes],
-            'Non-Null Count': analyzer.current_data.count(),
-            'Null Count': analyzer.current_data.isnull().sum(),
-            'Unique Values': [analyzer.current_data[col].nunique() for col in analyzer.current_data.columns]
-        })
-        st.dataframe(info_df, use_container_width=True)
+        elif not st.session_state.get('show_overview_stats', False):
+            st.info("👆 Click 'Show Detailed Statistics' to view numeric summaries and column information")
 
 elif st.session_state.processing_step == 'dtype':
     if fun_mode:
