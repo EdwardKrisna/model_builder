@@ -801,7 +801,7 @@ for i, (step_key, step_name) in enumerate(workflow_steps):
             st.session_state.processing_step = step_key
 
 # Auto-connect to database on first load
-if not analyzer.connection_status:
+if not analyzer.connection_status and analyzer.original_data is None:
     with st.spinner("Connecting to database..."):
         success, message = analyzer.connect_database()
         if success:
