@@ -1497,7 +1497,7 @@ elif st.session_state.processing_step == 'transform':
                 col1, col2 = st.columns(2)
                 
                 with col1:
-                    distance_transform = st.selectbox("Transform all distance columns", 
+                    distance_transform = st.selectbox("Transform all distance + (HPM & Luas Tanah) columns", 
                                                     ['log', 'squared', 'sqrt'], 
                                                     key="distance_transform_select")
                 
@@ -1641,7 +1641,7 @@ elif st.session_state.processing_step == 'model':
             
             # Target variable (Y)
             y_column = st.selectbox("Dependent Variable (Y)", numeric_columns, 
-                                   index=numeric_columns.index('hpm') if 'hpm' in numeric_columns else 0)
+                                   index=numeric_columns.index('ln_hpm') if 'ln_hpm' in numeric_columns else 'hpm')
             
             # Independent variables (X)
             available_x_cols = [col for col in numeric_columns if col != y_column]
@@ -1677,15 +1677,15 @@ elif st.session_state.processing_step == 'model':
                         # Model metrics
                         st.markdown("### 📊 Model Results")
                         
-                        col1, col2, col3, col4 = st.columns(4)
+                        col1, col2,= st.columns(2)
                         with col1:
                             st.metric("R-squared", f"{results['rsquared']:.4f}")
                         with col2:
                             st.metric("Adj. R-squared", f"{results['rsquared_adj']:.4f}")
-                        with col3:
-                            st.metric("F-statistic", f"{results['fvalue']:.2f}")
-                        with col4:
-                            st.metric("AIC", f"{results['aic']:.2f}")
+                        # with col3:
+                        #     st.metric("F-statistic", f"{results['fvalue']:.2f}")
+                        # with col4:
+                        #     st.metric("AIC", f"{results['aic']:.2f}")
                         
                         # VIF Results
                         if vif_df is not None:
@@ -1697,9 +1697,9 @@ elif st.session_state.processing_step == 'model':
                             if not high_vif.empty:
                                 st.warning(f"High VIF detected (>5): {', '.join(high_vif['feature'].tolist())}")
                         
-                        # Model summary
-                        with st.expander("📋 Detailed Model Summary", expanded=False):
-                            st.text(results['summary'])
+                        # # Model summary
+                        # with st.expander("📋 Detailed Model Summary", expanded=False):
+                        #     st.text(results['summary'])
                         
                         # Coefficients table
                         st.markdown("### 📊 Model Coefficients")
@@ -1762,29 +1762,33 @@ elif st.session_state.processing_step == 'model':
                             plt.tight_layout()
                             st.pyplot(fig3)
                         
-                        # Additional diagnostic statistics
-                        st.markdown("### 📊 Diagnostic Statistics")
-                        diag_col1, diag_col2, diag_col3, diag_col4 = st.columns(4)
+                        # # Additional diagnostic statistics
+                        # st.markdown("### 📊 Diagnostic Statistics")
+                        # diag_col1, diag_col2, diag_col3, diag_col4 = st.columns(4)
                         
-                        with diag_col1:
-                            st.metric("Mean Residual", f"{residuals.mean():.6f}")
-                        with diag_col2:
-                            st.metric("Std Residual", f"{residuals.std():.4f}")
-                        with diag_col3:
-                            # Durbin-Watson test
-                            try:
-                                dw_stat = sm.stats.stattools.durbin_watson(residuals)
-                                st.metric("Durbin-Watson", f"{dw_stat:.4f}")
-                            except:
-                                st.metric("Durbin-Watson", "N/A")
-                        with diag_col4:
-                            # Jarque-Bera test for normality
-                            try:
-                                jb_result = sm.stats.jarque_bera(residuals)
-                                jb_pvalue = jb_result[1]
-                                st.metric("Jarque-Bera p-value", f"{jb_pvalue:.4f}")
-                            except:
-                                st.metric("Jarque-Bera p-value", "N/A")
+                        # with diag_col1:
+                        #     st.metric("Mean Residual", f"{residuals.mean():.6f}")
+                        # with diag_col2:
+                        #     st.metric("Std Residual", f"{residuals.std():.4f}")
+                        # with diag_col3:
+                        #     # Durbin-Watson test
+                        #     try:
+                        #         dw_stat = sm.stats.stattools.durbin_watson(residuals)
+                        #         st.metric("Durbin-Watson", f"{dw_stat:.4f}")
+                        #     except:
+                        #         st.metric("Durbin-Watson", "N/A")
+                        # with diag_col4:
+                        #     # Jarque-Bera test for normality
+                        #     try:
+                        #         jb_result = sm.stats.jarque_bera(residuals)
+                        #         jb_pvalue = jb_result[1]
+                        #         st.metric("Jarque-Bera p-value", f"{jb_pvalue:.4f}")
+                        #     except:
+                        #         st.metric("Jarque-Bera p-value", "N/A")
+
+                        # Model summary
+                        with st.expander("📋 Detailed Model Summary", expanded=False):
+                            st.text(results['summary'])
                         
                         # Export options
                         st.markdown("### 💾 Export Results")
