@@ -1631,35 +1631,36 @@ elif st.session_state.processing_step == 'model':
 
     if analyzer.current_data is not None:
         # Model configuration
-        col1, col2 = st.columns(2)
+        col1, col2 = st.columns([7, 3])
         
-        st.markdown("**Model Variables:**")
+        with col1:
+            st.markdown("**Model Variables:**")
+            
+            # Get all numeric columns (including transformed ones)
+            numeric_columns = analyzer.current_data.select_dtypes(include=[np.number]).columns.tolist()
+            
+            # Target variable (Y)
+            y_column = st.selectbox("Dependent Variable (Y)", numeric_columns, 
+                                   index=numeric_columns.index('ln_hpm') if 'ln_hpm' in numeric_columns else 0)
+            
+            # Independent variables (X)
+            available_x_cols = [col for col in numeric_columns if col != y_column]
+            x_columns = st.multiselect("Independent Variables (X)", available_x_cols,
+                                      default=available_x_cols[:5] if len(available_x_cols) >= 5 else available_x_cols)
         
-        # Get all numeric columns (including transformed ones)
-        numeric_columns = analyzer.current_data.select_dtypes(include=[np.number]).columns.tolist()
-        
-        # Target variable (Y)
-        y_column = st.selectbox("Dependent Variable (Y)", numeric_columns, 
-                                index=numeric_columns.index('ln_hpm') if 'ln_hpm' in numeric_columns else 0)
-        
-        # Independent variables (X)
-        available_x_cols = [col for col in numeric_columns if col != y_column]
-        x_columns = st.multiselect("Independent Variables (X)", available_x_cols,
-                                    default=available_x_cols[:5] if len(available_x_cols) >= 5 else available_x_cols)
-    
-        
-        st.markdown("**Model Information:**")
-        if analyzer.transformed_columns:
-            st.write("**Available Transformations:**")
-            for original, transformed in analyzer.transformed_columns.items():
-                st.write(f"- {original} → {transformed}")
-        
-        st.write(f"**Sample size:** {len(analyzer.current_data):,} observations")
-        if x_columns:
-            # Show actual column names that will be used
-            actual_y = analyzer.transformed_columns.get(y_column, y_column)
-            actual_x = [analyzer.transformed_columns.get(col, col) for col in x_columns]
-            st.write(f"**Model formula:** {actual_y} ~ {' + '.join(actual_x)}")
+        with col2:
+            st.markdown("**Model Information:**")
+            if analyzer.transformed_columns:
+                st.write("**Available Transformations:**")
+                for original, transformed in analyzer.transformed_columns.items():
+                    st.write(f"- {original} → {transformed}")
+            
+            st.write(f"**Sample size:** {len(analyzer.current_data):,} observations")
+            if x_columns:
+                # Show actual column names that will be used
+                actual_y = analyzer.transformed_columns.get(y_column, y_column)
+                actual_x = [analyzer.transformed_columns.get(col, col) for col in x_columns]
+                st.write(f"**Model formula:** {actual_y} ~ {' + '.join(actual_x)}")
         
         # Run OLS Model button
         if st.button("📈 Run OLS Regression", type="primary") and x_columns:
