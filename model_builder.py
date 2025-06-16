@@ -1643,7 +1643,7 @@ elif st.session_state.processing_step == 'model':
             y_column = st.selectbox("Dependent Variable (Y)", numeric_columns, 
                                 index=numeric_columns.index('hpm') if 'hpm' in numeric_columns else 0)
             
-            st.markdown("")  # Add empty line for spacing
+            st.write("")  # Add empty line for spacing
             # or use: st.write("")
             
             # Independent variables (X)
