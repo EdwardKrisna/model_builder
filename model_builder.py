@@ -567,7 +567,7 @@ class RealEstateAnalyzer:
         
     def calculate_vif(self, X_df, drop_const=True):
         """Calculate Variance Inflation Factor"""
-        
+
         try:
             if drop_const and 'const' in X_df.columns:
                 X_df = X_df.drop(columns='const')
@@ -2522,39 +2522,132 @@ elif st.session_state.processing_step == 'hybrid':
                 plt.tight_layout()
                 st.pyplot(fig)
                 
-                # Summary insights
-                st.markdown("### 💡 Model Insights")
+                # Train final models on full dataset for saving
+                st.markdown("### 💾 Save Trained Models")
                 
-                col1, col2 = st.columns(2)
+                with st.spinner("Training final models on full dataset..."):
+                    # Prepare full dataset
+                    X_full = df_model[hybrid_x_columns]
+                    y_full = df_model[hybrid_y_column]
+                    
+                    # Train final OLS model
+                    X_full_ols = sm.add_constant(X_full)
+                    final_ols_model = sm.OLS(y_full, X_full_ols).fit()
+                    ols_pred_full = final_ols_model.predict(X_full_ols)
+                    residuals_full = y_full - ols_pred_full
+                    
+                    # Train final RF model on full dataset residuals
+                    final_rf_model = RandomForestRegressor(
+                        n_estimators=hybrid_n_estimators,
+                        max_depth=hybrid_max_depth,
+                        min_samples_split=hybrid_min_samples_split,
+                        min_samples_leaf=hybrid_min_samples_leaf,
+                        max_features=hybrid_max_features,
+                        random_state=hybrid_random_state
+                    )
+                    final_rf_model.fit(X_full, residuals_full)
+                    
+                    # Store final models in session state
+                    st.session_state.final_ols_model = final_ols_model
+                    st.session_state.final_rf_model = final_rf_model
+                    st.session_state.hybrid_feature_names = hybrid_x_columns
+                
+                st.success("✅ Final models trained and ready for download!")
+                
+                # Model download section
+                col1, col2, col3 = st.columns(3)
                 
                 with col1:
-                    st.markdown("**Key Findings:**")
-                    
-                    if improvement_r2 > 0.01:
-                        st.success("✅ **Strong nonlinear patterns detected** - Hybrid approach highly beneficial")
-                    elif improvement_r2 > 0.001:
-                        st.info("📊 **Moderate nonlinear patterns** - Hybrid approach provides modest improvement")
-                    else:
-                        st.warning("⚠️ **Limited nonlinear patterns** - Dataset may be primarily linear")
-                    
-                    consistency = np.std(improvements)
-                    if consistency < 0.01:
-                        st.success(f"✅ **Consistent improvement** across folds (std = {consistency:.4f})")
-                    else:
-                        st.warning(f"⚠️ **Variable improvement** across folds (std = {consistency:.4f})")
+                    # Download OLS model
+                    ols_model_bytes = pickle.dumps(st.session_state.final_ols_model)
+                    st.download_button(
+                        label="📦 Download OLS Model (.pkl)",
+                        data=ols_model_bytes,
+                        file_name=f"hybrid_ols_model_{datetime.now().strftime('%Y%m%d_%H%M')}.pkl",
+                        mime="application/octet-stream",
+                        help="Download the trained OLS model (Step 1 of hybrid)"
+                    )
                 
                 with col2:
-                    st.markdown("**Recommendations:**")
+                    # Download RF model
+                    rf_model_bytes = pickle.dumps(st.session_state.final_rf_model)
+                    st.download_button(
+                        label="📦 Download RF Model (.pkl)",
+                        data=rf_model_bytes,
+                        file_name=f"hybrid_rf_model_{datetime.now().strftime('%Y%m%d_%H%M')}.pkl",
+                        mime="application/octet-stream",
+                        help="Download the Random Forest model trained on OLS residuals (Step 2 of hybrid)"
+                    )
+                
+                with col3:
+                    # Download both models as a package
+                    hybrid_package = {
+                        'ols_model': st.session_state.final_ols_model,
+                        'rf_model': st.session_state.final_rf_model,
+                        'feature_names': hybrid_x_columns,
+                        'target_name': hybrid_y_column,
+                        'model_info': st.session_state.hybrid_model_info,
+                        'performance_metrics': avg_metrics,
+                        'usage_instructions': {
+                            'step1': 'Load both models',
+                            'step2': 'Get OLS prediction: ols_pred = ols_model.predict(X_with_constant)',
+                            'step3': 'Get RF residual prediction: rf_pred = rf_model.predict(X)',
+                            'step4': 'Final prediction: final_pred = ols_pred + rf_pred'
+                        }
+                    }
                     
-                    if improvement_r2 > 0.01:
-                        st.success("🎯 **Use Hybrid Model** - Significant performance gain")
-                    elif improvement_r2 > 0.001:
-                        st.info("🤔 **Consider Hybrid Model** - Modest but consistent improvement")
-                    else:
-                        st.info("📏 **OLS May Suffice** - Linear model captures most patterns")
+                    hybrid_package_bytes = pickle.dumps(hybrid_package)
+                    st.download_button(
+                        label="📦 Download Hybrid Package (.pkl)",
+                        data=hybrid_package_bytes,
+                        file_name=f"hybrid_model_package_{datetime.now().strftime('%Y%m%d_%H%M')}.pkl",
+                        mime="application/octet-stream",
+                        help="Download complete hybrid model package with usage instructions"
+                    )
+                
+                # Usage instructions
+                with st.expander("📖 How to Use Downloaded Models", expanded=False):
+                    st.markdown("""
+                    **Using the Hybrid Model Package:**
                     
-                    if avg_metrics['RF_Residual_R2_avg'] < 0.05:
-                        st.warning("💡 **Consider feature engineering** - RF struggles with current residuals")
+                    ```python
+                    import pickle
+                    import pandas as pd
+                    import statsmodels.api as sm
+                    
+                    # Load the hybrid package
+                    with open('hybrid_model_package.pkl', 'rb') as f:
+                        package = pickle.load(f)
+                    
+                    ols_model = package['ols_model']
+                    rf_model = package['rf_model']
+                    feature_names = package['feature_names']
+                    
+                    # Make predictions on new data
+                    def predict_hybrid(new_data):
+                        # Ensure features are in correct order
+                        X_new = new_data[feature_names]
+                        
+                        # Step 1: OLS prediction (add constant)
+                        X_new_ols = sm.add_constant(X_new)
+                        ols_pred = ols_model.predict(X_new_ols)
+                        
+                        # Step 2: RF residual prediction
+                        rf_pred = rf_model.predict(X_new)
+                        
+                        # Step 3: Combine predictions
+                        final_pred = ols_pred + rf_pred
+                        
+                        return final_pred
+                    
+                    # Example usage
+                    # new_predictions = predict_hybrid(your_new_data)
+                    ```
+                    
+                    **Individual Models:**
+                    - **OLS Model**: Use `ols_model.predict(X_with_constant)` 
+                    - **RF Model**: Use `rf_model.predict(X)` on same features to get residual predictions
+                    """)
                 
                 # Export options
                 st.markdown("### 💾 Export Hybrid Model Results")
@@ -2657,7 +2750,7 @@ elif st.session_state.processing_step == 'hybrid':
     
     else:
         st.warning("Please load and process data first")
-
+        
 # Data preview section (always available at bottom)
 if analyzer.current_data is not None:
     st.markdown('<div class="section-divider"></div>', unsafe_allow_html=True)
