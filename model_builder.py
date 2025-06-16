@@ -2185,14 +2185,24 @@ elif st.session_state.processing_step == 'hybrid':
     else:
         st.markdown('## Hybrid OLS + Random Forest Model')
     
-    st.info("🔗 **Hybrid Approach**: First fit OLS to capture linear relationships, then train Random Forest on residuals to capture non-linear patterns. Final prediction = OLS prediction + RF residual prediction.")
+    # Explanation of the hybrid approach
+    st.info("🔗 **Hybrid Approach**: Combines the strengths of linear and nonlinear modeling")
+    
+    with st.expander("📚 How the Hybrid Model Works", expanded=False):
+        st.markdown("""
+        **Step-by-Step Process:**
+        
+        1. **Fit OLS Model**: `y_pred_ols = OLS(X, y)` - Captures main linear relationships
+        2. **Calculate Residuals**: `residuals = y_actual - y_pred_ols` - What OLS couldn't explain  
+        3. **Train RF on Residuals**: `RF.fit(X, residuals)` - Captures nonlinear patterns in residuals
+        4. **Final Prediction**: `y_final = y_pred_ols + rf_pred_residuals` - Combines both models
+        
+        **Result**: Linear interpretability + Nonlinear flexibility
+        """)
     
     if analyzer.current_data is not None:
         # Model Configuration
         st.markdown("### 🎯 Model Configuration")
-        
-        # Stack vertically for better space
-        st.markdown("**Model Variables:**")
         
         # Get all numeric columns (including transformed ones)
         numeric_columns = analyzer.current_data.select_dtypes(include=[np.number]).columns.tolist()
@@ -2202,6 +2212,7 @@ elif st.session_state.processing_step == 'hybrid':
         with col1:
             # Target variable (Y)
             hybrid_y_column = st.selectbox("Target Variable (Y)", numeric_columns, 
+                                          index=numeric_columns.index('ln_hpm') if 'ln_hpm' in numeric_columns else 0,
                                           key="hybrid_y_select")
         
         with col2:
@@ -2225,7 +2236,7 @@ elif st.session_state.processing_step == 'hybrid':
             st.success(f"✅ Selected {len(hybrid_x_columns)} features for hybrid model")
         
         # Hyperparameter Configuration
-        st.markdown("### ⚙️ Random Forest Parameters for Residuals")
+        st.markdown("### ⚙️ Random Forest Parameters (for Residuals)")
         
         param_col1, param_col2, param_col3 = st.columns(3)
         
@@ -2254,6 +2265,8 @@ elif st.session_state.processing_step == 'hybrid':
                     X = df_model[hybrid_x_columns]
                     y = df_model[hybrid_y_column]
                     
+                    st.info(f"Training on {len(df_model):,} observations with {len(hybrid_x_columns)} features")
+                    
                     # Cross-validation setup
                     from sklearn.model_selection import KFold
                     kf = KFold(n_splits=hybrid_n_splits, shuffle=True, random_state=hybrid_random_state)
@@ -2261,19 +2274,22 @@ elif st.session_state.processing_step == 'hybrid':
                     # Results storage
                     results = {
                         'Fold': [],
-                        'OLS_R2': [], 'OLS_MAPE': [], 'OLS_FSD': [],
-                        'RF_R2': [], 'RF_MAPE': [], 'RF_FSD': [],
-                        'Hybrid_R2': [], 'Hybrid_MAPE': [], 'Hybrid_FSD': []
+                        'OLS_R2': [], 'OLS_MAPE': [], 'OLS_FSD': [], 'OLS_PE10': [], 'OLS_RT20': [],
+                        'Hybrid_R2': [], 'Hybrid_MAPE': [], 'Hybrid_FSD': [], 'Hybrid_PE10': [], 'Hybrid_RT20': [],
+                        'RF_Residual_R2': []  # Just for diagnostic purposes
                     }
                     
                     fold_predictions = []
+                    progress_bar = st.progress(0)
                     
                     # Cross-validation loop
                     for fold, (train_idx, test_idx) in enumerate(kf.split(X)):
+                        progress_bar.progress((fold + 1) / hybrid_n_splits)
+                        
                         X_train, X_test = X.iloc[train_idx], X.iloc[test_idx]
                         y_train, y_test = y.iloc[train_idx], y.iloc[test_idx]
                         
-                        # Step 1: Fit OLS
+                        # STEP 1: Fit OLS Model
                         X_train_ols = sm.add_constant(X_train)
                         X_test_ols = sm.add_constant(X_test)
                         
@@ -2281,11 +2297,11 @@ elif st.session_state.processing_step == 'hybrid':
                         ols_pred_train = ols_model.predict(X_train_ols)
                         ols_pred_test = ols_model.predict(X_test_ols)
                         
-                        # Step 2: Calculate residuals
+                        # STEP 2: Calculate OLS Residuals
                         residuals_train = y_train - ols_pred_train
-                        residuals_test = y_test - ols_pred_test
+                        residuals_test = y_test - ols_pred_test  # True residuals for evaluation
                         
-                        # Step 3: Train RF on residuals
+                        # STEP 3: Train Random Forest on Residuals
                         rf_model = RandomForestRegressor(
                             n_estimators=hybrid_n_estimators,
                             max_depth=hybrid_max_depth,
@@ -2295,59 +2311,69 @@ elif st.session_state.processing_step == 'hybrid':
                             random_state=hybrid_random_state
                         )
                         
+                        # Train RF to predict residuals
                         rf_model.fit(X_train, residuals_train)
-                        rf_pred_test = rf_model.predict(X_test)
+                        rf_pred_residuals_test = rf_model.predict(X_test)
                         
-                        # Step 4: Combine predictions (Hybrid)
-                        hybrid_pred_test = ols_pred_test + rf_pred_test
+                        # STEP 4: Make Final Hybrid Prediction
+                        hybrid_pred_test = ols_pred_test + rf_pred_residuals_test
                         
-                        # Step 5: Evaluate all models
+                        # STEP 5: Evaluate Models (Only OLS and Hybrid on actual target)
                         ols_metrics = evaluate(y_test, ols_pred_test, squared=False)
-                        
-                        # For RF residuals, we evaluate how well it predicts the actual residuals
-                        rf_metrics = evaluate(residuals_test, rf_pred_test, squared=False)
-                        
-                        # For hybrid, we evaluate the final combined prediction
                         hybrid_metrics = evaluate(y_test, hybrid_pred_test, squared=False)
+                        
+                        # Diagnostic: How well does RF predict the true residuals?
+                        rf_residual_r2 = r2_score(residuals_test, rf_pred_residuals_test)
                         
                         # Store results
                         results['Fold'].append(f"Fold-{fold + 1}")
+                        
+                        # OLS metrics
                         results['OLS_R2'].append(ols_metrics['R2'])
                         results['OLS_MAPE'].append(ols_metrics['MAPE'])
                         results['OLS_FSD'].append(ols_metrics['FSD'])
-                        results['RF_R2'].append(rf_metrics['R2'])
-                        results['RF_MAPE'].append(rf_metrics['MAPE'])
-                        results['RF_FSD'].append(rf_metrics['FSD'])
+                        results['OLS_PE10'].append(ols_metrics['PE10'])
+                        results['OLS_RT20'].append(ols_metrics['RT20'])
+                        
+                        # Hybrid metrics
                         results['Hybrid_R2'].append(hybrid_metrics['R2'])
                         results['Hybrid_MAPE'].append(hybrid_metrics['MAPE'])
                         results['Hybrid_FSD'].append(hybrid_metrics['FSD'])
+                        results['Hybrid_PE10'].append(hybrid_metrics['PE10'])
+                        results['Hybrid_RT20'].append(hybrid_metrics['RT20'])
                         
-                        # Store predictions for plotting
-                        fold_predictions.append({
-                            'y_actual': y_test,
-                            'ols_pred': ols_pred_test,
-                            'rf_residual_pred': rf_pred_test,
-                            'hybrid_pred': hybrid_pred_test,
-                            'actual_residuals': residuals_test
-                        })
+                        # Diagnostic metric
+                        results['RF_Residual_R2'].append(rf_residual_r2)
+                        
+                        # Store predictions for plotting (last fold)
+                        if fold == hybrid_n_splits - 1:
+                            fold_predictions = {
+                                'y_actual': y_test,
+                                'ols_pred': ols_pred_test,
+                                'hybrid_pred': hybrid_pred_test,
+                                'actual_residuals': residuals_test,
+                                'rf_pred_residuals': rf_pred_residuals_test
+                            }
                     
-                    # Calculate averages
+                    progress_bar.empty()
+                    
+                    # Calculate average metrics
                     avg_metrics = {
                         'OLS': {
                             'R2': np.mean(results['OLS_R2']),
                             'MAPE': np.mean(results['OLS_MAPE']),
-                            'FSD': np.mean(results['OLS_FSD'])
-                        },
-                        'RF_Residuals': {
-                            'R2': np.mean(results['RF_R2']),
-                            'MAPE': np.mean(results['RF_MAPE']),
-                            'FSD': np.mean(results['RF_FSD'])
+                            'FSD': np.mean(results['OLS_FSD']),
+                            'PE10': np.mean(results['OLS_PE10']),
+                            'RT20': np.mean(results['OLS_RT20'])
                         },
                         'Hybrid': {
                             'R2': np.mean(results['Hybrid_R2']),
                             'MAPE': np.mean(results['Hybrid_MAPE']),
-                            'FSD': np.mean(results['Hybrid_FSD'])
-                        }
+                            'FSD': np.mean(results['Hybrid_FSD']),
+                            'PE10': np.mean(results['Hybrid_PE10']),
+                            'RT20': np.mean(results['Hybrid_RT20'])
+                        },
+                        'RF_Residual_R2_avg': np.mean(results['RF_Residual_R2'])
                     }
                     
                     # Store in session state
@@ -2357,6 +2383,7 @@ elif st.session_state.processing_step == 'hybrid':
                     st.session_state.hybrid_model_info = {
                         'target': hybrid_y_column,
                         'features': hybrid_x_columns,
+                        'n_observations': len(df_model),
                         'n_splits': hybrid_n_splits,
                         'rf_params': {
                             'n_estimators': hybrid_n_estimators,
@@ -2370,10 +2397,22 @@ elif st.session_state.processing_step == 'hybrid':
                 
                 st.success("✅ Hybrid model training completed!")
                 
+                # Performance Improvement Analysis
+                improvement_r2 = avg_metrics['Hybrid']['R2'] - avg_metrics['OLS']['R2']
+                improvement_mape = avg_metrics['OLS']['MAPE'] - avg_metrics['Hybrid']['MAPE']
+                improvement_fsd = avg_metrics['OLS']['FSD'] - avg_metrics['Hybrid']['FSD']
+                
+                if improvement_r2 > 0.01:  # Meaningful improvement
+                    st.success(f"🎉 **Significant Improvement!** Hybrid model improved R² by {improvement_r2:.4f} ({improvement_r2/avg_metrics['OLS']['R2']*100:.1f}% relative improvement)")
+                elif improvement_r2 > 0.001:
+                    st.info(f"📊 **Modest Improvement**: Hybrid model improved R² by {improvement_r2:.4f}")
+                else:
+                    st.warning(f"⚠️ **Limited Improvement**: R² change = {improvement_r2:.4f}. Linear relationships may dominate this dataset.")
+                
                 # Display Results
                 st.markdown("### 📊 Model Comparison Results")
                 
-                # Average metrics comparison
+                # Main metrics comparison
                 col1, col2, col3 = st.columns(3)
                 
                 with col1:
@@ -2381,70 +2420,136 @@ elif st.session_state.processing_step == 'hybrid':
                     st.metric("R²", f"{avg_metrics['OLS']['R2']:.4f}")
                     st.metric("MAPE", f"{avg_metrics['OLS']['MAPE']:.4f}")
                     st.metric("FSD", f"{avg_metrics['OLS']['FSD']:.4f}")
+                    st.metric("PE10", f"{avg_metrics['OLS']['PE10']:.4f}")
+                    st.metric("RT20", f"{avg_metrics['OLS']['RT20']:.4f}")
                 
                 with col2:
-                    st.markdown("**🟢 RF on Residuals**")
-                    st.metric("R²", f"{avg_metrics['RF_Residuals']['R2']:.4f}")
-                    st.metric("MAPE", f"{avg_metrics['RF_Residuals']['MAPE']:.4f}")
-                    st.metric("FSD", f"{avg_metrics['RF_Residuals']['FSD']:.4f}")
-                
-                with col3:
                     st.markdown("**🟡 Hybrid (OLS + RF)**")
-                    improvement_r2 = avg_metrics['Hybrid']['R2'] - avg_metrics['OLS']['R2']
-                    improvement_mape = avg_metrics['OLS']['MAPE'] - avg_metrics['Hybrid']['MAPE']
-                    
                     st.metric("R²", f"{avg_metrics['Hybrid']['R2']:.4f}", 
                              delta=f"{improvement_r2:+.4f}")
                     st.metric("MAPE", f"{avg_metrics['Hybrid']['MAPE']:.4f}", 
                              delta=f"{-improvement_mape:+.4f}")
-                    st.metric("FSD", f"{avg_metrics['Hybrid']['FSD']:.4f}")
+                    st.metric("FSD", f"{avg_metrics['Hybrid']['FSD']:.4f}",
+                             delta=f"{-improvement_fsd:+.4f}")
+                    st.metric("PE10", f"{avg_metrics['Hybrid']['PE10']:.4f}",
+                             delta=f"{avg_metrics['Hybrid']['PE10'] - avg_metrics['OLS']['PE10']:+.4f}")
+                    st.metric("RT20", f"{avg_metrics['Hybrid']['RT20']:.4f}",
+                             delta=f"{avg_metrics['Hybrid']['RT20'] - avg_metrics['OLS']['RT20']:+.4f}")
+                
+                with col3:
+                    st.markdown("**🔍 Diagnostics**")
+                    st.metric("RF Residual R²", f"{avg_metrics['RF_Residual_R2_avg']:.4f}")
+                    st.info("This shows how well Random Forest captures the patterns in OLS residuals")
+                    
+                    if avg_metrics['RF_Residual_R2_avg'] > 0.1:
+                        st.success("✅ RF found meaningful patterns in residuals")
+                    else:
+                        st.warning("⚠️ RF found limited patterns in residuals")
                 
                 # Detailed results table
                 st.markdown("### 📈 Detailed Cross-Validation Results")
-                results_df = pd.DataFrame(results)
-                st.dataframe(results_df, use_container_width=True)
+                
+                # Create clean results dataframe
+                display_results = pd.DataFrame({
+                    'Fold': results['Fold'],
+                    'OLS_R²': results['OLS_R2'],
+                    'OLS_MAPE': results['OLS_MAPE'],
+                    'OLS_FSD': results['OLS_FSD'],
+                    'Hybrid_R²': results['Hybrid_R2'],
+                    'Hybrid_MAPE': results['Hybrid_MAPE'],
+                    'Hybrid_FSD': results['Hybrid_FSD'],
+                    'R²_Improvement': [h - o for h, o in zip(results['Hybrid_R2'], results['OLS_R2'])],
+                    'RF_Residual_R²': results['RF_Residual_R2']
+                })
+                
+                st.dataframe(display_results.style.format({
+                    'OLS_R²': '{:.4f}',
+                    'OLS_MAPE': '{:.4f}',
+                    'OLS_FSD': '{:.4f}',
+                    'Hybrid_R²': '{:.4f}',
+                    'Hybrid_MAPE': '{:.4f}',
+                    'Hybrid_FSD': '{:.4f}',
+                    'R²_Improvement': '{:+.4f}',
+                    'RF_Residual_R²': '{:.4f}'
+                }), use_container_width=True)
                 
                 # Visualization
                 st.markdown("### 📊 Model Performance Visualization")
                 
                 # Create comparison plots
-                fig, axes = plt.subplots(1, 3, figsize=(15, 5))
+                fig, axes = plt.subplots(2, 2, figsize=(12, 10))
                 
-                # Use last fold predictions for plotting
-                last_fold = fold_predictions[-1]
+                # Plot 1: OLS vs Actual
+                axes[0,0].scatter(fold_predictions['y_actual'], fold_predictions['ols_pred'], alpha=0.6, color='blue')
+                axes[0,0].plot([fold_predictions['y_actual'].min(), fold_predictions['y_actual'].max()], 
+                              [fold_predictions['y_actual'].min(), fold_predictions['y_actual'].max()], 'r--', lw=2)
+                axes[0,0].set_xlabel('Actual Values')
+                axes[0,0].set_ylabel('OLS Predictions')
+                axes[0,0].set_title(f'OLS Only\nR² = {avg_metrics["OLS"]["R2"]:.3f}')
                 
-                # OLS vs Actual
-                axes[0].scatter(last_fold['y_actual'], last_fold['ols_pred'], alpha=0.6, color='blue')
-                axes[0].plot([last_fold['y_actual'].min(), last_fold['y_actual'].max()], 
-                           [last_fold['y_actual'].min(), last_fold['y_actual'].max()], 'r--', lw=2)
-                axes[0].set_xlabel('Actual Values')
-                axes[0].set_ylabel('OLS Predictions')
-                axes[0].set_title(f'OLS Only\nR² = {avg_metrics["OLS"]["R2"]:.3f}')
+                # Plot 2: Hybrid vs Actual
+                axes[0,1].scatter(fold_predictions['y_actual'], fold_predictions['hybrid_pred'], alpha=0.6, color='orange')
+                axes[0,1].plot([fold_predictions['y_actual'].min(), fold_predictions['y_actual'].max()], 
+                              [fold_predictions['y_actual'].min(), fold_predictions['y_actual'].max()], 'r--', lw=2)
+                axes[0,1].set_xlabel('Actual Values')
+                axes[0,1].set_ylabel('Hybrid Predictions')
+                axes[0,1].set_title(f'Hybrid (OLS + RF)\nR² = {avg_metrics["Hybrid"]["R2"]:.3f}')
                 
-                # RF Residuals vs Actual Residuals
-                axes[1].scatter(last_fold['actual_residuals'], last_fold['rf_residual_pred'], alpha=0.6, color='green')
-                axes[1].plot([last_fold['actual_residuals'].min(), last_fold['actual_residuals'].max()], 
-                           [last_fold['actual_residuals'].min(), last_fold['actual_residuals'].max()], 'r--', lw=2)
-                axes[1].set_xlabel('Actual Residuals')
-                axes[1].set_ylabel('RF Predicted Residuals')
-                axes[1].set_title(f'RF on Residuals\nR² = {avg_metrics["RF_Residuals"]["R2"]:.3f}')
+                # Plot 3: RF Residual Prediction vs Actual Residuals
+                axes[1,0].scatter(fold_predictions['actual_residuals'], fold_predictions['rf_pred_residuals'], 
+                                 alpha=0.6, color='green')
+                axes[1,0].plot([fold_predictions['actual_residuals'].min(), fold_predictions['actual_residuals'].max()], 
+                              [fold_predictions['actual_residuals'].min(), fold_predictions['actual_residuals'].max()], 'r--', lw=2)
+                axes[1,0].set_xlabel('Actual OLS Residuals')
+                axes[1,0].set_ylabel('RF Predicted Residuals')
+                axes[1,0].set_title(f'RF Residual Prediction\nR² = {avg_metrics["RF_Residual_R2_avg"]:.3f}')
                 
-                # Hybrid vs Actual
-                axes[2].scatter(last_fold['y_actual'], last_fold['hybrid_pred'], alpha=0.6, color='orange')
-                axes[2].plot([last_fold['y_actual'].min(), last_fold['y_actual'].max()], 
-                           [last_fold['y_actual'].min(), last_fold['y_actual'].max()], 'r--', lw=2)
-                axes[2].set_xlabel('Actual Values')
-                axes[2].set_ylabel('Hybrid Predictions')
-                axes[2].set_title(f'Hybrid (OLS + RF)\nR² = {avg_metrics["Hybrid"]["R2"]:.3f}')
+                # Plot 4: Improvement per fold
+                folds = range(1, len(results['Fold']) + 1)
+                improvements = [h - o for h, o in zip(results['Hybrid_R2'], results['OLS_R2'])]
+                axes[1,1].bar(folds, improvements, alpha=0.7, color='purple')
+                axes[1,1].axhline(y=0, color='black', linestyle='-', alpha=0.3)
+                axes[1,1].set_xlabel('Fold')
+                axes[1,1].set_ylabel('R² Improvement')
+                axes[1,1].set_title('Hybrid Improvement by Fold')
+                axes[1,1].set_xticks(folds)
                 
                 plt.tight_layout()
                 st.pyplot(fig)
                 
-                # Performance improvement summary
-                if improvement_r2 > 0:
-                    st.success(f"🎉 **Hybrid model improved R² by {improvement_r2:.4f} ({improvement_r2/avg_metrics['OLS']['R2']*100:.1f}% relative improvement)**")
-                else:
-                    st.warning(f"⚠️ **Hybrid model R² decreased by {abs(improvement_r2):.4f}. Linear relationships may dominate this dataset.**")
+                # Summary insights
+                st.markdown("### 💡 Model Insights")
+                
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    st.markdown("**Key Findings:**")
+                    
+                    if improvement_r2 > 0.01:
+                        st.success("✅ **Strong nonlinear patterns detected** - Hybrid approach highly beneficial")
+                    elif improvement_r2 > 0.001:
+                        st.info("📊 **Moderate nonlinear patterns** - Hybrid approach provides modest improvement")
+                    else:
+                        st.warning("⚠️ **Limited nonlinear patterns** - Dataset may be primarily linear")
+                    
+                    consistency = np.std(improvements)
+                    if consistency < 0.01:
+                        st.success(f"✅ **Consistent improvement** across folds (std = {consistency:.4f})")
+                    else:
+                        st.warning(f"⚠️ **Variable improvement** across folds (std = {consistency:.4f})")
+                
+                with col2:
+                    st.markdown("**Recommendations:**")
+                    
+                    if improvement_r2 > 0.01:
+                        st.success("🎯 **Use Hybrid Model** - Significant performance gain")
+                    elif improvement_r2 > 0.001:
+                        st.info("🤔 **Consider Hybrid Model** - Modest but consistent improvement")
+                    else:
+                        st.info("📏 **OLS May Suffice** - Linear model captures most patterns")
+                    
+                    if avg_metrics['RF_Residual_R2_avg'] < 0.05:
+                        st.warning("💡 **Consider feature engineering** - RF struggles with current residuals")
                 
                 # Export options
                 st.markdown("### 💾 Export Hybrid Model Results")
@@ -2452,18 +2557,24 @@ elif st.session_state.processing_step == 'hybrid':
                 col1, col2, col3 = st.columns(3)
                 
                 with col1:
-                    # Export results
+                    # Export detailed results
                     st.download_button(
                         label="📊 Download Results (.csv)",
-                        data=results_df.to_csv(index=False),
+                        data=display_results.to_csv(index=False),
                         file_name=f"hybrid_model_results_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
                         mime="text/csv"
                     )
                 
                 with col2:
                     # Export model info
-                    model_info = st.session_state.hybrid_model_info
+                    model_info = st.session_state.hybrid_model_info.copy()
                     model_info['avg_metrics'] = avg_metrics
+                    model_info['improvements'] = {
+                        'r2_improvement': improvement_r2,
+                        'mape_improvement': improvement_mape,
+                        'fsd_improvement': improvement_fsd,
+                        'relative_r2_improvement_pct': (improvement_r2/avg_metrics['OLS']['R2']*100) if avg_metrics['OLS']['R2'] > 0 else 0
+                    }
                     model_info['timestamp'] = datetime.now().isoformat()
                     
                     st.download_button(
@@ -2477,19 +2588,24 @@ elif st.session_state.processing_step == 'hybrid':
                     # Export comparison summary
                     comparison_summary = {
                         'timestamp': datetime.now().isoformat(),
-                        'model_comparison': avg_metrics,
-                        'improvement': {
+                        'model_comparison': {
+                            'OLS': avg_metrics['OLS'],
+                            'Hybrid': avg_metrics['Hybrid']
+                        },
+                        'improvement_analysis': {
                             'r2_improvement': improvement_r2,
                             'mape_improvement': improvement_mape,
-                            'relative_r2_improvement_pct': improvement_r2/avg_metrics['OLS']['R2']*100
+                            'relative_r2_improvement_pct': (improvement_r2/avg_metrics['OLS']['R2']*100) if avg_metrics['OLS']['R2'] > 0 else 0,
+                            'rf_residual_r2': avg_metrics['RF_Residual_R2_avg'],
+                            'recommendation': 'Use Hybrid' if improvement_r2 > 0.01 else 'Consider Hybrid' if improvement_r2 > 0.001 else 'OLS Sufficient'
                         },
-                        'model_config': model_info
+                        'model_config': st.session_state.hybrid_model_info
                     }
                     
                     st.download_button(
-                        label="📈 Download Comparison (.json)",
+                        label="📈 Download Analysis (.json)",
                         data=json.dumps(comparison_summary, indent=2),
-                        file_name=f"model_comparison_{datetime.now().strftime('%Y%m%d_%H%M')}.json",
+                        file_name=f"hybrid_analysis_{datetime.now().strftime('%Y%m%d_%H%M')}.json",
                         mime="application/json"
                     )
                     
@@ -2503,35 +2619,40 @@ elif st.session_state.processing_step == 'hybrid':
         # Show current hybrid model status
         if 'hybrid_results' in st.session_state:
             st.markdown("---")
-            st.success("🔗 Hybrid model is ready!")
+            st.success("🔗 Hybrid model training completed!")
             
             # Quick model comparison
-            with st.expander("📋 Current Hybrid Model Summary"):
+            with st.expander("📋 Current Hybrid Model Summary", expanded=True):
                 avg_metrics = st.session_state.hybrid_avg_metrics
-                st.write("**Model Performance Comparison:**")
                 
                 comparison_df = pd.DataFrame({
                     'Model': ['OLS Only', 'Hybrid (OLS + RF)'],
                     'R²': [avg_metrics['OLS']['R2'], avg_metrics['Hybrid']['R2']],
                     'MAPE': [avg_metrics['OLS']['MAPE'], avg_metrics['Hybrid']['MAPE']],
-                    'FSD': [avg_metrics['OLS']['FSD'], avg_metrics['Hybrid']['FSD']]
+                    'FSD': [avg_metrics['OLS']['FSD'], avg_metrics['Hybrid']['FSD']],
+                    'PE10': [avg_metrics['OLS']['PE10'], avg_metrics['Hybrid']['PE10']],
+                    'RT20': [avg_metrics['OLS']['RT20'], avg_metrics['Hybrid']['RT20']]
                 })
                 
                 st.dataframe(comparison_df.style.format({
                     'R²': '{:.4f}',
                     'MAPE': '{:.4f}',
-                    'FSD': '{:.4f}'
+                    'FSD': '{:.4f}',
+                    'PE10': '{:.4f}',
+                    'RT20': '{:.4f}'
                 }), use_container_width=True)
                 
                 improvement = avg_metrics['Hybrid']['R2'] - avg_metrics['OLS']['R2']
-                if improvement > 0:
-                    st.success(f"✅ Hybrid approach improved R² by {improvement:.4f}")
+                if improvement > 0.01:
+                    st.success(f"🎉 **Strong improvement**: R² increased by {improvement:.4f}")
+                elif improvement > 0.001:
+                    st.info(f"📊 **Modest improvement**: R² increased by {improvement:.4f}")
                 else:
-                    st.info(f"ℹ️ OLS performance was already strong for this dataset")
+                    st.info(f"📏 **Linear model performs well**: R² change = {improvement:.4f}")
     
     else:
         st.warning("Please load and process data first")
-
+        
 # Data preview section (always available at bottom)
 if analyzer.current_data is not None:
     st.markdown('<div class="section-divider"></div>', unsafe_allow_html=True)
