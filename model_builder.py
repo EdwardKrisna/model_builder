@@ -1631,7 +1631,7 @@ elif st.session_state.processing_step == 'model':
 
     if analyzer.current_data is not None:
         # Model configuration
-        col1, col2 = st.columns([7, 3])
+        col1, col2 = st.columns(2)
         
         with col1:
             st.markdown("**Model Variables:**")
@@ -1641,13 +1641,16 @@ elif st.session_state.processing_step == 'model':
             
             # Target variable (Y)
             y_column = st.selectbox("Dependent Variable (Y)", numeric_columns, 
-                                   index=numeric_columns.index('ln_hpm') if 'ln_hpm' in numeric_columns else 0)
+                                index=numeric_columns.index('hpm') if 'hpm' in numeric_columns else 0)
+            
+            st.markdown("")  # Add empty line for spacing
+            # or use: st.write("")
             
             # Independent variables (X)
             available_x_cols = [col for col in numeric_columns if col != y_column]
             x_columns = st.multiselect("Independent Variables (X)", available_x_cols,
-                                      default=available_x_cols[:5] if len(available_x_cols) >= 5 else available_x_cols)
-        
+                                    default=available_x_cols[:5] if len(available_x_cols) >= 5 else available_x_cols)
+            
         with col2:
             st.markdown("**Model Information:**")
             if analyzer.transformed_columns:
