@@ -567,10 +567,14 @@ class RealEstateAnalyzer:
         
     def calculate_vif(self, X_df, drop_const=True):
         """Calculate Variance Inflation Factor"""
+        
         try:
             if drop_const and 'const' in X_df.columns:
                 X_df = X_df.drop(columns='const')
             
+            # Optional: ensure constant is added for correct VIF behavior
+            X_df = sm.add_constant(X_df, has_constant='add')
+
             vif_data = pd.DataFrame()
             vif_data['feature'] = X_df.columns
             vif_data['VIF'] = [
@@ -580,6 +584,7 @@ class RealEstateAnalyzer:
         except Exception as e:
             st.error(f"VIF calculation failed: {str(e)}")
             return None
+
     
     def run_ols_model(self, y_column, x_columns):
         """Run OLS regression model with transformed columns"""
@@ -2652,7 +2657,7 @@ elif st.session_state.processing_step == 'hybrid':
     
     else:
         st.warning("Please load and process data first")
-        
+
 # Data preview section (always available at bottom)
 if analyzer.current_data is not None:
     st.markdown('<div class="section-divider"></div>', unsafe_allow_html=True)
