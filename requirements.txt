@@ -13,3 +13,6 @@ folium
 streamlit-folium
 psycopg2-binary
 xlsxwriter
+skl2onnx
+onnx
+onnxruntime
