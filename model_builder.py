@@ -193,9 +193,10 @@ def cached_clean_data(df, cleaning_options):
         
         # Remove duplicates (vectorized operation)
         if cleaning_options.get('remove_duplicates', False):
+            subset_cols = ['alamat', 'longitude', 'latitude', 'luas_tanah','hpm']
             initial_count = len(cleaned_df)
-            cleaned_df = cleaned_df.drop_duplicates(keep='first')
-            print(f"Removed {initial_count - len(cleaned_df)} duplicates")
+            cleaned_df = cleaned_df.drop_duplicates(subset=subset_cols, keep='first')
+            print(f"Removed {initial_count - len(cleaned_df)} duplicates based on {subset_cols}")
         
         # Handle missing values (optimized)
         if cleaning_options.get('handle_missing', False):
@@ -811,8 +812,7 @@ workflow_steps = [
     ('clean', '🧹 Cleaning'),
     ('transform', '⚡ Transform'),
     ('model', '📈 OLS Model'),
-    ('ml', '🤖 ML Models'),
-    ('hybrid', '🔗 Hybrid Model')
+    ('advanced', '🤖 Advanced Models')
 ]
 
 cols = st.columns(len(workflow_steps))
@@ -944,6 +944,26 @@ if st.session_state.processing_step == 'overview':
         
         elif not st.session_state.get('show_overview_stats', False):
             st.info("👆 Click 'Show Detailed Statistics' to view numeric summaries and column information")
+
+# Show secondary menu only when Advanced Models is selected
+if st.session_state.processing_step == 'advanced':
+    st.markdown("#### 🤖 Advanced Analytics")
+    
+    # Initialize advanced_step if not exists
+    if 'advanced_step' not in st.session_state:
+        st.session_state.advanced_step = 'ml'
+    
+    # Secondary navigation
+    adv_col1, adv_col2 = st.columns(2)
+    with adv_col1:
+        if st.button("🤖 ML Models", key="adv_ml", 
+                    type="primary" if st.session_state.advanced_step == 'ml' else "secondary"):
+            st.session_state.advanced_step = 'ml'
+    
+    with adv_col2:
+        if st.button("🔗 Hybrid Model", key="adv_hybrid",
+                    type="primary" if st.session_state.advanced_step == 'hybrid' else "secondary"):
+            st.session_state.advanced_step = 'hybrid'
 
 elif st.session_state.processing_step == 'dtype':
     if fun_mode:
@@ -1510,7 +1530,7 @@ elif st.session_state.processing_step == 'transform':
                 with col2:
                     st.write("")
                     st.write("")
-                    if st.button("⚡ Transform All Distance Columns", type="secondary"):
+                    if st.button("⚡ Transform All Distance + (HPM & Luas Tanah) Columns", type="secondary"):
                         try:
                             distance_transformations = {col: distance_transform for col in distance_columns}
                             success, message = analyzer.apply_transformations(distance_transformations)
@@ -1824,490 +1844,724 @@ elif st.session_state.processing_step == 'model':
                                 )
                 else:
                     st.error(message)
-        
-elif st.session_state.processing_step == 'ml':
-    if fun_mode:
-        st.markdown('## <img src="https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExaWZoeTByeWI1YmdsMHU3dnJ3ejNnem04MmM4Zjh5eThvbG10ZjFiaCZlcD12MV9naWZzX3NlYXJjaCZjdD1n/Gf1RA1jNSpbbuDE40m/giphy.gif" alt="data gif" style="height:96px; vertical-align:middle;"> Machine Learning Models', unsafe_allow_html=True)
-    else:
-        st.markdown('## Machine Learning Models')
 
-    if analyzer.current_data is not None:
-        # Model Configuration
-        st.markdown("### 🎯 Model Configuration")
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.markdown("**Model Variables:**")
+
+
+elif st.session_state.processing_step == 'advanced':
+    # Route to correct advanced model based on advanced_step
+    if st.session_state.advanced_step == 'ml':
+        if fun_mode:
+            st.markdown('## <img src="https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExaWZoeTByeWI1YmdsMHU3dnJ3ejNnem04MmM4Zjh5eThvbG10ZjFiaCZlcD12MV9naWZzX3NlYXJjaCZjdD1n/Gf1RA1jNSpbbuDE40m/giphy.gif" alt="data gif" style="height:96px; vertical-align:middle;"> Machine Learning Models', unsafe_allow_html=True)
+        else:
+            st.markdown('## Machine Learning Models')
+
+        if analyzer.current_data is not None:
+            # Model Configuration
+            st.markdown("### 🎯 Model Configuration")
             
-            # Get all numeric columns (including transformed ones)
-            numeric_columns = analyzer.current_data.select_dtypes(include=[np.number]).columns.tolist()
-            
-            # Target variable (Y)
-            ml_y_column = st.selectbox("Target Variable (Y)", numeric_columns, 
-                                      key="ml_y_select")
-            
-            # Independent variables (X)
-            available_x_cols = [col for col in numeric_columns if col != ml_y_column]
-            ml_x_columns = st.multiselect("Feature Variables (X)", available_x_cols,
-                                         default=available_x_cols[:5] if len(available_x_cols) >= 5 else available_x_cols,
-                                         key="ml_x_select")
-        
-        with col2:
-            st.markdown("**Group Configuration:**")
-            
-            # Group column selection
-            use_group = st.checkbox("Use Group-Based Cross-Validation", value=False)
-            group_column = None
-            
-            if use_group:
-                # Find geographic columns (case insensitive)
-                geo_candidates = []
-                for col in analyzer.current_data.columns:
-                    col_upper = col
-                    if any(geo in col_upper for geo in ['wadmpr', 'wadmkk', 'wadmkc', 'wadmkd']):
-                        geo_candidates.append(col)
-                
-                # Also include encoded columns
-                encoded_candidates = [col for col in analyzer.current_data.columns if '_encoded' in col.lower()]
-                
-                all_group_candidates = geo_candidates + encoded_candidates
-                
-                if all_group_candidates:
-                    group_column = st.selectbox("Select Group Column", all_group_candidates)
-                else:
-                    st.warning("No geographic or encoded columns found for grouping")
-                    use_group = False
-            
-            # Label Encoding Option
-            st.markdown("**Label Encoding:**")
-            categorical_cols = analyzer.current_data.select_dtypes(include=['object', 'category']).columns.tolist()
-            
-            if categorical_cols:
-                encode_column = st.selectbox("Create Encoded Column", ['None'] + categorical_cols)
-                
-                if encode_column != 'None' and st.button("🔤 Create Encoded Column"):
-                    success, message = analyzer.apply_label_encoding(encode_column)
-                    if success:
-                        st.success(message)
-                        st.rerun()
-                    else:
-                        st.error(message)
-        
-        # Hyperparameter Configuration
-        st.markdown("### ⚙️ Hyperparameter Configuration")
-        
-        tab1, tab2 = st.tabs(["🎯 Optuna Optimization", "✏️ Manual Parameters"])
-        
-        with tab1:
-            st.markdown("**Optuna Hyperparameter Optimization**")
-            
-            col1, col2, col3 = st.columns(3)
+            col1, col2 = st.columns(2)
             
             with col1:
-                objective_metric = st.selectbox("Optimization Objective", 
-                                              ['R2', 'PE10', 'RT20', 'FSD'], 
-                                              index=0)
-                n_trials = st.number_input("Number of Trials", min_value=10, max_value=200, value=50)
+                st.markdown("**Model Variables:**")
+                
+                # Get all numeric columns (including transformed ones)
+                numeric_columns = analyzer.current_data.select_dtypes(include=[np.number]).columns.tolist()
+                
+                # Target variable (Y)
+                ml_y_column = st.selectbox("Target Variable (Y)", numeric_columns, 
+                                        key="ml_y_select")
+                
+                # Independent variables (X)
+                available_x_cols = [col for col in numeric_columns if col != ml_y_column]
+                ml_x_columns = st.multiselect("Feature Variables (X)", available_x_cols,
+                                            default=available_x_cols[:5] if len(available_x_cols) >= 5 else available_x_cols,
+                                            key="ml_x_select")
             
             with col2:
-                min_sample = st.number_input("Minimum Sample per Group", min_value=1, max_value=10, value=3)
-                n_splits = st.number_input("Cross-Validation Folds", min_value=3, max_value=20, value=10)
-            
-            with col3:
-                random_state = st.number_input("Random State", min_value=1, max_value=1000, value=101)
-            
-            # Optuna optimization
-            if st.button("🔍 Run Optuna Optimization", type="primary") and ml_x_columns:
+                st.markdown("**Group Configuration:**")
                 
-                def objective(trial):
-                    # Random Forest hyperparameters
-                    n_estimators = trial.suggest_int('n_estimators', 50, 500)
-                    max_depth = trial.suggest_int('max_depth', 3, 20)
-                    min_samples_split = trial.suggest_int('min_samples_split', 2, 10)
-                    min_samples_leaf = trial.suggest_int('min_samples_leaf', 1, 5)
-                    max_features = trial.suggest_categorical('max_features', ['sqrt', 'log2', None])
+                # Group column selection
+                use_group = st.checkbox("Use Group-Based Cross-Validation", value=False)
+                group_column = None
+                
+                if use_group:
+                    # Find geographic columns (case insensitive)
+                    geo_candidates = []
+                    for col in analyzer.current_data.columns:
+                        col_upper = col
+                        if any(geo in col_upper for geo in ['wadmpr', 'wadmkk', 'wadmkc', 'wadmkd']):
+                            geo_candidates.append(col)
                     
-                    # Create model
-                    rf_model = RandomForestRegressor(
-                        n_estimators=n_estimators,
-                        max_depth=max_depth,
-                        min_samples_split=min_samples_split,
-                        min_samples_leaf=min_samples_leaf,
-                        max_features=max_features,
-                        random_state=random_state
-                    )
+                    # Also include encoded columns
+                    encoded_candidates = [col for col in analyzer.current_data.columns if '_encoded' in col.lower()]
                     
-                    # Run evaluation
-                    try:
-                        _, _, _, _, global_test_metrics, _, _, _ = analyzer.goval_machine_learning(
-                            ml_x_columns, ml_y_column, rf_model, 
-                            group_column if use_group else None,
-                            n_splits, random_state, min_sample
-                        )
-                        
-                        # Return objective based on selected metric
-                        if objective_metric == 'R2':
-                            return global_test_metrics['R2']  # Maximize
-                        elif objective_metric == 'PE10':
-                            return global_test_metrics['PE10']  # Maximize
-                        elif objective_metric == 'RT20':
-                            return -global_test_metrics['RT20']  # Minimize (so negative to maximize)
-                        elif objective_metric == 'FSD':
-                            return -global_test_metrics['FSD']  # Minimize (so negative to maximize)
-                        
-                    except Exception as e:
-                        st.error(f"Optuna trial failed: {e}")
-                        st.code(traceback.format_exc())
-                        return -999
-                
-                with st.spinner(f"Running Optuna optimization for {n_trials} trials..."):
-                    try:
-                        # Create study
-                        direction = 'maximize'
-                        study = optuna.create_study(direction=direction)
-                        study.optimize(objective, n_trials=n_trials)
-                        
-                        # Store best parameters in session state
-                        st.session_state.best_params = study.best_params
-                        st.session_state.best_value = study.best_value
-                        
-                        st.success(f"✅ Optimization completed!")
-                        st.write("**Best Parameters:**")
-                        st.json(study.best_params)
-                        st.write(f"**Best {objective_metric}:** {study.best_value:.4f}")
-                        
-                    except Exception as e:
-                        st.error(f"Optuna optimization failed: {str(e)}")
-        
-        with tab2:
-            st.markdown("**Manual Random Forest Parameters**")
-            
-            # Check if we have best params from Optuna
-            if 'best_params' in st.session_state:
-                st.info("💡 Optuna found these optimal parameters. You can use them or modify below:")
-                st.json(st.session_state.best_params)
-            
-            col1, col2, col3 = st.columns(3)
-            
-            with col1:
-                manual_n_estimators = st.text_input("n_estimators", value="100")
-                manual_max_depth = st.text_input("max_depth", value="10")
-            
-            with col2:
-                manual_min_samples_split = st.text_input("min_samples_split", value="2")
-                manual_min_samples_leaf = st.text_input("min_samples_leaf", value="1")
-            
-            with col3:
-                manual_max_features = st.selectbox("max_features", ['sqrt', 'log2', 'None'], index=0)
-                manual_random_state = st.text_input("random_state", value=str(random_state))
-        
-        # Model Training
-        st.markdown("### 🚀 Model Training & Evaluation")
-        
-        if st.button("🤖 Train Random Forest Model", type="primary") and ml_x_columns:
-            
-            try:
-                # Parse manual parameters
-                try:
-                    n_est = int(manual_n_estimators)
-                    max_d = int(manual_max_depth) if manual_max_depth != 'None' else None
-                    min_split = int(manual_min_samples_split)
-                    min_leaf = int(manual_min_samples_leaf)
-                    max_feat = manual_max_features if manual_max_features != 'None' else None
-                    rand_state = int(manual_random_state)
-                except ValueError:
-                    st.error("Please enter valid integer values for parameters")
-                    st.stop()
-                
-                # Create Random Forest model
-                rf_model = RandomForestRegressor(
-                    n_estimators=n_est,
-                    max_depth=max_d,
-                    min_samples_split=min_split,
-                    min_samples_leaf=min_leaf,
-                    max_features=max_feat,
-                    random_state=rand_state
-                )
-                
-                with st.spinner("Training Random Forest model..."):
-                    # Run model training and evaluation
-                    final_model, evaluation_df, train_results_df, global_train_metrics, global_test_metrics, y_test_last, y_pred_last, is_log_transformed = analyzer.goval_machine_learning(
-                        ml_x_columns, ml_y_column, rf_model,
-                        group_column if use_group else None,
-                        n_splits, rand_state, min_sample
-                    )
+                    all_group_candidates = geo_candidates + encoded_candidates
                     
-                    # Store model in session state
-                    st.session_state.ml_model = final_model
-                    st.session_state.ml_evaluation_df = evaluation_df
-                    st.session_state.ml_train_df = train_results_df
-                    st.session_state.ml_global_train = global_train_metrics
-                    st.session_state.ml_global_test = global_test_metrics
-                    st.session_state.ml_y_test_last = y_test_last
-                    st.session_state.ml_y_pred_last = y_pred_last
-                    st.session_state.ml_is_log_transformed = is_log_transformed
-                
-                st.success("✅ Model training completed!")
-                
-                # Display Results
-                st.markdown("### 📊 Model Results")
-                
-                # Global metrics
-                col1, col2 = st.columns(2)
-                
-                with col1:
-                    st.markdown("**🏋️ Training Metrics (Average)**")
-                    for metric, value in global_train_metrics.items():
-                        st.metric(f"Train {metric}", f"{value:.4f}")
-                
-                with col2:
-                    st.markdown("**🎯 Test Metrics (Average)**")
-                    for metric, value in global_test_metrics.items():
-                        st.metric(f"Test {metric}", f"{value:.4f}")
-                
-                # Detailed Results
-                st.markdown("### 📈 Detailed Cross-Validation Results")
-                
-                tab1, tab2, tab3 = st.tabs(["📊 Test Results", "🏋️ Train Results", "📈 Visualization"])
-                
-                with tab1:
-                    st.markdown("**Test Results by Fold:**")
-                    st.dataframe(evaluation_df, use_container_width=True)
-                    
-                    st.markdown("**Test Results Summary:**")
-                    st.dataframe(evaluation_df.describe(), use_container_width=True)
-                
-                with tab2:
-                    st.markdown("**Train Results Summary:**")
-                    st.dataframe(train_results_df.describe(), use_container_width=True)
-                
-                with tab3:
-                    # Actual vs Predicted plot
-                    fig, ax = plt.subplots(figsize=(8, 6))
-                    
-                    if is_log_transformed:
-                        y_actual_plot = np.exp(y_test_last)
-                        y_pred_plot = np.exp(y_pred_last)
+                    if all_group_candidates:
+                        group_column = st.selectbox("Select Group Column", all_group_candidates)
                     else:
-                        y_actual_plot = y_test_last
-                        y_pred_plot = y_pred_last
-                    
-                    sns.scatterplot(x=y_actual_plot, y=y_pred_plot, alpha=0.6, ax=ax)
-                    ax.plot([y_actual_plot.min(), y_actual_plot.max()], 
-                           [y_actual_plot.min(), y_actual_plot.max()], 'r--', lw=2)
-                    ax.set_xlabel('Actual Values')
-                    ax.set_ylabel('Predicted Values')
-                    ax.set_title('Actual vs Predicted (Last Fold)')
-                    plt.tight_layout()
-                    st.pyplot(fig)
+                        st.warning("No geographic or encoded columns found for grouping")
+                        use_group = False
                 
-                # Model Export
-                st.markdown("### 💾 Model Export")
+                # Label Encoding Option
+                st.markdown("**Label Encoding:**")
+                categorical_cols = analyzer.current_data.select_dtypes(include=['object', 'category']).columns.tolist()
+                
+                if categorical_cols:
+                    encode_column = st.selectbox("Create Encoded Column", ['None'] + categorical_cols)
+                    
+                    if encode_column != 'None' and st.button("🔤 Create Encoded Column"):
+                        success, message = analyzer.apply_label_encoding(encode_column)
+                        if success:
+                            st.success(message)
+                            st.rerun()
+                        else:
+                            st.error(message)
+            
+            # Hyperparameter Configuration
+            st.markdown("### ⚙️ Hyperparameter Configuration")
+            
+            tab1, tab2 = st.tabs(["🎯 Optuna Optimization", "✏️ Manual Parameters"])
+            
+            with tab1:
+                st.markdown("**Optuna Hyperparameter Optimization**")
                 
                 col1, col2, col3 = st.columns(3)
                 
                 with col1:
-                    # Download model
-                    model_filename = f"rf_model_{datetime.now().strftime('%Y%m%d_%H%M')}.pkl"
-                    model_bytes = pickle.dumps(final_model)
-                    
-                    st.download_button(
-                        label="📦 Download Model (.pkl)",
-                        data=model_bytes,
-                        file_name=model_filename,
-                        mime="application/octet-stream"
-                    )
+                    objective_metric = st.selectbox("Optimization Objective", 
+                                                ['R2', 'PE10', 'RT20', 'FSD'], 
+                                                index=0)
+                    n_trials = st.number_input("Number of Trials", min_value=10, max_value=200, value=50)
                 
                 with col2:
-                    # Download evaluation results
-                    eval_csv = evaluation_df.to_csv(index=False)
-                    st.download_button(
-                        label="📊 Download Results (.csv)",
-                        data=eval_csv,
-                        file_name=f"ml_evaluation_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
-                        mime="text/csv"
-                    )
+                    min_sample = st.number_input("Minimum Sample per Group", min_value=1, max_value=10, value=3)
+                    n_splits = st.number_input("Cross-Validation Folds", min_value=3, max_value=20, value=10)
                 
                 with col3:
-                    # Download model info
-                    model_info = {
-                        'timestamp': datetime.now().isoformat(),
-                        'algorithm': 'RandomForestRegressor',
-                        'target_variable': ml_y_column,
-                        'features': ml_x_columns,
-                        'parameters': {
-                            'n_estimators': n_est,
-                            'max_depth': max_d,
-                            'min_samples_split': min_split,
-                            'min_samples_leaf': min_leaf,
-                            'max_features': max_feat,
-                            'random_state': rand_state
-                        },
-                        'group_column': group_column if use_group else None,
-                        'n_splits': n_splits,
-                        'min_sample': min_sample,
-                        'is_log_transformed': is_log_transformed,
-                        'global_test_metrics': global_test_metrics,
-                        'global_train_metrics': global_train_metrics
-                    }
-                    
-                    st.download_button(
-                        label="📋 Download Model Info (.json)",
-                        data=json.dumps(model_info, indent=2),
-                        file_name=f"ml_model_info_{datetime.now().strftime('%Y%m%d_%H%M')}.json",
-                        mime="application/json"
-                    )
+                    random_state = st.number_input("Random State", min_value=1, max_value=1000, value=101)
                 
-            except Exception as e:
-                st.error(f"Model training failed: {str(e)}")
-                st.code(traceback.format_exc())
-        
-        elif not ml_x_columns:
-            st.warning("Please select at least one feature variable to train the model")
-        
-        # Show current model status
-        if 'ml_model' in st.session_state:
-            st.markdown("---")
-            st.success("🤖 Random Forest model is ready!")
-            
-            # Quick model info
-            with st.expander("📋 Current Model Info"):
-                st.write(f"**Algorithm:** Random Forest Regressor")
-                if 'ml_global_test' in st.session_state:
-                    metrics = st.session_state.ml_global_test
-                    st.write(f"**Test R²:** {metrics['R2']:.4f}")
-                    st.write(f"**Test PE10:** {metrics['PE10']:.4f}")
-                    st.write(f"**Test RT20:** {metrics['RT20']:.4f}")
-                    st.write(f"**Test FSD:** {metrics['FSD']:.4f}")
-    
-    else:
-        st.warning("Please load and process data first")
-
-elif st.session_state.processing_step == 'hybrid':
-    if fun_mode:
-        st.markdown('## <img src="https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExbXA4M2Z5aGp3eXpwZGVlZmVwZjR4cjFrbmJvdHY0ODJxZWtvdDZmaiZlcD12MV9naWZzX3NlYXJjaCZjdD1n/3oKIPEqDGUULpEU0aQ/giphy.gif" alt="hybrid gif" style="height:96px; vertical-align:middle;"> Hybrid OLS + Random Forest Model', unsafe_allow_html=True)
-    else:
-        st.markdown('## Hybrid OLS + Random Forest Model')
-    
-    # Explanation of the hybrid approach
-    st.info("🔗 **Hybrid Approach**: Combines the strengths of linear and nonlinear modeling")
-    
-    with st.expander("📚 How the Hybrid Model Works", expanded=False):
-        st.markdown("""
-        **Step-by-Step Process:**
-        
-        1. **Fit OLS Model**: `y_pred_ols = OLS(X, y)` - Captures main linear relationships
-        2. **Calculate Residuals**: `residuals = y_actual - y_pred_ols` - What OLS couldn't explain  
-        3. **Train RF on Residuals**: `RF.fit(X, residuals)` - Captures nonlinear patterns in residuals
-        4. **Final Prediction**: `y_final = y_pred_ols + rf_pred_residuals` - Combines both models
-        
-        **Result**: Linear interpretability + Nonlinear flexibility
-        """)
-    
-    if analyzer.current_data is not None:
-        # Model Configuration
-        st.markdown("### 🎯 Model Configuration")
-        
-        # Get all numeric columns (including transformed ones)
-        numeric_columns = analyzer.current_data.select_dtypes(include=[np.number]).columns.tolist()
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            # Target variable (Y)
-            hybrid_y_column = st.selectbox("Target Variable (Y)", numeric_columns, 
-                                          index=numeric_columns.index('ln_hpm') if 'ln_hpm' in numeric_columns else 0,
-                                          key="hybrid_y_select")
-        
-        with col2:
-            # Cross-validation settings
-            hybrid_n_splits = st.number_input("CV Folds", min_value=3, max_value=20, value=5, key="hybrid_cv_folds")
-        
-        # Independent variables (X) - using checkbox approach for full names
-        st.markdown("**Independent Variables (X):**")
-        available_x_cols = [col for col in numeric_columns if col != hybrid_y_column]
-        
-        # Create columns for checkboxes (3 columns to save space)
-        checkbox_cols = st.columns(3)
-        hybrid_x_columns = []
-        
-        for i, col in enumerate(available_x_cols):
-            with checkbox_cols[i % 3]:
-                if st.checkbox(col, value=(i < 5), key=f"hybrid_x_{col}"):  # Default first 5 selected
-                    hybrid_x_columns.append(col)
-        
-        if hybrid_x_columns:
-            st.success(f"✅ Selected {len(hybrid_x_columns)} features for hybrid model")
-        
-        # Hyperparameter Configuration
-        st.markdown("### ⚙️ Random Forest Parameters (for Residuals)")
-        
-        param_col1, param_col2, param_col3 = st.columns(3)
-        
-        with param_col1:
-            hybrid_n_estimators = st.number_input("n_estimators", min_value=10, max_value=500, value=100, key="hybrid_n_est")
-            hybrid_max_depth = st.number_input("max_depth", min_value=3, max_value=30, value=10, key="hybrid_max_depth")
-        
-        with param_col2:
-            hybrid_min_samples_split = st.number_input("min_samples_split", min_value=2, max_value=20, value=5, key="hybrid_min_split")
-            hybrid_min_samples_leaf = st.number_input("min_samples_leaf", min_value=1, max_value=10, value=2, key="hybrid_min_leaf")
-        
-        with param_col3:
-            hybrid_max_features = st.selectbox("max_features", ['sqrt', 'log2', None], index=0, key="hybrid_max_feat")
-            hybrid_random_state = st.number_input("random_state", min_value=1, max_value=1000, value=42, key="hybrid_random")
-        
-        # Train Hybrid Model
-        st.markdown("### 🚀 Train Hybrid Model")
-        
-        if st.button("🔗 Train Hybrid OLS + RF Model", type="primary") and hybrid_x_columns:
-            try:
-                with st.spinner("Training hybrid model..."):
-                    # Prepare data
-                    model_vars = [hybrid_y_column] + hybrid_x_columns
-                    df_model = analyzer.current_data[model_vars].dropna()
+                # Optuna optimization
+                if st.button("🔍 Run Optuna Optimization", type="primary") and ml_x_columns:
                     
-                    X = df_model[hybrid_x_columns]
-                    y = df_model[hybrid_y_column]
-                    
-                    st.info(f"Training on {len(df_model):,} observations with {len(hybrid_x_columns)} features")
-                    
-                    # Cross-validation setup
-                    from sklearn.model_selection import KFold
-                    kf = KFold(n_splits=hybrid_n_splits, shuffle=True, random_state=hybrid_random_state)
-                    
-                    # Results storage
-                    results = {
-                        'Fold': [],
-                        'OLS_R2': [], 'OLS_MAPE': [], 'OLS_FSD': [], 'OLS_PE10': [], 'OLS_RT20': [],
-                        'Hybrid_R2': [], 'Hybrid_MAPE': [], 'Hybrid_FSD': [], 'Hybrid_PE10': [], 'Hybrid_RT20': [],
-                        'RF_Residual_R2': []  # Just for diagnostic purposes
-                    }
-                    
-                    fold_predictions = []
-                    progress_bar = st.progress(0)
-                    
-                    # Cross-validation loop
-                    for fold, (train_idx, test_idx) in enumerate(kf.split(X)):
-                        progress_bar.progress((fold + 1) / hybrid_n_splits)
+                    def objective(trial):
+                        # Random Forest hyperparameters
+                        n_estimators = trial.suggest_int('n_estimators', 50, 500)
+                        max_depth = trial.suggest_int('max_depth', 3, 20)
+                        min_samples_split = trial.suggest_int('min_samples_split', 2, 10)
+                        min_samples_leaf = trial.suggest_int('min_samples_leaf', 1, 5)
+                        max_features = trial.suggest_categorical('max_features', ['sqrt', 'log2', None])
                         
-                        X_train, X_test = X.iloc[train_idx], X.iloc[test_idx]
-                        y_train, y_test = y.iloc[train_idx], y.iloc[test_idx]
-                        
-                        # STEP 1: Fit OLS Model
-                        X_train_ols = sm.add_constant(X_train)
-                        X_test_ols = sm.add_constant(X_test)
-                        
-                        ols_model = sm.OLS(y_train, X_train_ols).fit()
-                        ols_pred_train = ols_model.predict(X_train_ols)
-                        ols_pred_test = ols_model.predict(X_test_ols)
-                        
-                        # STEP 2: Calculate OLS Residuals
-                        residuals_train = y_train - ols_pred_train
-                        residuals_test = y_test - ols_pred_test  # True residuals for evaluation
-                        
-                        # STEP 3: Train Random Forest on Residuals
+                        # Create model
                         rf_model = RandomForestRegressor(
+                            n_estimators=n_estimators,
+                            max_depth=max_depth,
+                            min_samples_split=min_samples_split,
+                            min_samples_leaf=min_samples_leaf,
+                            max_features=max_features,
+                            random_state=random_state
+                        )
+                        
+                        # Run evaluation
+                        try:
+                            _, _, _, _, global_test_metrics, _, _, _ = analyzer.goval_machine_learning(
+                                ml_x_columns, ml_y_column, rf_model, 
+                                group_column if use_group else None,
+                                n_splits, random_state, min_sample
+                            )
+                            
+                            # Return objective based on selected metric
+                            if objective_metric == 'R2':
+                                return global_test_metrics['R2']  # Maximize
+                            elif objective_metric == 'PE10':
+                                return global_test_metrics['PE10']  # Maximize
+                            elif objective_metric == 'RT20':
+                                return -global_test_metrics['RT20']  # Minimize (so negative to maximize)
+                            elif objective_metric == 'FSD':
+                                return -global_test_metrics['FSD']  # Minimize (so negative to maximize)
+                            
+                        except Exception as e:
+                            st.error(f"Optuna trial failed: {e}")
+                            st.code(traceback.format_exc())
+                            return -999
+                    
+                    with st.spinner(f"Running Optuna optimization for {n_trials} trials..."):
+                        try:
+                            # Create study
+                            direction = 'maximize'
+                            study = optuna.create_study(direction=direction)
+                            study.optimize(objective, n_trials=n_trials)
+                            
+                            # Store best parameters in session state
+                            st.session_state.best_params = study.best_params
+                            st.session_state.best_value = study.best_value
+                            
+                            st.success(f"✅ Optimization completed!")
+                            st.write("**Best Parameters:**")
+                            st.json(study.best_params)
+                            st.write(f"**Best {objective_metric}:** {study.best_value:.4f}")
+                            
+                        except Exception as e:
+                            st.error(f"Optuna optimization failed: {str(e)}")
+            
+            with tab2:
+                st.markdown("**Manual Random Forest Parameters**")
+                
+                # Check if we have best params from Optuna
+                if 'best_params' in st.session_state:
+                    st.info("💡 Optuna found these optimal parameters. You can use them or modify below:")
+                    st.json(st.session_state.best_params)
+                
+                col1, col2, col3 = st.columns(3)
+                
+                with col1:
+                    manual_n_estimators = st.text_input("n_estimators", value="100")
+                    manual_max_depth = st.text_input("max_depth", value="10")
+                
+                with col2:
+                    manual_min_samples_split = st.text_input("min_samples_split", value="2")
+                    manual_min_samples_leaf = st.text_input("min_samples_leaf", value="1")
+                
+                with col3:
+                    manual_max_features = st.selectbox("max_features", ['sqrt', 'log2', 'None'], index=0)
+                    manual_random_state = st.text_input("random_state", value=str(random_state))
+            
+            # Model Training
+            st.markdown("### 🚀 Model Training & Evaluation")
+            
+            if st.button("🤖 Train Random Forest Model", type="primary") and ml_x_columns:
+                
+                try:
+                    # Parse manual parameters
+                    try:
+                        n_est = int(manual_n_estimators)
+                        max_d = int(manual_max_depth) if manual_max_depth != 'None' else None
+                        min_split = int(manual_min_samples_split)
+                        min_leaf = int(manual_min_samples_leaf)
+                        max_feat = manual_max_features if manual_max_features != 'None' else None
+                        rand_state = int(manual_random_state)
+                    except ValueError:
+                        st.error("Please enter valid integer values for parameters")
+                        st.stop()
+                    
+                    # Create Random Forest model
+                    rf_model = RandomForestRegressor(
+                        n_estimators=n_est,
+                        max_depth=max_d,
+                        min_samples_split=min_split,
+                        min_samples_leaf=min_leaf,
+                        max_features=max_feat,
+                        random_state=rand_state
+                    )
+                    
+                    with st.spinner("Training Random Forest model..."):
+                        # Run model training and evaluation
+                        final_model, evaluation_df, train_results_df, global_train_metrics, global_test_metrics, y_test_last, y_pred_last, is_log_transformed = analyzer.goval_machine_learning(
+                            ml_x_columns, ml_y_column, rf_model,
+                            group_column if use_group else None,
+                            n_splits, rand_state, min_sample
+                        )
+                        
+                        # Store model in session state
+                        st.session_state.ml_model = final_model
+                        st.session_state.ml_evaluation_df = evaluation_df
+                        st.session_state.ml_train_df = train_results_df
+                        st.session_state.ml_global_train = global_train_metrics
+                        st.session_state.ml_global_test = global_test_metrics
+                        st.session_state.ml_y_test_last = y_test_last
+                        st.session_state.ml_y_pred_last = y_pred_last
+                        st.session_state.ml_is_log_transformed = is_log_transformed
+                    
+                    st.success("✅ Model training completed!")
+                    
+                    # Display Results
+                    st.markdown("### 📊 Model Results")
+                    
+                    # Global metrics
+                    col1, col2 = st.columns(2)
+                    
+                    with col1:
+                        st.markdown("**🏋️ Training Metrics (Average)**")
+                        for metric, value in global_train_metrics.items():
+                            st.metric(f"Train {metric}", f"{value:.4f}")
+                    
+                    with col2:
+                        st.markdown("**🎯 Test Metrics (Average)**")
+                        for metric, value in global_test_metrics.items():
+                            st.metric(f"Test {metric}", f"{value:.4f}")
+                    
+                    # Detailed Results
+                    st.markdown("### 📈 Detailed Cross-Validation Results")
+                    
+                    tab1, tab2, tab3 = st.tabs(["📊 Test Results", "🏋️ Train Results", "📈 Visualization"])
+                    
+                    with tab1:
+                        st.markdown("**Test Results by Fold:**")
+                        st.dataframe(evaluation_df, use_container_width=True)
+                        
+                        st.markdown("**Test Results Summary:**")
+                        st.dataframe(evaluation_df.describe(), use_container_width=True)
+                    
+                    with tab2:
+                        st.markdown("**Train Results Summary:**")
+                        st.dataframe(train_results_df.describe(), use_container_width=True)
+                    
+                    with tab3:
+                        # Actual vs Predicted plot
+                        fig, ax = plt.subplots(figsize=(8, 6))
+                        
+                        if is_log_transformed:
+                            y_actual_plot = np.exp(y_test_last)
+                            y_pred_plot = np.exp(y_pred_last)
+                        else:
+                            y_actual_plot = y_test_last
+                            y_pred_plot = y_pred_last
+                        
+                        sns.scatterplot(x=y_actual_plot, y=y_pred_plot, alpha=0.6, ax=ax)
+                        ax.plot([y_actual_plot.min(), y_actual_plot.max()], 
+                            [y_actual_plot.min(), y_actual_plot.max()], 'r--', lw=2)
+                        ax.set_xlabel('Actual Values')
+                        ax.set_ylabel('Predicted Values')
+                        ax.set_title('Actual vs Predicted (Last Fold)')
+                        plt.tight_layout()
+                        st.pyplot(fig)
+                    
+                    # Model Export
+                    st.markdown("### 💾 Model Export")
+                    
+                    col1, col2, col3 = st.columns(3)
+                    
+                    with col1:
+                        # Download model
+                        model_filename = f"rf_model_{datetime.now().strftime('%Y%m%d_%H%M')}.pkl"
+                        model_bytes = pickle.dumps(final_model)
+                        
+                        st.download_button(
+                            label="📦 Download Model (.pkl)",
+                            data=model_bytes,
+                            file_name=model_filename,
+                            mime="application/octet-stream"
+                        )
+                    
+                    with col2:
+                        # Download evaluation results
+                        eval_csv = evaluation_df.to_csv(index=False)
+                        st.download_button(
+                            label="📊 Download Results (.csv)",
+                            data=eval_csv,
+                            file_name=f"ml_evaluation_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
+                            mime="text/csv"
+                        )
+                    
+                    with col3:
+                        # Download model info
+                        model_info = {
+                            'timestamp': datetime.now().isoformat(),
+                            'algorithm': 'RandomForestRegressor',
+                            'target_variable': ml_y_column,
+                            'features': ml_x_columns,
+                            'parameters': {
+                                'n_estimators': n_est,
+                                'max_depth': max_d,
+                                'min_samples_split': min_split,
+                                'min_samples_leaf': min_leaf,
+                                'max_features': max_feat,
+                                'random_state': rand_state
+                            },
+                            'group_column': group_column if use_group else None,
+                            'n_splits': n_splits,
+                            'min_sample': min_sample,
+                            'is_log_transformed': is_log_transformed,
+                            'global_test_metrics': global_test_metrics,
+                            'global_train_metrics': global_train_metrics
+                        }
+                        
+                        st.download_button(
+                            label="📋 Download Model Info (.json)",
+                            data=json.dumps(model_info, indent=2),
+                            file_name=f"ml_model_info_{datetime.now().strftime('%Y%m%d_%H%M')}.json",
+                            mime="application/json"
+                        )
+                    
+                except Exception as e:
+                    st.error(f"Model training failed: {str(e)}")
+                    st.code(traceback.format_exc())
+            
+            elif not ml_x_columns:
+                st.warning("Please select at least one feature variable to train the model")
+            
+            # Show current model status
+            if 'ml_model' in st.session_state:
+                st.markdown("---")
+                st.success("🤖 Random Forest model is ready!")
+                
+                # Quick model info
+                with st.expander("📋 Current Model Info"):
+                    st.write(f"**Algorithm:** Random Forest Regressor")
+                    if 'ml_global_test' in st.session_state:
+                        metrics = st.session_state.ml_global_test
+                        st.write(f"**Test R²:** {metrics['R2']:.4f}")
+                        st.write(f"**Test PE10:** {metrics['PE10']:.4f}")
+                        st.write(f"**Test RT20:** {metrics['RT20']:.4f}")
+                        st.write(f"**Test FSD:** {metrics['FSD']:.4f}")
+        
+        else:
+            st.warning("Please load and process data first")
+
+    elif st.session_state.advanced_step == 'hybrid':
+        if fun_mode:
+            st.markdown('## <img src="https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExbXA4M2Z5aGp3eXpwZGVlZmVwZjR4cjFrbmJvdHY0ODJxZWtvdDZmaiZlcD12MV9naWZzX3NlYXJjaCZjdD1n/3oKIPEqDGUULpEU0aQ/giphy.gif" alt="hybrid gif" style="height:96px; vertical-align:middle;"> Hybrid OLS + Random Forest Model', unsafe_allow_html=True)
+        else:
+            st.markdown('## Hybrid OLS + Random Forest Model')
+        
+        # Explanation of the hybrid approach
+        st.info("🔗 **Hybrid Approach**: Combines the strengths of linear and nonlinear modeling")
+        
+        with st.expander("📚 How the Hybrid Model Works", expanded=False):
+            st.markdown("""
+            **Step-by-Step Process:**
+            
+            1. **Fit OLS Model**: `y_pred_ols = OLS(X, y)` - Captures main linear relationships
+            2. **Calculate Residuals**: `residuals = y_actual - y_pred_ols` - What OLS couldn't explain  
+            3. **Train RF on Residuals**: `RF.fit(X, residuals)` - Captures nonlinear patterns in residuals
+            4. **Final Prediction**: `y_final = y_pred_ols + rf_pred_residuals` - Combines both models
+            
+            **Result**: Linear interpretability + Nonlinear flexibility
+            """)
+        
+        if analyzer.current_data is not None:
+            # Model Configuration
+            st.markdown("### 🎯 Model Configuration")
+            
+            # Get all numeric columns (including transformed ones)
+            numeric_columns = analyzer.current_data.select_dtypes(include=[np.number]).columns.tolist()
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                # Target variable (Y)
+                hybrid_y_column = st.selectbox("Target Variable (Y)", numeric_columns, 
+                                            index=numeric_columns.index('ln_hpm') if 'ln_hpm' in numeric_columns else 0,
+                                            key="hybrid_y_select")
+            
+            with col2:
+                # Cross-validation settings
+                hybrid_n_splits = st.number_input("CV Folds", min_value=3, max_value=20, value=5, key="hybrid_cv_folds")
+            
+            # Independent variables (X) - using checkbox approach for full names
+            st.markdown("**Independent Variables (X):**")
+            available_x_cols = [col for col in numeric_columns if col != hybrid_y_column]
+            
+            # Create columns for checkboxes (3 columns to save space)
+            checkbox_cols = st.columns(3)
+            hybrid_x_columns = []
+            
+            for i, col in enumerate(available_x_cols):
+                with checkbox_cols[i % 3]:
+                    if st.checkbox(col, value=(i < 5), key=f"hybrid_x_{col}"):  # Default first 5 selected
+                        hybrid_x_columns.append(col)
+            
+            if hybrid_x_columns:
+                st.success(f"✅ Selected {len(hybrid_x_columns)} features for hybrid model")
+            
+            # Hyperparameter Configuration
+            st.markdown("### ⚙️ Random Forest Parameters (for Residuals)")
+            
+            param_col1, param_col2, param_col3 = st.columns(3)
+            
+            with param_col1:
+                hybrid_n_estimators = st.number_input("n_estimators", min_value=10, max_value=500, value=100, key="hybrid_n_est")
+                hybrid_max_depth = st.number_input("max_depth", min_value=3, max_value=30, value=10, key="hybrid_max_depth")
+            
+            with param_col2:
+                hybrid_min_samples_split = st.number_input("min_samples_split", min_value=2, max_value=20, value=5, key="hybrid_min_split")
+                hybrid_min_samples_leaf = st.number_input("min_samples_leaf", min_value=1, max_value=10, value=2, key="hybrid_min_leaf")
+            
+            with param_col3:
+                hybrid_max_features = st.selectbox("max_features", ['sqrt', 'log2', None], index=0, key="hybrid_max_feat")
+                hybrid_random_state = st.number_input("random_state", min_value=1, max_value=1000, value=42, key="hybrid_random")
+            
+            # Train Hybrid Model
+            st.markdown("### 🚀 Train Hybrid Model")
+            
+            if st.button("🔗 Train Hybrid OLS + RF Model", type="primary") and hybrid_x_columns:
+                try:
+                    with st.spinner("Training hybrid model..."):
+                        # Prepare data
+                        model_vars = [hybrid_y_column] + hybrid_x_columns
+                        df_model = analyzer.current_data[model_vars].dropna()
+                        
+                        X = df_model[hybrid_x_columns]
+                        y = df_model[hybrid_y_column]
+                        
+                        st.info(f"Training on {len(df_model):,} observations with {len(hybrid_x_columns)} features")
+                        
+                        # Cross-validation setup
+                        from sklearn.model_selection import KFold
+                        kf = KFold(n_splits=hybrid_n_splits, shuffle=True, random_state=hybrid_random_state)
+                        
+                        # Results storage
+                        results = {
+                            'Fold': [],
+                            'OLS_R2': [], 'OLS_MAPE': [], 'OLS_FSD': [], 'OLS_PE10': [], 'OLS_RT20': [],
+                            'Hybrid_R2': [], 'Hybrid_MAPE': [], 'Hybrid_FSD': [], 'Hybrid_PE10': [], 'Hybrid_RT20': [],
+                            'RF_Residual_R2': []  # Just for diagnostic purposes
+                        }
+                        
+                        fold_predictions = []
+                        progress_bar = st.progress(0)
+                        
+                        # Cross-validation loop
+                        for fold, (train_idx, test_idx) in enumerate(kf.split(X)):
+                            progress_bar.progress((fold + 1) / hybrid_n_splits)
+                            
+                            X_train, X_test = X.iloc[train_idx], X.iloc[test_idx]
+                            y_train, y_test = y.iloc[train_idx], y.iloc[test_idx]
+                            
+                            # STEP 1: Fit OLS Model
+                            X_train_ols = sm.add_constant(X_train)
+                            X_test_ols = sm.add_constant(X_test)
+                            
+                            ols_model = sm.OLS(y_train, X_train_ols).fit()
+                            ols_pred_train = ols_model.predict(X_train_ols)
+                            ols_pred_test = ols_model.predict(X_test_ols)
+                            
+                            # STEP 2: Calculate OLS Residuals
+                            residuals_train = y_train - ols_pred_train
+                            residuals_test = y_test - ols_pred_test  # True residuals for evaluation
+                            
+                            # STEP 3: Train Random Forest on Residuals
+                            rf_model = RandomForestRegressor(
+                                n_estimators=hybrid_n_estimators,
+                                max_depth=hybrid_max_depth,
+                                min_samples_split=hybrid_min_samples_split,
+                                min_samples_leaf=hybrid_min_samples_leaf,
+                                max_features=hybrid_max_features,
+                                random_state=hybrid_random_state
+                            )
+                            
+                            # Train RF to predict residuals
+                            rf_model.fit(X_train, residuals_train)
+                            rf_pred_residuals_test = rf_model.predict(X_test)
+                            
+                            # STEP 4: Make Final Hybrid Prediction
+                            hybrid_pred_test = ols_pred_test + rf_pred_residuals_test
+                            
+                            # STEP 5: Evaluate Models (Only OLS and Hybrid on actual target)
+                            ols_metrics = evaluate(y_test, ols_pred_test, squared=False)
+                            hybrid_metrics = evaluate(y_test, hybrid_pred_test, squared=False)
+                            
+                            # Diagnostic: How well does RF predict the true residuals?
+                            rf_residual_r2 = r2_score(residuals_test, rf_pred_residuals_test)
+                            
+                            # Store results
+                            results['Fold'].append(f"Fold-{fold + 1}")
+                            
+                            # OLS metrics
+                            results['OLS_R2'].append(ols_metrics['R2'])
+                            results['OLS_MAPE'].append(ols_metrics['MAPE'])
+                            results['OLS_FSD'].append(ols_metrics['FSD'])
+                            results['OLS_PE10'].append(ols_metrics['PE10'])
+                            results['OLS_RT20'].append(ols_metrics['RT20'])
+                            
+                            # Hybrid metrics
+                            results['Hybrid_R2'].append(hybrid_metrics['R2'])
+                            results['Hybrid_MAPE'].append(hybrid_metrics['MAPE'])
+                            results['Hybrid_FSD'].append(hybrid_metrics['FSD'])
+                            results['Hybrid_PE10'].append(hybrid_metrics['PE10'])
+                            results['Hybrid_RT20'].append(hybrid_metrics['RT20'])
+                            
+                            # Diagnostic metric
+                            results['RF_Residual_R2'].append(rf_residual_r2)
+                            
+                            # Store predictions for plotting (last fold)
+                            if fold == hybrid_n_splits - 1:
+                                fold_predictions = {
+                                    'y_actual': y_test,
+                                    'ols_pred': ols_pred_test,
+                                    'hybrid_pred': hybrid_pred_test,
+                                    'actual_residuals': residuals_test,
+                                    'rf_pred_residuals': rf_pred_residuals_test
+                                }
+                        
+                        progress_bar.empty()
+                        
+                        # Calculate average metrics
+                        avg_metrics = {
+                            'OLS': {
+                                'R2': np.mean(results['OLS_R2']),
+                                'MAPE': np.mean(results['OLS_MAPE']),
+                                'FSD': np.mean(results['OLS_FSD']),
+                                'PE10': np.mean(results['OLS_PE10']),
+                                'RT20': np.mean(results['OLS_RT20'])
+                            },
+                            'Hybrid': {
+                                'R2': np.mean(results['Hybrid_R2']),
+                                'MAPE': np.mean(results['Hybrid_MAPE']),
+                                'FSD': np.mean(results['Hybrid_FSD']),
+                                'PE10': np.mean(results['Hybrid_PE10']),
+                                'RT20': np.mean(results['Hybrid_RT20'])
+                            },
+                            'RF_Residual_R2_avg': np.mean(results['RF_Residual_R2'])
+                        }
+                        
+                        # Store in session state
+                        st.session_state.hybrid_results = results
+                        st.session_state.hybrid_avg_metrics = avg_metrics
+                        st.session_state.hybrid_predictions = fold_predictions
+                        st.session_state.hybrid_model_info = {
+                            'target': hybrid_y_column,
+                            'features': hybrid_x_columns,
+                            'n_observations': len(df_model),
+                            'n_splits': hybrid_n_splits,
+                            'rf_params': {
+                                'n_estimators': hybrid_n_estimators,
+                                'max_depth': hybrid_max_depth,
+                                'min_samples_split': hybrid_min_samples_split,
+                                'min_samples_leaf': hybrid_min_samples_leaf,
+                                'max_features': hybrid_max_features,
+                                'random_state': hybrid_random_state
+                            }
+                        }
+                    
+                    st.success("✅ Hybrid model training completed!")
+                    
+                    # Performance Improvement Analysis
+                    improvement_r2 = avg_metrics['Hybrid']['R2'] - avg_metrics['OLS']['R2']
+                    improvement_mape = avg_metrics['OLS']['MAPE'] - avg_metrics['Hybrid']['MAPE']
+                    improvement_fsd = avg_metrics['OLS']['FSD'] - avg_metrics['Hybrid']['FSD']
+                    
+                    if improvement_r2 > 0.01:  # Meaningful improvement
+                        st.success(f"🎉 **Significant Improvement!** Hybrid model improved R² by {improvement_r2:.4f} ({improvement_r2/avg_metrics['OLS']['R2']*100:.1f}% relative improvement)")
+                    elif improvement_r2 > 0.001:
+                        st.info(f"📊 **Modest Improvement**: Hybrid model improved R² by {improvement_r2:.4f}")
+                    else:
+                        st.warning(f"⚠️ **Limited Improvement**: R² change = {improvement_r2:.4f}. Linear relationships may dominate this dataset.")
+                    
+                    # Display Results
+                    st.markdown("### 📊 Model Comparison Results")
+                    
+                    # Main metrics comparison
+                    col1, col2, col3 = st.columns(3)
+                    
+                    with col1:
+                        st.markdown("**🔵 OLS Only**")
+                        st.metric("R²", f"{avg_metrics['OLS']['R2']:.4f}")
+                        st.metric("MAPE", f"{avg_metrics['OLS']['MAPE']:.4f}")
+                        st.metric("FSD", f"{avg_metrics['OLS']['FSD']:.4f}")
+                        st.metric("PE10", f"{avg_metrics['OLS']['PE10']:.4f}")
+                        st.metric("RT20", f"{avg_metrics['OLS']['RT20']:.4f}")
+                    
+                    with col2:
+                        st.markdown("**🟡 Hybrid (OLS + RF)**")
+                        st.metric("R²", f"{avg_metrics['Hybrid']['R2']:.4f}", 
+                                delta=f"{improvement_r2:+.4f}")
+                        st.metric("MAPE", f"{avg_metrics['Hybrid']['MAPE']:.4f}", 
+                                delta=f"{-improvement_mape:+.4f}")
+                        st.metric("FSD", f"{avg_metrics['Hybrid']['FSD']:.4f}",
+                                delta=f"{-improvement_fsd:+.4f}")
+                        st.metric("PE10", f"{avg_metrics['Hybrid']['PE10']:.4f}",
+                                delta=f"{avg_metrics['Hybrid']['PE10'] - avg_metrics['OLS']['PE10']:+.4f}")
+                        st.metric("RT20", f"{avg_metrics['Hybrid']['RT20']:.4f}",
+                                delta=f"{avg_metrics['Hybrid']['RT20'] - avg_metrics['OLS']['RT20']:+.4f}")
+                    
+                    with col3:
+                        st.markdown("**🔍 Diagnostics**")
+                        st.metric("RF Residual R²", f"{avg_metrics['RF_Residual_R2_avg']:.4f}")
+                        st.info("This shows how well Random Forest captures the patterns in OLS residuals")
+                        
+                        if avg_metrics['RF_Residual_R2_avg'] > 0.1:
+                            st.success("✅ RF found meaningful patterns in residuals")
+                        else:
+                            st.warning("⚠️ RF found limited patterns in residuals")
+                    
+                    # Detailed results table
+                    st.markdown("### 📈 Detailed Cross-Validation Results")
+                    
+                    # Create clean results dataframe
+                    display_results = pd.DataFrame({
+                        'Fold': results['Fold'],
+                        'OLS_R²': results['OLS_R2'],
+                        'OLS_MAPE': results['OLS_MAPE'],
+                        'OLS_FSD': results['OLS_FSD'],
+                        'Hybrid_R²': results['Hybrid_R2'],
+                        'Hybrid_MAPE': results['Hybrid_MAPE'],
+                        'Hybrid_FSD': results['Hybrid_FSD'],
+                        'R²_Improvement': [h - o for h, o in zip(results['Hybrid_R2'], results['OLS_R2'])],
+                        'RF_Residual_R²': results['RF_Residual_R2']
+                    })
+                    
+                    st.dataframe(display_results.style.format({
+                        'OLS_R²': '{:.4f}',
+                        'OLS_MAPE': '{:.4f}',
+                        'OLS_FSD': '{:.4f}',
+                        'Hybrid_R²': '{:.4f}',
+                        'Hybrid_MAPE': '{:.4f}',
+                        'Hybrid_FSD': '{:.4f}',
+                        'R²_Improvement': '{:+.4f}',
+                        'RF_Residual_R²': '{:.4f}'
+                    }), use_container_width=True)
+                    
+                    # Visualization
+                    st.markdown("### 📊 Model Performance Visualization")
+                    
+                    # Create comparison plots
+                    fig, axes = plt.subplots(2, 2, figsize=(12, 10))
+                    
+                    # Plot 1: OLS vs Actual
+                    axes[0,0].scatter(fold_predictions['y_actual'], fold_predictions['ols_pred'], alpha=0.6, color='blue')
+                    axes[0,0].plot([fold_predictions['y_actual'].min(), fold_predictions['y_actual'].max()], 
+                                [fold_predictions['y_actual'].min(), fold_predictions['y_actual'].max()], 'r--', lw=2)
+                    axes[0,0].set_xlabel('Actual Values')
+                    axes[0,0].set_ylabel('OLS Predictions')
+                    axes[0,0].set_title(f'OLS Only\nR² = {avg_metrics["OLS"]["R2"]:.3f}')
+                    
+                    # Plot 2: Hybrid vs Actual
+                    axes[0,1].scatter(fold_predictions['y_actual'], fold_predictions['hybrid_pred'], alpha=0.6, color='orange')
+                    axes[0,1].plot([fold_predictions['y_actual'].min(), fold_predictions['y_actual'].max()], 
+                                [fold_predictions['y_actual'].min(), fold_predictions['y_actual'].max()], 'r--', lw=2)
+                    axes[0,1].set_xlabel('Actual Values')
+                    axes[0,1].set_ylabel('Hybrid Predictions')
+                    axes[0,1].set_title(f'Hybrid (OLS + RF)\nR² = {avg_metrics["Hybrid"]["R2"]:.3f}')
+                    
+                    # Plot 3: RF Residual Prediction vs Actual Residuals
+                    axes[1,0].scatter(fold_predictions['actual_residuals'], fold_predictions['rf_pred_residuals'], 
+                                    alpha=0.6, color='green')
+                    axes[1,0].plot([fold_predictions['actual_residuals'].min(), fold_predictions['actual_residuals'].max()], 
+                                [fold_predictions['actual_residuals'].min(), fold_predictions['actual_residuals'].max()], 'r--', lw=2)
+                    axes[1,0].set_xlabel('Actual OLS Residuals')
+                    axes[1,0].set_ylabel('RF Predicted Residuals')
+                    axes[1,0].set_title(f'RF Residual Prediction\nR² = {avg_metrics["RF_Residual_R2_avg"]:.3f}')
+                    
+                    # Plot 4: Improvement per fold
+                    folds = range(1, len(results['Fold']) + 1)
+                    improvements = [h - o for h, o in zip(results['Hybrid_R2'], results['OLS_R2'])]
+                    axes[1,1].bar(folds, improvements, alpha=0.7, color='purple')
+                    axes[1,1].axhline(y=0, color='black', linestyle='-', alpha=0.3)
+                    axes[1,1].set_xlabel('Fold')
+                    axes[1,1].set_ylabel('R² Improvement')
+                    axes[1,1].set_title('Hybrid Improvement by Fold')
+                    axes[1,1].set_xticks(folds)
+                    
+                    plt.tight_layout()
+                    st.pyplot(fig)
+                    
+                    # Train final models on full dataset for saving
+                    st.markdown("### 💾 Save Trained Models")
+                    
+                    with st.spinner("Training final models on full dataset..."):
+                        # Prepare full dataset
+                        X_full = df_model[hybrid_x_columns]
+                        y_full = df_model[hybrid_y_column]
+                        
+                        # Train final OLS model
+                        X_full_ols = sm.add_constant(X_full)
+                        final_ols_model = sm.OLS(y_full, X_full_ols).fit()
+                        ols_pred_full = final_ols_model.predict(X_full_ols)
+                        residuals_full = y_full - ols_pred_full
+                        
+                        # Train final RF model on full dataset residuals
+                        final_rf_model = RandomForestRegressor(
                             n_estimators=hybrid_n_estimators,
                             max_depth=hybrid_max_depth,
                             min_samples_split=hybrid_min_samples_split,
@@ -2315,442 +2569,212 @@ elif st.session_state.processing_step == 'hybrid':
                             max_features=hybrid_max_features,
                             random_state=hybrid_random_state
                         )
+                        final_rf_model.fit(X_full, residuals_full)
                         
-                        # Train RF to predict residuals
-                        rf_model.fit(X_train, residuals_train)
-                        rf_pred_residuals_test = rf_model.predict(X_test)
-                        
-                        # STEP 4: Make Final Hybrid Prediction
-                        hybrid_pred_test = ols_pred_test + rf_pred_residuals_test
-                        
-                        # STEP 5: Evaluate Models (Only OLS and Hybrid on actual target)
-                        ols_metrics = evaluate(y_test, ols_pred_test, squared=False)
-                        hybrid_metrics = evaluate(y_test, hybrid_pred_test, squared=False)
-                        
-                        # Diagnostic: How well does RF predict the true residuals?
-                        rf_residual_r2 = r2_score(residuals_test, rf_pred_residuals_test)
-                        
-                        # Store results
-                        results['Fold'].append(f"Fold-{fold + 1}")
-                        
-                        # OLS metrics
-                        results['OLS_R2'].append(ols_metrics['R2'])
-                        results['OLS_MAPE'].append(ols_metrics['MAPE'])
-                        results['OLS_FSD'].append(ols_metrics['FSD'])
-                        results['OLS_PE10'].append(ols_metrics['PE10'])
-                        results['OLS_RT20'].append(ols_metrics['RT20'])
-                        
-                        # Hybrid metrics
-                        results['Hybrid_R2'].append(hybrid_metrics['R2'])
-                        results['Hybrid_MAPE'].append(hybrid_metrics['MAPE'])
-                        results['Hybrid_FSD'].append(hybrid_metrics['FSD'])
-                        results['Hybrid_PE10'].append(hybrid_metrics['PE10'])
-                        results['Hybrid_RT20'].append(hybrid_metrics['RT20'])
-                        
-                        # Diagnostic metric
-                        results['RF_Residual_R2'].append(rf_residual_r2)
-                        
-                        # Store predictions for plotting (last fold)
-                        if fold == hybrid_n_splits - 1:
-                            fold_predictions = {
-                                'y_actual': y_test,
-                                'ols_pred': ols_pred_test,
-                                'hybrid_pred': hybrid_pred_test,
-                                'actual_residuals': residuals_test,
-                                'rf_pred_residuals': rf_pred_residuals_test
+                        # Store final models in session state
+                        st.session_state.final_ols_model = final_ols_model
+                        st.session_state.final_rf_model = final_rf_model
+                        st.session_state.hybrid_feature_names = hybrid_x_columns
+                    
+                    st.success("✅ Final models trained and ready for download!")
+                    
+                    # Model download section
+                    col1, col2, col3 = st.columns(3)
+                    
+                    with col1:
+                        # Download OLS model
+                        ols_model_bytes = pickle.dumps(st.session_state.final_ols_model)
+                        st.download_button(
+                            label="📦 Download OLS Model (.pkl)",
+                            data=ols_model_bytes,
+                            file_name=f"hybrid_ols_model_{datetime.now().strftime('%Y%m%d_%H%M')}.pkl",
+                            mime="application/octet-stream",
+                            help="Download the trained OLS model (Step 1 of hybrid)"
+                        )
+                    
+                    with col2:
+                        # Download RF model
+                        rf_model_bytes = pickle.dumps(st.session_state.final_rf_model)
+                        st.download_button(
+                            label="📦 Download RF Model (.pkl)",
+                            data=rf_model_bytes,
+                            file_name=f"hybrid_rf_model_{datetime.now().strftime('%Y%m%d_%H%M')}.pkl",
+                            mime="application/octet-stream",
+                            help="Download the Random Forest model trained on OLS residuals (Step 2 of hybrid)"
+                        )
+                    
+                    with col3:
+                        # Download both models as a package
+                        hybrid_package = {
+                            'ols_model': st.session_state.final_ols_model,
+                            'rf_model': st.session_state.final_rf_model,
+                            'feature_names': hybrid_x_columns,
+                            'target_name': hybrid_y_column,
+                            'model_info': st.session_state.hybrid_model_info,
+                            'performance_metrics': avg_metrics,
+                            'usage_instructions': {
+                                'step1': 'Load both models',
+                                'step2': 'Get OLS prediction: ols_pred = ols_model.predict(X_with_constant)',
+                                'step3': 'Get RF residual prediction: rf_pred = rf_model.predict(X)',
+                                'step4': 'Final prediction: final_pred = ols_pred + rf_pred'
                             }
-                    
-                    progress_bar.empty()
-                    
-                    # Calculate average metrics
-                    avg_metrics = {
-                        'OLS': {
-                            'R2': np.mean(results['OLS_R2']),
-                            'MAPE': np.mean(results['OLS_MAPE']),
-                            'FSD': np.mean(results['OLS_FSD']),
-                            'PE10': np.mean(results['OLS_PE10']),
-                            'RT20': np.mean(results['OLS_RT20'])
-                        },
-                        'Hybrid': {
-                            'R2': np.mean(results['Hybrid_R2']),
-                            'MAPE': np.mean(results['Hybrid_MAPE']),
-                            'FSD': np.mean(results['Hybrid_FSD']),
-                            'PE10': np.mean(results['Hybrid_PE10']),
-                            'RT20': np.mean(results['Hybrid_RT20'])
-                        },
-                        'RF_Residual_R2_avg': np.mean(results['RF_Residual_R2'])
-                    }
-                    
-                    # Store in session state
-                    st.session_state.hybrid_results = results
-                    st.session_state.hybrid_avg_metrics = avg_metrics
-                    st.session_state.hybrid_predictions = fold_predictions
-                    st.session_state.hybrid_model_info = {
-                        'target': hybrid_y_column,
-                        'features': hybrid_x_columns,
-                        'n_observations': len(df_model),
-                        'n_splits': hybrid_n_splits,
-                        'rf_params': {
-                            'n_estimators': hybrid_n_estimators,
-                            'max_depth': hybrid_max_depth,
-                            'min_samples_split': hybrid_min_samples_split,
-                            'min_samples_leaf': hybrid_min_samples_leaf,
-                            'max_features': hybrid_max_features,
-                            'random_state': hybrid_random_state
                         }
-                    }
-                
-                st.success("✅ Hybrid model training completed!")
-                
-                # Performance Improvement Analysis
-                improvement_r2 = avg_metrics['Hybrid']['R2'] - avg_metrics['OLS']['R2']
-                improvement_mape = avg_metrics['OLS']['MAPE'] - avg_metrics['Hybrid']['MAPE']
-                improvement_fsd = avg_metrics['OLS']['FSD'] - avg_metrics['Hybrid']['FSD']
-                
-                if improvement_r2 > 0.01:  # Meaningful improvement
-                    st.success(f"🎉 **Significant Improvement!** Hybrid model improved R² by {improvement_r2:.4f} ({improvement_r2/avg_metrics['OLS']['R2']*100:.1f}% relative improvement)")
-                elif improvement_r2 > 0.001:
-                    st.info(f"📊 **Modest Improvement**: Hybrid model improved R² by {improvement_r2:.4f}")
-                else:
-                    st.warning(f"⚠️ **Limited Improvement**: R² change = {improvement_r2:.4f}. Linear relationships may dominate this dataset.")
-                
-                # Display Results
-                st.markdown("### 📊 Model Comparison Results")
-                
-                # Main metrics comparison
-                col1, col2, col3 = st.columns(3)
-                
-                with col1:
-                    st.markdown("**🔵 OLS Only**")
-                    st.metric("R²", f"{avg_metrics['OLS']['R2']:.4f}")
-                    st.metric("MAPE", f"{avg_metrics['OLS']['MAPE']:.4f}")
-                    st.metric("FSD", f"{avg_metrics['OLS']['FSD']:.4f}")
-                    st.metric("PE10", f"{avg_metrics['OLS']['PE10']:.4f}")
-                    st.metric("RT20", f"{avg_metrics['OLS']['RT20']:.4f}")
-                
-                with col2:
-                    st.markdown("**🟡 Hybrid (OLS + RF)**")
-                    st.metric("R²", f"{avg_metrics['Hybrid']['R2']:.4f}", 
-                             delta=f"{improvement_r2:+.4f}")
-                    st.metric("MAPE", f"{avg_metrics['Hybrid']['MAPE']:.4f}", 
-                             delta=f"{-improvement_mape:+.4f}")
-                    st.metric("FSD", f"{avg_metrics['Hybrid']['FSD']:.4f}",
-                             delta=f"{-improvement_fsd:+.4f}")
-                    st.metric("PE10", f"{avg_metrics['Hybrid']['PE10']:.4f}",
-                             delta=f"{avg_metrics['Hybrid']['PE10'] - avg_metrics['OLS']['PE10']:+.4f}")
-                    st.metric("RT20", f"{avg_metrics['Hybrid']['RT20']:.4f}",
-                             delta=f"{avg_metrics['Hybrid']['RT20'] - avg_metrics['OLS']['RT20']:+.4f}")
-                
-                with col3:
-                    st.markdown("**🔍 Diagnostics**")
-                    st.metric("RF Residual R²", f"{avg_metrics['RF_Residual_R2_avg']:.4f}")
-                    st.info("This shows how well Random Forest captures the patterns in OLS residuals")
-                    
-                    if avg_metrics['RF_Residual_R2_avg'] > 0.1:
-                        st.success("✅ RF found meaningful patterns in residuals")
-                    else:
-                        st.warning("⚠️ RF found limited patterns in residuals")
-                
-                # Detailed results table
-                st.markdown("### 📈 Detailed Cross-Validation Results")
-                
-                # Create clean results dataframe
-                display_results = pd.DataFrame({
-                    'Fold': results['Fold'],
-                    'OLS_R²': results['OLS_R2'],
-                    'OLS_MAPE': results['OLS_MAPE'],
-                    'OLS_FSD': results['OLS_FSD'],
-                    'Hybrid_R²': results['Hybrid_R2'],
-                    'Hybrid_MAPE': results['Hybrid_MAPE'],
-                    'Hybrid_FSD': results['Hybrid_FSD'],
-                    'R²_Improvement': [h - o for h, o in zip(results['Hybrid_R2'], results['OLS_R2'])],
-                    'RF_Residual_R²': results['RF_Residual_R2']
-                })
-                
-                st.dataframe(display_results.style.format({
-                    'OLS_R²': '{:.4f}',
-                    'OLS_MAPE': '{:.4f}',
-                    'OLS_FSD': '{:.4f}',
-                    'Hybrid_R²': '{:.4f}',
-                    'Hybrid_MAPE': '{:.4f}',
-                    'Hybrid_FSD': '{:.4f}',
-                    'R²_Improvement': '{:+.4f}',
-                    'RF_Residual_R²': '{:.4f}'
-                }), use_container_width=True)
-                
-                # Visualization
-                st.markdown("### 📊 Model Performance Visualization")
-                
-                # Create comparison plots
-                fig, axes = plt.subplots(2, 2, figsize=(12, 10))
-                
-                # Plot 1: OLS vs Actual
-                axes[0,0].scatter(fold_predictions['y_actual'], fold_predictions['ols_pred'], alpha=0.6, color='blue')
-                axes[0,0].plot([fold_predictions['y_actual'].min(), fold_predictions['y_actual'].max()], 
-                              [fold_predictions['y_actual'].min(), fold_predictions['y_actual'].max()], 'r--', lw=2)
-                axes[0,0].set_xlabel('Actual Values')
-                axes[0,0].set_ylabel('OLS Predictions')
-                axes[0,0].set_title(f'OLS Only\nR² = {avg_metrics["OLS"]["R2"]:.3f}')
-                
-                # Plot 2: Hybrid vs Actual
-                axes[0,1].scatter(fold_predictions['y_actual'], fold_predictions['hybrid_pred'], alpha=0.6, color='orange')
-                axes[0,1].plot([fold_predictions['y_actual'].min(), fold_predictions['y_actual'].max()], 
-                              [fold_predictions['y_actual'].min(), fold_predictions['y_actual'].max()], 'r--', lw=2)
-                axes[0,1].set_xlabel('Actual Values')
-                axes[0,1].set_ylabel('Hybrid Predictions')
-                axes[0,1].set_title(f'Hybrid (OLS + RF)\nR² = {avg_metrics["Hybrid"]["R2"]:.3f}')
-                
-                # Plot 3: RF Residual Prediction vs Actual Residuals
-                axes[1,0].scatter(fold_predictions['actual_residuals'], fold_predictions['rf_pred_residuals'], 
-                                 alpha=0.6, color='green')
-                axes[1,0].plot([fold_predictions['actual_residuals'].min(), fold_predictions['actual_residuals'].max()], 
-                              [fold_predictions['actual_residuals'].min(), fold_predictions['actual_residuals'].max()], 'r--', lw=2)
-                axes[1,0].set_xlabel('Actual OLS Residuals')
-                axes[1,0].set_ylabel('RF Predicted Residuals')
-                axes[1,0].set_title(f'RF Residual Prediction\nR² = {avg_metrics["RF_Residual_R2_avg"]:.3f}')
-                
-                # Plot 4: Improvement per fold
-                folds = range(1, len(results['Fold']) + 1)
-                improvements = [h - o for h, o in zip(results['Hybrid_R2'], results['OLS_R2'])]
-                axes[1,1].bar(folds, improvements, alpha=0.7, color='purple')
-                axes[1,1].axhline(y=0, color='black', linestyle='-', alpha=0.3)
-                axes[1,1].set_xlabel('Fold')
-                axes[1,1].set_ylabel('R² Improvement')
-                axes[1,1].set_title('Hybrid Improvement by Fold')
-                axes[1,1].set_xticks(folds)
-                
-                plt.tight_layout()
-                st.pyplot(fig)
-                
-                # Train final models on full dataset for saving
-                st.markdown("### 💾 Save Trained Models")
-                
-                with st.spinner("Training final models on full dataset..."):
-                    # Prepare full dataset
-                    X_full = df_model[hybrid_x_columns]
-                    y_full = df_model[hybrid_y_column]
-                    
-                    # Train final OLS model
-                    X_full_ols = sm.add_constant(X_full)
-                    final_ols_model = sm.OLS(y_full, X_full_ols).fit()
-                    ols_pred_full = final_ols_model.predict(X_full_ols)
-                    residuals_full = y_full - ols_pred_full
-                    
-                    # Train final RF model on full dataset residuals
-                    final_rf_model = RandomForestRegressor(
-                        n_estimators=hybrid_n_estimators,
-                        max_depth=hybrid_max_depth,
-                        min_samples_split=hybrid_min_samples_split,
-                        min_samples_leaf=hybrid_min_samples_leaf,
-                        max_features=hybrid_max_features,
-                        random_state=hybrid_random_state
-                    )
-                    final_rf_model.fit(X_full, residuals_full)
-                    
-                    # Store final models in session state
-                    st.session_state.final_ols_model = final_ols_model
-                    st.session_state.final_rf_model = final_rf_model
-                    st.session_state.hybrid_feature_names = hybrid_x_columns
-                
-                st.success("✅ Final models trained and ready for download!")
-                
-                # Model download section
-                col1, col2, col3 = st.columns(3)
-                
-                with col1:
-                    # Download OLS model
-                    ols_model_bytes = pickle.dumps(st.session_state.final_ols_model)
-                    st.download_button(
-                        label="📦 Download OLS Model (.pkl)",
-                        data=ols_model_bytes,
-                        file_name=f"hybrid_ols_model_{datetime.now().strftime('%Y%m%d_%H%M')}.pkl",
-                        mime="application/octet-stream",
-                        help="Download the trained OLS model (Step 1 of hybrid)"
-                    )
-                
-                with col2:
-                    # Download RF model
-                    rf_model_bytes = pickle.dumps(st.session_state.final_rf_model)
-                    st.download_button(
-                        label="📦 Download RF Model (.pkl)",
-                        data=rf_model_bytes,
-                        file_name=f"hybrid_rf_model_{datetime.now().strftime('%Y%m%d_%H%M')}.pkl",
-                        mime="application/octet-stream",
-                        help="Download the Random Forest model trained on OLS residuals (Step 2 of hybrid)"
-                    )
-                
-                with col3:
-                    # Download both models as a package
-                    hybrid_package = {
-                        'ols_model': st.session_state.final_ols_model,
-                        'rf_model': st.session_state.final_rf_model,
-                        'feature_names': hybrid_x_columns,
-                        'target_name': hybrid_y_column,
-                        'model_info': st.session_state.hybrid_model_info,
-                        'performance_metrics': avg_metrics,
-                        'usage_instructions': {
-                            'step1': 'Load both models',
-                            'step2': 'Get OLS prediction: ols_pred = ols_model.predict(X_with_constant)',
-                            'step3': 'Get RF residual prediction: rf_pred = rf_model.predict(X)',
-                            'step4': 'Final prediction: final_pred = ols_pred + rf_pred'
-                        }
-                    }
-                    
-                    hybrid_package_bytes = pickle.dumps(hybrid_package)
-                    st.download_button(
-                        label="📦 Download Hybrid Package (.pkl)",
-                        data=hybrid_package_bytes,
-                        file_name=f"hybrid_model_package_{datetime.now().strftime('%Y%m%d_%H%M')}.pkl",
-                        mime="application/octet-stream",
-                        help="Download complete hybrid model package with usage instructions"
-                    )
-                
-                # Usage instructions
-                with st.expander("📖 How to Use Downloaded Models", expanded=False):
-                    st.markdown("""
-                    **Using the Hybrid Model Package:**
-                    
-                    ```python
-                    import pickle
-                    import pandas as pd
-                    import statsmodels.api as sm
-                    
-                    # Load the hybrid package
-                    with open('hybrid_model_package.pkl', 'rb') as f:
-                        package = pickle.load(f)
-                    
-                    ols_model = package['ols_model']
-                    rf_model = package['rf_model']
-                    feature_names = package['feature_names']
-                    
-                    # Make predictions on new data
-                    def predict_hybrid(new_data):
-                        # Ensure features are in correct order
-                        X_new = new_data[feature_names]
                         
-                        # Step 1: OLS prediction (add constant)
-                        X_new_ols = sm.add_constant(X_new)
-                        ols_pred = ols_model.predict(X_new_ols)
-                        
-                        # Step 2: RF residual prediction
-                        rf_pred = rf_model.predict(X_new)
-                        
-                        # Step 3: Combine predictions
-                        final_pred = ols_pred + rf_pred
-                        
-                        return final_pred
+                        hybrid_package_bytes = pickle.dumps(hybrid_package)
+                        st.download_button(
+                            label="📦 Download Hybrid Package (.pkl)",
+                            data=hybrid_package_bytes,
+                            file_name=f"hybrid_model_package_{datetime.now().strftime('%Y%m%d_%H%M')}.pkl",
+                            mime="application/octet-stream",
+                            help="Download complete hybrid model package with usage instructions"
+                        )
                     
-                    # Example usage
-                    # new_predictions = predict_hybrid(your_new_data)
-                    ```
+                    # Usage instructions
+                    with st.expander("📖 How to Use Downloaded Models", expanded=False):
+                        st.markdown("""
+                        **Using the Hybrid Model Package:**
+                        
+                        ```python
+                        import pickle
+                        import pandas as pd
+                        import statsmodels.api as sm
+                        
+                        # Load the hybrid package
+                        with open('hybrid_model_package.pkl', 'rb') as f:
+                            package = pickle.load(f)
+                        
+                        ols_model = package['ols_model']
+                        rf_model = package['rf_model']
+                        feature_names = package['feature_names']
+                        
+                        # Make predictions on new data
+                        def predict_hybrid(new_data):
+                            # Ensure features are in correct order
+                            X_new = new_data[feature_names]
+                            
+                            # Step 1: OLS prediction (add constant)
+                            X_new_ols = sm.add_constant(X_new)
+                            ols_pred = ols_model.predict(X_new_ols)
+                            
+                            # Step 2: RF residual prediction
+                            rf_pred = rf_model.predict(X_new)
+                            
+                            # Step 3: Combine predictions
+                            final_pred = ols_pred + rf_pred
+                            
+                            return final_pred
+                        
+                        # Example usage
+                        # new_predictions = predict_hybrid(your_new_data)
+                        ```
+                        
+                        **Individual Models:**
+                        - **OLS Model**: Use `ols_model.predict(X_with_constant)` 
+                        - **RF Model**: Use `rf_model.predict(X)` on same features to get residual predictions
+                        """)
                     
-                    **Individual Models:**
-                    - **OLS Model**: Use `ols_model.predict(X_with_constant)` 
-                    - **RF Model**: Use `rf_model.predict(X)` on same features to get residual predictions
-                    """)
-                
-                # Export options
-                st.markdown("### 💾 Export Hybrid Model Results")
-                
-                col1, col2, col3 = st.columns(3)
-                
-                with col1:
-                    # Export detailed results
-                    st.download_button(
-                        label="📊 Download Results (.csv)",
-                        data=display_results.to_csv(index=False),
-                        file_name=f"hybrid_model_results_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
-                        mime="text/csv"
-                    )
-                
-                with col2:
-                    # Export model info
-                    model_info = st.session_state.hybrid_model_info.copy()
-                    model_info['avg_metrics'] = avg_metrics
-                    model_info['improvements'] = {
-                        'r2_improvement': improvement_r2,
-                        'mape_improvement': improvement_mape,
-                        'fsd_improvement': improvement_fsd,
-                        'relative_r2_improvement_pct': (improvement_r2/avg_metrics['OLS']['R2']*100) if avg_metrics['OLS']['R2'] > 0 else 0
-                    }
-                    model_info['timestamp'] = datetime.now().isoformat()
+                    # Export options
+                    st.markdown("### 💾 Export Hybrid Model Results")
                     
-                    st.download_button(
-                        label="📋 Download Model Info (.json)",
-                        data=json.dumps(model_info, indent=2),
-                        file_name=f"hybrid_model_info_{datetime.now().strftime('%Y%m%d_%H%M')}.json",
-                        mime="application/json"
-                    )
-                
-                with col3:
-                    # Export comparison summary
-                    comparison_summary = {
-                        'timestamp': datetime.now().isoformat(),
-                        'model_comparison': {
-                            'OLS': avg_metrics['OLS'],
-                            'Hybrid': avg_metrics['Hybrid']
-                        },
-                        'improvement_analysis': {
+                    col1, col2, col3 = st.columns(3)
+                    
+                    with col1:
+                        # Export detailed results
+                        st.download_button(
+                            label="📊 Download Results (.csv)",
+                            data=display_results.to_csv(index=False),
+                            file_name=f"hybrid_model_results_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
+                            mime="text/csv"
+                        )
+                    
+                    with col2:
+                        # Export model info
+                        model_info = st.session_state.hybrid_model_info.copy()
+                        model_info['avg_metrics'] = avg_metrics
+                        model_info['improvements'] = {
                             'r2_improvement': improvement_r2,
                             'mape_improvement': improvement_mape,
-                            'relative_r2_improvement_pct': (improvement_r2/avg_metrics['OLS']['R2']*100) if avg_metrics['OLS']['R2'] > 0 else 0,
-                            'rf_residual_r2': avg_metrics['RF_Residual_R2_avg'],
-                            'recommendation': 'Use Hybrid' if improvement_r2 > 0.01 else 'Consider Hybrid' if improvement_r2 > 0.001 else 'OLS Sufficient'
-                        },
-                        'model_config': st.session_state.hybrid_model_info
-                    }
+                            'fsd_improvement': improvement_fsd,
+                            'relative_r2_improvement_pct': (improvement_r2/avg_metrics['OLS']['R2']*100) if avg_metrics['OLS']['R2'] > 0 else 0
+                        }
+                        model_info['timestamp'] = datetime.now().isoformat()
+                        
+                        st.download_button(
+                            label="📋 Download Model Info (.json)",
+                            data=json.dumps(model_info, indent=2),
+                            file_name=f"hybrid_model_info_{datetime.now().strftime('%Y%m%d_%H%M')}.json",
+                            mime="application/json"
+                        )
                     
-                    st.download_button(
-                        label="📈 Download Analysis (.json)",
-                        data=json.dumps(comparison_summary, indent=2),
-                        file_name=f"hybrid_analysis_{datetime.now().strftime('%Y%m%d_%H%M')}.json",
-                        mime="application/json"
-                    )
-                    
-            except Exception as e:
-                st.error(f"Hybrid model training failed: {str(e)}")
-                st.code(traceback.format_exc())
-        
-        elif not hybrid_x_columns:
-            st.warning("Please select at least one feature variable to train the hybrid model")
-        
-        # Show current hybrid model status
-        if 'hybrid_results' in st.session_state:
-            st.markdown("---")
-            st.success("🔗 Hybrid model training completed!")
+                    with col3:
+                        # Export comparison summary
+                        comparison_summary = {
+                            'timestamp': datetime.now().isoformat(),
+                            'model_comparison': {
+                                'OLS': avg_metrics['OLS'],
+                                'Hybrid': avg_metrics['Hybrid']
+                            },
+                            'improvement_analysis': {
+                                'r2_improvement': improvement_r2,
+                                'mape_improvement': improvement_mape,
+                                'relative_r2_improvement_pct': (improvement_r2/avg_metrics['OLS']['R2']*100) if avg_metrics['OLS']['R2'] > 0 else 0,
+                                'rf_residual_r2': avg_metrics['RF_Residual_R2_avg'],
+                                'recommendation': 'Use Hybrid' if improvement_r2 > 0.01 else 'Consider Hybrid' if improvement_r2 > 0.001 else 'OLS Sufficient'
+                            },
+                            'model_config': st.session_state.hybrid_model_info
+                        }
+                        
+                        st.download_button(
+                            label="📈 Download Analysis (.json)",
+                            data=json.dumps(comparison_summary, indent=2),
+                            file_name=f"hybrid_analysis_{datetime.now().strftime('%Y%m%d_%H%M')}.json",
+                            mime="application/json"
+                        )
+                        
+                except Exception as e:
+                    st.error(f"Hybrid model training failed: {str(e)}")
+                    st.code(traceback.format_exc())
             
-            # Quick model comparison
-            with st.expander("📋 Current Hybrid Model Summary", expanded=True):
-                avg_metrics = st.session_state.hybrid_avg_metrics
+            elif not hybrid_x_columns:
+                st.warning("Please select at least one feature variable to train the hybrid model")
+            
+            # Show current hybrid model status
+            if 'hybrid_results' in st.session_state:
+                st.markdown("---")
+                st.success("🔗 Hybrid model training completed!")
                 
-                comparison_df = pd.DataFrame({
-                    'Model': ['OLS Only', 'Hybrid (OLS + RF)'],
-                    'R²': [avg_metrics['OLS']['R2'], avg_metrics['Hybrid']['R2']],
-                    'MAPE': [avg_metrics['OLS']['MAPE'], avg_metrics['Hybrid']['MAPE']],
-                    'FSD': [avg_metrics['OLS']['FSD'], avg_metrics['Hybrid']['FSD']],
-                    'PE10': [avg_metrics['OLS']['PE10'], avg_metrics['Hybrid']['PE10']],
-                    'RT20': [avg_metrics['OLS']['RT20'], avg_metrics['Hybrid']['RT20']]
-                })
-                
-                st.dataframe(comparison_df.style.format({
-                    'R²': '{:.4f}',
-                    'MAPE': '{:.4f}',
-                    'FSD': '{:.4f}',
-                    'PE10': '{:.4f}',
-                    'RT20': '{:.4f}'
-                }), use_container_width=True)
-                
-                improvement = avg_metrics['Hybrid']['R2'] - avg_metrics['OLS']['R2']
-                if improvement > 0.01:
-                    st.success(f"🎉 **Strong improvement**: R² increased by {improvement:.4f}")
-                elif improvement > 0.001:
-                    st.info(f"📊 **Modest improvement**: R² increased by {improvement:.4f}")
-                else:
-                    st.info(f"📏 **Linear model performs well**: R² change = {improvement:.4f}")
-    
-    else:
-        st.warning("Please load and process data first")
+                # Quick model comparison
+                with st.expander("📋 Current Hybrid Model Summary", expanded=True):
+                    avg_metrics = st.session_state.hybrid_avg_metrics
+                    
+                    comparison_df = pd.DataFrame({
+                        'Model': ['OLS Only', 'Hybrid (OLS + RF)'],
+                        'R²': [avg_metrics['OLS']['R2'], avg_metrics['Hybrid']['R2']],
+                        'MAPE': [avg_metrics['OLS']['MAPE'], avg_metrics['Hybrid']['MAPE']],
+                        'FSD': [avg_metrics['OLS']['FSD'], avg_metrics['Hybrid']['FSD']],
+                        'PE10': [avg_metrics['OLS']['PE10'], avg_metrics['Hybrid']['PE10']],
+                        'RT20': [avg_metrics['OLS']['RT20'], avg_metrics['Hybrid']['RT20']]
+                    })
+                    
+                    st.dataframe(comparison_df.style.format({
+                        'R²': '{:.4f}',
+                        'MAPE': '{:.4f}',
+                        'FSD': '{:.4f}',
+                        'PE10': '{:.4f}',
+                        'RT20': '{:.4f}'
+                    }), use_container_width=True)
+                    
+                    improvement = avg_metrics['Hybrid']['R2'] - avg_metrics['OLS']['R2']
+                    if improvement > 0.01:
+                        st.success(f"🎉 **Strong improvement**: R² increased by {improvement:.4f}")
+                    elif improvement > 0.001:
+                        st.info(f"📊 **Modest improvement**: R² increased by {improvement:.4f}")
+                    else:
+                        st.info(f"📏 **Linear model performs well**: R² change = {improvement:.4f}")
         
+        else:
+            st.warning("Please load and process data first")
+
 # Data preview section (always available at bottom)
 if analyzer.current_data is not None:
     st.markdown('<div class="section-divider"></div>', unsafe_allow_html=True)
