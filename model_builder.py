@@ -945,27 +945,6 @@ if st.session_state.processing_step == 'overview':
         elif not st.session_state.get('show_overview_stats', False):
             st.info("👆 Click 'Show Detailed Statistics' to view numeric summaries and column information")
 
-# Show secondary menu only when Advanced Models is selected
-if st.session_state.processing_step == 'advanced':
-    
-    # Initialize advanced_step if not exists
-    if 'advanced_step' not in st.session_state:
-        st.session_state.advanced_step = 'ml'
-
-    # Show secondary menu    
-    st.markdown("#### 🤖 Advanced Analytics")
-    # Secondary navigation
-    adv_col1, adv_col2 = st.columns(2)
-    with adv_col1:
-        if st.button("🤖 ML Models", key="adv_ml", 
-                    type="primary" if st.session_state.advanced_step == 'ml' else "secondary"):
-            st.session_state.advanced_step = 'ml'
-    
-    with adv_col2:
-        if st.button("🔗 Hybrid Model", key="adv_hybrid",
-                    type="primary" if st.session_state.advanced_step == 'hybrid' else "secondary"):
-            st.session_state.advanced_step = 'hybrid'
-
 elif st.session_state.processing_step == 'dtype':
     if fun_mode:
         st.markdown('## <img src="https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExeDltcWZoZ3dsNTVzZm5xMWR5bXExbGx0cG14eWdudGdpanJtZjBnMCZlcD12MV9naWZzX3NlYXJjaCZjdD1n/xCCqt6qDewWf6zriPX/giphy.gif" alt="data gif" style="height:72px; vertical-align:middle;"> Data Type Management', unsafe_allow_html=True)
@@ -1847,9 +1826,51 @@ elif st.session_state.processing_step == 'model':
                     st.error(message)
 
 
-
+if st.session_state.processing_step == 'advanced':
+    st.markdown("#### 🤖 Advanced Analytics")
+    
+    # Initialize advanced_step if not exists
+    if 'advanced_step' not in st.session_state:
+        st.session_state.advanced_step = 'ml'
+    
+    # Secondary navigation
+    adv_col1, adv_col2 = st.columns(2)
+    with adv_col1:
+        if st.button("🤖 ML Models", key="adv_ml", 
+                    type="primary" if st.session_state.advanced_step == 'ml' else "secondary"):
+            st.session_state.advanced_step = 'ml'
+    
+    with adv_col2:
+        if st.button("🔗 Hybrid Model", key="adv_hybrid",
+                    type="primary" if st.session_state.advanced_step == 'hybrid' else "secondary"):
+            st.session_state.advanced_step = 'hybrid'
+            
 elif st.session_state.processing_step == 'advanced':
-    # Route to correct advanced model based on advanced_step
+    # Initialize advanced_step if not exists FIRST
+    if 'advanced_step' not in st.session_state:
+        st.session_state.advanced_step = 'ml'
+    
+    # Show secondary menu at the TOP
+    st.markdown("#### 🤖 Advanced Analytics")
+    
+    # Secondary navigation
+    adv_col1, adv_col2 = st.columns(2)
+    with adv_col1:
+        if st.button("🤖 ML Models", key="adv_ml", 
+                    type="primary" if st.session_state.advanced_step == 'ml' else "secondary"):
+            st.session_state.advanced_step = 'ml'
+            st.rerun()  # Add this to force refresh
+    
+    with adv_col2:
+        if st.button("🔗 Hybrid Model", key="adv_hybrid",
+                    type="primary" if st.session_state.advanced_step == 'hybrid' else "secondary"):
+            st.session_state.advanced_step = 'hybrid'
+            st.rerun()  # Add this to force refresh
+    
+    # Add a divider
+    st.markdown("---")
+    
+    # NOW Route to correct advanced model based on advanced_step
     if st.session_state.advanced_step == 'ml':
         if fun_mode:
             st.markdown('## <img src="https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExaWZoeTByeWI1YmdsMHU3dnJ3ejNnem04MmM4Zjh5eThvbG10ZjFiaCZlcD12MV9naWZzX3NlYXJjaCZjdD1n/Gf1RA1jNSpbbuDE40m/giphy.gif" alt="data gif" style="height:96px; vertical-align:middle;"> Machine Learning Models', unsafe_allow_html=True)
