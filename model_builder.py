@@ -302,6 +302,85 @@ class RealEstateAnalyzer:
         except Exception as e:
             return False, f"Failed to load data: {str(e)}"
     
+    def load_filtered_property_data(self, filter_type=None):
+        """Load data with database-level filtering for better performance"""
+        try:
+            # Base query with common filters
+            base_query = """
+            SELECT * FROM engineered_property_data 
+            WHERE hpm BETWEEN 50000 AND 200000000
+            """
+            
+            # Add geographic filters at database level
+            if filter_type == 'bodebek':
+                geographic_filter = """
+                AND wadmpr IN ('Jawa Barat', 'Banten')
+                AND wadmkk IN ('Bogor', 'Kota Bogor', 'Depok', 'Kota Depok', 
+                            'Tangerang', 'Kota Tangerang', 'Kota Tangerang Selatan',
+                            'Bekasi', 'Kota Bekasi')
+                """
+            elif filter_type == 'jabodetabek':
+                geographic_filter = """
+                AND wadmpr IN ('Jawa Barat', 'Banten', 'DKI Jakarta')
+                AND wadmkk IN ('Kota Administrasi Jakarta Selatan', 'Kota Administrasi Jakarta Utara', 
+                            'Kota Bekasi', 'Kota Depok', 'Kota Administrasi Jakarta Barat', 
+                            'Bogor', 'Kota Administrasi Jakarta Pusat', 'Kota Bogor', 'Bekasi', 
+                            'Tangerang', 'Kota Administrasi Jakarta Timur', 'Kota Tangerang', 
+                            'Kota Tangerang Selatan', 'Administrasi Kepulauan Seribu')
+                """
+            elif filter_type == 'jabodetabek_no_kepulauan_seribu':
+                geographic_filter = """
+                AND wadmpr IN ('Jawa Barat', 'Banten', 'DKI Jakarta')
+                AND wadmkk IN ('Kota Administrasi Jakarta Selatan', 'Kota Administrasi Jakarta Utara', 
+                            'Kota Bekasi', 'Kota Depok', 'Kota Administrasi Jakarta Barat', 
+                            'Bogor', 'Kota Administrasi Jakarta Pusat', 'Kota Bogor', 'Bekasi', 
+                            'Tangerang', 'Kota Administrasi Jakarta Timur', 'Kota Tangerang', 
+                            'Kota Tangerang Selatan')
+                """
+            elif filter_type == 'bandung':
+                geographic_filter = """
+                AND wadmpr IN ('Jawa Barat')
+                AND wadmkk IN ('Kota Bandung', 'Sumedang', 'Kota Cimahi', 'Bandung', 'Bandung Barat')
+                """
+            elif filter_type == 'bali':
+                geographic_filter = """
+                AND wadmpr IN ('Bali')
+                AND wadmkk IN ('Kota Denpasar', 'Badung', 'Gianyar', 'Tabanan')
+                """
+            elif filter_type == 'surabaya':
+                geographic_filter = """
+                AND wadmpr IN ('Jawa Timur')
+                AND wadmkk IN ('Kota Surabaya')
+                """
+            else:
+                geographic_filter = ""
+            
+            # Combine query
+            final_query = base_query + geographic_filter + " ORDER BY hpm LIMIT 50000;"
+            
+            # Execute query
+            with self.engine.connect() as conn:
+                # Get count first for user feedback
+                count_query = base_query.replace("SELECT *", "SELECT COUNT(*)") + geographic_filter
+                result = conn.execute(text(count_query))
+                total_count = result.scalar()
+                
+                if total_count > 50000:
+                    st.warning(f"⚠️ Found {total_count:,} records. Loading first 50,000 for performance.")
+                else:
+                    st.success(f"✅ Loading {total_count:,} records matching your criteria.")
+            
+            # Load the filtered data
+            df = pd.read_sql(final_query, self.engine)
+            
+            self.original_data = df
+            self.current_data = df.copy()
+            
+            return True, f"Loaded {len(df):,} properties for {filter_type or 'all data'}"
+            
+        except Exception as e:
+            return False, f"Failed to load filtered data: {str(e)}"
+    
     def reset_to_original(self):
         """Reset current data to original state"""
         if self.original_data is not None:
@@ -587,7 +666,92 @@ class RealEstateAnalyzer:
         
         return True, f"Geographic filters are compatible - {final_count:,} records will remain"
 
-        
+    
+    def load_custom_filtered_data(self, provinces=None, regencies=None, districts=None, 
+                            hpm_min=50000, hpm_max=200000000, limit=50000):
+        """Load data with custom database-level filtering"""
+        try:
+            query_parts = ["SELECT * FROM engineered_property_data WHERE 1=1"]
+            
+            # HPM filter
+            query_parts.append(f"AND hpm BETWEEN {hpm_min} AND {hpm_max}")
+            
+            # Geographic filters with proper SQL escaping
+            if provinces:
+                # Escape single quotes in province names
+                escaped_provinces = [p.replace("'", "''") for p in provinces]
+                province_list = "', '".join(escaped_provinces)
+                query_parts.append(f"AND wadmpr IN ('{province_list}')")
+            
+            if regencies:
+                escaped_regencies = [r.replace("'", "''") for r in regencies]
+                regency_list = "', '".join(escaped_regencies)
+                query_parts.append(f"AND wadmkk IN ('{regency_list}')")
+                
+            if districts:
+                escaped_districts = [d.replace("'", "''") for d in districts]
+                district_list = "', '".join(escaped_districts)
+                query_parts.append(f"AND wadmkc IN ('{district_list}')")
+            
+            # Add ordering and limit
+            query_parts.append(f"ORDER BY hpm LIMIT {limit}")
+            
+            final_query = " ".join(query_parts)
+            
+            # Get count first for user feedback
+            count_query = final_query.replace("SELECT *", "SELECT COUNT(*)").replace(f"ORDER BY hpm LIMIT {limit}", "")
+            
+            with self.engine.connect() as conn:
+                result = conn.execute(text(count_query))
+                total_count = result.scalar()
+                
+                if total_count == 0:
+                    return False, "No records found matching your criteria. Please adjust your filters."
+                elif total_count > limit:
+                    st.warning(f"⚠️ Found {total_count:,} records. Loading first {limit:,} for performance.")
+                else:
+                    st.info(f"✅ Found {total_count:,} records matching your criteria.")
+            
+            # Load the filtered data
+            df = pd.read_sql(final_query, self.engine)
+            
+            self.original_data = df
+            self.current_data = df.copy()
+            
+            return True, f"Loaded {len(df):,} properties with custom filters"
+            
+        except Exception as e:
+            return False, f"Custom filtering failed: {str(e)}"
+
+    def get_unique_geographic_values(self, column, parent_filter=None):
+        """Get unique values for geographic columns with optional parent filtering"""
+        try:
+            base_query = f"SELECT DISTINCT {column} FROM engineered_property_data WHERE {column} IS NOT NULL"
+            
+            if parent_filter:
+                if column == 'wadmkk' and 'wadmpr' in parent_filter:
+                    provinces = parent_filter['wadmpr']
+                    escaped_provinces = [p.replace("'", "''") for p in provinces]
+                    province_list = "', '".join(escaped_provinces)
+                    base_query += f" AND wadmpr IN ('{province_list}')"
+                elif column == 'wadmkc' and 'wadmkk' in parent_filter:
+                    regencies = parent_filter['wadmkk']
+                    escaped_regencies = [r.replace("'", "''") for r in regencies]
+                    regency_list = "', '".join(escaped_regencies)
+                    base_query += f" AND wadmkk IN ('{regency_list}')"
+            
+            base_query += f" ORDER BY {column}"
+            
+            with self.engine.connect() as conn:
+                result = conn.execute(text(base_query))
+                values = [row[0] for row in result.fetchall()]
+            
+            return values
+            
+        except Exception as e:
+            st.error(f"Failed to load {column} options: {str(e)}")
+            return []
+
     def apply_label_encoding(self, column):    
         """Apply label encoding to a column"""
         try:
@@ -1076,88 +1240,63 @@ if st.session_state.processing_step == 'selection':
     with col1:
         if st.button(shortcut_filters['bodebek'], use_container_width=True, key="sel_bodebek"):
             with st.spinner("Loading BODEBEK data..."):
-                # Load all data first, then filter
-                success, message = analyzer.load_property_data()
+                success, message = analyzer.load_filtered_property_data('bodebek')  # Only loads BODEBEK data
                 if success:
-                    success2, message2 = analyzer.apply_shortcut_filter('bodebek')
-                    if success2:
-                        st.success(f"✅ {message2}")
-                        st.session_state.processing_step = 'overview'
-                        st.rerun()
-                    else:
-                        st.error(message2)
+                    st.success(f"✅ {message}")
+                    st.session_state.processing_step = 'overview'
+                    st.rerun()
                 else:
                     st.error(message)
         
         if st.button(shortcut_filters['jabodetabek'], use_container_width=True, key="sel_jabodetabek"):
             with st.spinner("Loading JABODETABEK data..."):
-                success, message = analyzer.load_property_data()
+                success, message = analyzer.load_filtered_property_data('jabodetabek')  # Only loads JABODETABEK data
                 if success:
-                    success2, message2 = analyzer.apply_shortcut_filter('jabodetabek')
-                    if success2:
-                        st.success(f"✅ {message2}")
-                        st.session_state.processing_step = 'overview'
-                        st.rerun()
-                    else:
-                        st.error(message2)
+                    st.success(f"✅ {message}")
+                    st.session_state.processing_step = 'overview'
+                    st.rerun()
                 else:
                     st.error(message)
 
     with col2:
         if st.button(shortcut_filters['jabodetabek_no_kepulauan_seribu'], use_container_width=True, key="sel_jabodetabek_no"):
             with st.spinner("Loading JABODETABEK (No Kepulauan Seribu) data..."):
-                success, message = analyzer.load_property_data()
+                success, message = analyzer.load_filtered_property_data('jabodetabek_no_kepulauan_seribu')
                 if success:
-                    success2, message2 = analyzer.apply_shortcut_filter('jabodetabek_no_kepulauan_seribu')
-                    if success2:
-                        st.success(f"✅ {message2}")
-                        st.session_state.processing_step = 'overview'
-                        st.rerun()
-                    else:
-                        st.error(message2)
+                    st.success(f"✅ {message}")
+                    st.session_state.processing_step = 'overview'
+                    st.rerun()
                 else:
                     st.error(message)
         
         if st.button(shortcut_filters['bandung'], use_container_width=True, key="sel_bandung"):
             with st.spinner("Loading Bandung data..."):
-                success, message = analyzer.load_property_data()
+                success, message = analyzer.load_filtered_property_data('bandung')
                 if success:
-                    success2, message2 = analyzer.apply_shortcut_filter('bandung')
-                    if success2:
-                        st.success(f"✅ {message2}")
-                        st.session_state.processing_step = 'overview'
-                        st.rerun()
-                    else:
-                        st.error(message2)
+                    st.success(f"✅ {message}")
+                    st.session_state.processing_step = 'overview'
+                    st.rerun()
                 else:
                     st.error(message)
 
     with col3:
         if st.button(shortcut_filters['bali'], use_container_width=True, key="sel_bali"):
             with st.spinner("Loading Bali data..."):
-                success, message = analyzer.load_property_data()
+                success, message = analyzer.load_filtered_property_data('bali')
                 if success:
-                    success2, message2 = analyzer.apply_shortcut_filter('bali')
-                    if success2:
-                        st.success(f"✅ {message2}")
-                        st.session_state.processing_step = 'overview'
-                        st.rerun()
-                    else:
-                        st.error(message2)
+                    st.success(f"✅ {message}")
+                    st.session_state.processing_step = 'overview'
+                    st.rerun()
                 else:
                     st.error(message)
         
         if st.button(shortcut_filters['surabaya'], use_container_width=True, key="sel_surabaya"):
             with st.spinner("Loading Surabaya data..."):
-                success, message = analyzer.load_property_data()
+                success, message = analyzer.load_filtered_property_data('surabaya')
                 if success:
-                    success2, message2 = analyzer.apply_shortcut_filter('surabaya')
-                    if success2:
-                        st.success(f"✅ {message2}")
-                        st.session_state.processing_step = 'overview'
-                        st.rerun()
-                    else:
-                        st.error(message2)
+                    st.success(f"✅ {message}")
+                    st.session_state.processing_step = 'overview'
+                    st.rerun()
                 else:
                     st.error(message)
 
@@ -1176,6 +1315,192 @@ if st.session_state.processing_step == 'selection':
                 st.rerun()
             else:
                 st.error(message)
+    
+    st.markdown("---")
+
+    # Advanced Custom Filter Interface
+    st.markdown("### 🎛️ Advanced Custom Filters")
+    st.info("💡 **Pro Mode**: Build your own custom query with precise geographic and price filters")
+
+    with st.expander("🔧 Custom Filter Builder", expanded=False):
+        
+        # Geographic Filters Section
+        st.markdown("#### 🗺️ Geographic Selection")
+        
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            st.markdown("**Province (wadmpr)**")
+            if st.button("🔄 Load Provinces", key="load_provinces"):
+                with st.spinner("Loading province list..."):
+                    province_options = analyzer.get_unique_geographic_values('wadmpr')
+                    st.session_state.province_options = province_options
+            
+            if 'province_options' in st.session_state:
+                selected_provinces = st.multiselect(
+                    "Select Provinces",
+                    st.session_state.province_options,
+                    key="custom_provinces",
+                    help="Choose one or more provinces"
+                )
+            else:
+                selected_provinces = []
+                st.info("Click 'Load Provinces' to see available options")
+        
+        with col2:
+            st.markdown("**Regency/City (wadmkk)**")
+            if selected_provinces and st.button("🔄 Load Regencies", key="load_regencies"):
+                with st.spinner("Loading regency list..."):
+                    regency_options = analyzer.get_unique_geographic_values(
+                        'wadmkk', 
+                        {'wadmpr': selected_provinces}
+                    )
+                    st.session_state.regency_options = regency_options
+            
+            if 'regency_options' in st.session_state and selected_provinces:
+                selected_regencies = st.multiselect(
+                    "Select Regencies/Cities",
+                    st.session_state.regency_options,
+                    key="custom_regencies",
+                    help="Choose regencies within selected provinces"
+                )
+            else:
+                selected_regencies = []
+                if not selected_provinces:
+                    st.info("Select provinces first")
+                else:
+                    st.info("Click 'Load Regencies' to see options")
+        
+        with col3:
+            st.markdown("**District (wadmkc)**")
+            if selected_regencies and st.button("🔄 Load Districts", key="load_districts"):
+                with st.spinner("Loading district list..."):
+                    district_options = analyzer.get_unique_geographic_values(
+                        'wadmkc',
+                        {'wadmkk': selected_regencies}
+                    )
+                    st.session_state.district_options = district_options
+            
+            if 'district_options' in st.session_state and selected_regencies:
+                selected_districts = st.multiselect(
+                    "Select Districts",
+                    st.session_state.district_options,
+                    key="custom_districts",
+                    help="Choose districts within selected regencies"
+                )
+            else:
+                selected_districts = []
+                if not selected_regencies:
+                    st.info("Select regencies first")
+                else:
+                    st.info("Click 'Load Districts' to see options")
+        
+        # Price Range Section
+        st.markdown("#### 💰 Price Range (HPM)")
+        
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            hpm_min = st.number_input(
+                "Minimum HPM",
+                min_value=1000,
+                max_value=1000000000,
+                value=50000,
+                step=10000,
+                key="custom_hpm_min",
+                help="Minimum price per square meter"
+            )
+        
+        with col2:
+            hpm_max = st.number_input(
+                "Maximum HPM", 
+                min_value=1000,
+                max_value=1000000000,
+                value=200000000,
+                step=10000,
+                key="custom_hpm_max",
+                help="Maximum price per square meter"
+            )
+        
+        with col3:
+            result_limit = st.selectbox(
+                "Result Limit",
+                [10000, 25000, 50000, 100000],
+                index=2,
+                key="custom_limit",
+                help="Maximum number of records to load"
+            )
+        
+        # Validation
+        if hpm_min >= hpm_max:
+            st.error("❌ Minimum HPM must be less than Maximum HPM")
+            custom_filters_valid = False
+        else:
+            custom_filters_valid = True
+        
+        # Preview Section
+        st.markdown("#### 👀 Filter Preview")
+        
+        filter_summary = []
+        if selected_provinces:
+            filter_summary.append(f"**Provinces:** {len(selected_provinces)} selected")
+        if selected_regencies:
+            filter_summary.append(f"**Regencies:** {len(selected_regencies)} selected")
+        if selected_districts:
+            filter_summary.append(f"**Districts:** {len(selected_districts)} selected")
+        
+        filter_summary.append(f"**HPM Range:** {hpm_min:,} - {hpm_max:,}")
+        filter_summary.append(f"**Result Limit:** {result_limit:,}")
+        
+        if filter_summary:
+            for item in filter_summary:
+                st.write(f"• {item}")
+        
+        # Execute Custom Filter
+        st.markdown("#### 🚀 Execute Custom Filter")
+        
+        if st.button("🎯 Load Data with Custom Filters", type="primary", disabled=not custom_filters_valid):
+            if not selected_provinces and not selected_regencies and not selected_districts:
+                st.warning("⚠️ No geographic filters selected. This will load data from entire database. Continue?")
+                
+                if st.button("✅ Yes, Load All Geographic Areas", key="confirm_all_geo"):
+                    execute_custom_filter = True
+                else:
+                    execute_custom_filter = False
+            else:
+                execute_custom_filter = True
+            
+            if execute_custom_filter:
+                with st.spinner("🔍 Executing custom database query..."):
+                    success, message = analyzer.load_custom_filtered_data(
+                        provinces=selected_provinces if selected_provinces else None,
+                        regencies=selected_regencies if selected_regencies else None,
+                        districts=selected_districts if selected_districts else None,
+                        hpm_min=hpm_min,
+                        hpm_max=hpm_max,
+                        limit=result_limit
+                    )
+                    
+                    if success:
+                        st.success(f"✅ {message}")
+                        
+                        # Clear the cached options to save memory
+                        for key in ['province_options', 'regency_options', 'district_options']:
+                            if key in st.session_state:
+                                del st.session_state[key]
+                        
+                        st.session_state.processing_step = 'overview'
+                        st.rerun()
+                    else:
+                        st.error(f"❌ {message}")
+        
+        # Quick Reset
+        if st.button("🔄 Reset All Filters", key="reset_custom_filters"):
+            for key in ['province_options', 'regency_options', 'district_options', 
+                    'custom_provinces', 'custom_regencies', 'custom_districts']:
+                if key in st.session_state:
+                    del st.session_state[key]
+            st.rerun()
 
 elif st.session_state.processing_step == 'overview':
     if fun_mode:
