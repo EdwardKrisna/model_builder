@@ -947,12 +947,13 @@ if st.session_state.processing_step == 'overview':
 
 # Show secondary menu only when Advanced Models is selected
 if st.session_state.processing_step == 'advanced':
-    st.markdown("#### 🤖 Advanced Analytics")
     
     # Initialize advanced_step if not exists
     if 'advanced_step' not in st.session_state:
         st.session_state.advanced_step = 'ml'
-    
+
+    # Show secondary menu    
+    st.markdown("#### 🤖 Advanced Analytics")
     # Secondary navigation
     adv_col1, adv_col2 = st.columns(2)
     with adv_col1:
