@@ -777,7 +777,7 @@ if 'analyzer' not in st.session_state:
     st.session_state.analyzer = RealEstateAnalyzer()
 
 if 'processing_step' not in st.session_state:
-    st.session_state.processing_step = 'overview'
+    st.session_state.processing_step = 'selection'
 
 # Get analyzer from session state
 analyzer = st.session_state.analyzer
@@ -806,14 +806,21 @@ else:
 # Navigation buttons
 st.markdown("### 🧭 Analysis Workflow")
 workflow_steps = [
+    ('selection', '📍 Data Selection'),      # NEW - first step
     ('overview', '📊 Data Overview'),
     ('dtype', '🔧 Data Types'),
-    ('filter', '🔍 Filtering'),
+    ('filter', '🔍 Additional Filters'),     # Renamed
     ('clean', '🧹 Cleaning'),
     ('transform', '⚡ Transform'),
     ('model', '📈 OLS Model'),
     ('advanced', '🤖 Advanced Models')
 ]
+
+# Disable other navigation if no data loaded
+if analyzer.current_data is None and st.session_state.processing_step != 'selection':
+    st.session_state.processing_step = 'selection'
+    st.warning("⚠️ Please select data first")
+    st.rerun()
 
 cols = st.columns(len(workflow_steps))
 for i, (step_key, step_name) in enumerate(workflow_steps):
@@ -821,27 +828,6 @@ for i, (step_key, step_name) in enumerate(workflow_steps):
         if st.button(step_name, key=f"nav_{step_key}", 
                     type="primary" if st.session_state.processing_step == step_key else "secondary"):
             st.session_state.processing_step = step_key
-
-# Auto-connect to database on first load
-if 'data_initialized' not in st.session_state:
-    st.session_state.data_initialized = False
-
-if not st.session_state.data_initialized:
-    with st.spinner("Connecting to database..."):
-        success, message = analyzer.connect_database()
-        if success:
-            st.markdown(f'<div class="success-box">✅ {message}</div>', unsafe_allow_html=True)
-            # Auto-load data
-            with st.spinner("Loading property data..."):
-                data_success, data_message = analyzer.load_property_data()
-                if data_success:
-                    st.markdown(f'<div class="success-box">📊 {data_message}</div>', unsafe_allow_html=True)
-                    st.session_state.data_initialized = True  # Mark as initialized
-                else:
-                    st.markdown(f'<div class="error-box">❌ {data_message}</div>', unsafe_allow_html=True)
-        else:
-            st.markdown(f'<div class="error-box">❌ {message}</div>', unsafe_allow_html=True)
-            st.stop()
 
 # Display current data status
 if analyzer.current_data is not None:
@@ -895,28 +881,202 @@ if analyzer.current_data is not None:
             )
 
 # Reset button
-if st.button("🔄 Reset to Original Data", help="Reset all changes and start fresh"):
-    success, message = analyzer.reset_to_original()
-    if success:
-        # Invalidate all caches
-        st.session_state.data_changed = True
-        st.session_state.show_overview_stats = False
-        st.session_state.show_dtype_table = False
-        if 'cached_data_metrics' in st.session_state:
-            del st.session_state.cached_data_metrics
-        st.success(message)
-        st.rerun()
+if st.button("🔄 Reset & Reselect Data", help="Clear all data and start fresh"):
+    # Clear everything
+    analyzer.current_data = None
+    analyzer.original_data = None
+    analyzer.model = None
+    analyzer.transformed_columns = {}
+    
+    # Reset to selection step
+    st.session_state.processing_step = 'selection'
+    
+    # Clear caches
+    if 'cached_data_metrics' in st.session_state:
+        del st.session_state.cached_data_metrics
+    
+    st.success("Data cleared - ready for new selection")
+    st.rerun()
 
 st.markdown('<div class="section-divider"></div>', unsafe_allow_html=True)
 
 # Step-based interface
-if st.session_state.processing_step == 'overview':
+if st.session_state.processing_step == 'selection':
+    if fun_mode:
+        st.markdown('## <img src="https://media.giphy.com/media/v1.Y2lkPWVjZjA1ZTQ3YmlxbTR0YzJnamJ2dno5NHVlNzR1YnZscHF6ZG5neGplZTFzYiZlcD12MV9naWZzX3NlYXJjaCZjdD1n/l2JhOVyjSLCvUdkZ2/giphy.gif" alt="selection gif" style="height:96px; vertical-align:middle;"> Data Selection', unsafe_allow_html=True)
+    else:
+        st.markdown('## 📍 Data Selection')
+    
+    # Auto-connect to database only when needed
+    if not analyzer.connection_status:
+        with st.spinner("Connecting to database..."):
+            success, message = analyzer.connect_database()
+            if success:
+                st.success(message)
+            else:
+                st.error(message)
+                st.stop()
+    
+    st.info("🎯 **Start by selecting your data scope** - this makes analysis faster and more focused")
+    
+    # Show current data status
+    if analyzer.current_data is not None:
+        st.warning(f"⚠️ **Data already loaded:** {len(analyzer.current_data):,} properties")
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("🗑️ Clear Data & Reselect", type="secondary", use_container_width=True):
+                # Clear data
+                analyzer.current_data = None
+                analyzer.original_data = None
+                analyzer.model = None
+                analyzer.transformed_columns = {}
+                
+                # Clear caches to free memory
+                st.cache_data.clear()
+                
+                st.rerun()
+        
+        with col2:
+            if st.button("➡️ Continue with Current Data", type="primary", use_container_width=True):
+                st.session_state.processing_step = 'overview'
+                st.rerun()
+        
+        st.markdown("---")
+    
+    # Quick Geographic Filters (same as your current filter section but for selection)
+    st.markdown("### 🚀 Quick Geographic Selection")
+    st.info("Pre-defined metropolitan areas for quick data loading")
+
+    shortcut_filters = {
+        'bodebek': '🏙️ BODEBEK (Bogor, Depok, Tangerang, Bekasi)',
+        'jabodetabek': '🌆 JABODETABEK (Jakarta + surrounding areas)',
+        'jabodetabek_no_kepulauan_seribu': '🌆 JABODETABEK (No Kepulauan Seribu)',
+        'bandung': '🏔️ Bandung Metropolitan Area',
+        'bali': '🏝️ Bali Metropolitan Area',
+        'surabaya': '🏢 Surabaya Metropolitan Area'
+    }
+
+    col1, col2, col3 = st.columns(3)
+
+    with col1:
+        if st.button(shortcut_filters['bodebek'], use_container_width=True, key="sel_bodebek"):
+            with st.spinner("Loading BODEBEK data..."):
+                # Load all data first, then filter
+                success, message = analyzer.load_property_data()
+                if success:
+                    success2, message2 = analyzer.apply_shortcut_filter('bodebek')
+                    if success2:
+                        st.success(f"✅ {message2}")
+                        st.session_state.processing_step = 'overview'
+                        st.rerun()
+                    else:
+                        st.error(message2)
+                else:
+                    st.error(message)
+        
+        if st.button(shortcut_filters['jabodetabek'], use_container_width=True, key="sel_jabodetabek"):
+            with st.spinner("Loading JABODETABEK data..."):
+                success, message = analyzer.load_property_data()
+                if success:
+                    success2, message2 = analyzer.apply_shortcut_filter('jabodetabek')
+                    if success2:
+                        st.success(f"✅ {message2}")
+                        st.session_state.processing_step = 'overview'
+                        st.rerun()
+                    else:
+                        st.error(message2)
+                else:
+                    st.error(message)
+
+    with col2:
+        if st.button(shortcut_filters['jabodetabek_no_kepulauan_seribu'], use_container_width=True, key="sel_jabodetabek_no"):
+            with st.spinner("Loading JABODETABEK (No Kepulauan Seribu) data..."):
+                success, message = analyzer.load_property_data()
+                if success:
+                    success2, message2 = analyzer.apply_shortcut_filter('jabodetabek_no_kepulauan_seribu')
+                    if success2:
+                        st.success(f"✅ {message2}")
+                        st.session_state.processing_step = 'overview'
+                        st.rerun()
+                    else:
+                        st.error(message2)
+                else:
+                    st.error(message)
+        
+        if st.button(shortcut_filters['bandung'], use_container_width=True, key="sel_bandung"):
+            with st.spinner("Loading Bandung data..."):
+                success, message = analyzer.load_property_data()
+                if success:
+                    success2, message2 = analyzer.apply_shortcut_filter('bandung')
+                    if success2:
+                        st.success(f"✅ {message2}")
+                        st.session_state.processing_step = 'overview'
+                        st.rerun()
+                    else:
+                        st.error(message2)
+                else:
+                    st.error(message)
+
+    with col3:
+        if st.button(shortcut_filters['bali'], use_container_width=True, key="sel_bali"):
+            with st.spinner("Loading Bali data..."):
+                success, message = analyzer.load_property_data()
+                if success:
+                    success2, message2 = analyzer.apply_shortcut_filter('bali')
+                    if success2:
+                        st.success(f"✅ {message2}")
+                        st.session_state.processing_step = 'overview'
+                        st.rerun()
+                    else:
+                        st.error(message2)
+                else:
+                    st.error(message)
+        
+        if st.button(shortcut_filters['surabaya'], use_container_width=True, key="sel_surabaya"):
+            with st.spinner("Loading Surabaya data..."):
+                success, message = analyzer.load_property_data()
+                if success:
+                    success2, message2 = analyzer.apply_shortcut_filter('surabaya')
+                    if success2:
+                        st.success(f"✅ {message2}")
+                        st.session_state.processing_step = 'overview'
+                        st.rerun()
+                    else:
+                        st.error(message2)
+                else:
+                    st.error(message)
+
+    st.markdown("---")
+    
+    # Load All Data Option
+    st.markdown("### 📊 Load Full Dataset")
+    st.warning("⚠️ **Not recommended for large datasets** - may be slow")
+    
+    if st.button("📥 Load All Data (Up to 100k records)", type="secondary", use_container_width=True):
+        with st.spinner("Loading full dataset..."):
+            success, message = analyzer.load_property_data()
+            if success:
+                st.success(message)
+                st.session_state.processing_step = 'overview'
+                st.rerun()
+            else:
+                st.error(message)
+
+elif st.session_state.processing_step == 'overview':
     if fun_mode:
         st.markdown('## <img src="https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExaXZod3R3NnJ2cW93MjkycXJ3dTRxeHluYXlkemhwdnVyZTFmOWhibyZlcD12MV9naWZzX3RyZW5kaW5nJmN0PWc/0GtVKtagi2GvWuY3vm/giphy.gif" alt="data gif" style="height:96px; vertical-align:middle;"> Data Overview', unsafe_allow_html=True)
     else:
         st.markdown('## Data Overview')
+    
+    if analyzer.current_data is None:
+        st.warning("⚠️ No data loaded. Please go back to Data Selection.")
+        if st.button("← Back to Data Selection"):
+            st.session_state.processing_step = 'selection'
+            st.rerun()
+        st.stop()
 
-    if analyzer.current_data is not None:
+    else:
         # Data preview (lightweight)
         st.markdown("### 📋 Data Preview")
         st.dataframe(analyzer.current_data.head(10), use_container_width=True)
@@ -951,7 +1111,14 @@ elif st.session_state.processing_step == 'dtype':
     else:
         st.markdown('## Data Type Management')
 
-    if analyzer.current_data is not None:
+    if analyzer.current_data is None:
+        st.warning("⚠️ No data loaded. Please go back to Data Selection.")
+        if st.button("← Back to Data Selection"):
+            st.session_state.processing_step = 'selection'
+            st.rerun()
+        st.stop()
+
+    else:
         st.markdown("### Change Column Data Types")
         
         col1, col2, col3 = st.columns(3)
@@ -1007,7 +1174,14 @@ elif st.session_state.processing_step == 'filter':
     else:
         st.markdown('## Geographic & Data Filtering')
 
-    if analyzer.current_data is not None:
+    if analyzer.current_data is None:
+        st.warning("⚠️ No data loaded. Please go back to Data Selection.")
+        if st.button("← Back to Data Selection"):
+            st.session_state.processing_step = 'selection'
+            st.rerun()
+        st.stop()
+
+    else:
         # Initialize selected_filters dictionary
         # Initialize selected_filters dictionary
         selected_filters = {}
@@ -1441,7 +1615,14 @@ elif st.session_state.processing_step == 'clean':
     else:
         st.markdown('## Data Cleaning')
 
-    if analyzer.current_data is not None:
+    if analyzer.current_data is None:
+        st.warning("⚠️ No data loaded. Please go back to Data Selection.")
+        if st.button("← Back to Data Selection"):
+            st.session_state.processing_step = 'selection'
+            st.rerun()
+        st.stop()
+
+    else:
         col1, col2 = st.columns(2)
         
         with col1:
@@ -1481,7 +1662,14 @@ elif st.session_state.processing_step == 'transform':
     else:
         st.markdown('## Variable Transformations')
 
-    if analyzer.current_data is not None:
+    if analyzer.current_data is None:
+        st.warning("⚠️ No data loaded. Please go back to Data Selection.")
+        if st.button("← Back to Data Selection"):
+            st.session_state.processing_step = 'selection'
+            st.rerun()
+        st.stop()
+
+    else:
         st.markdown("### Apply Transformations")
         st.info("Select columns to transform. New transformed columns will be added to your dataset and available for OLS modeling.")
         
@@ -1635,7 +1823,14 @@ elif st.session_state.processing_step == 'model':
     else:
         st.markdown('## OLS Regression Analysis')
 
-    if analyzer.current_data is not None:
+    if analyzer.current_data is None:
+        st.warning("⚠️ No data loaded. Please go back to Data Selection.")
+        if st.button("← Back to Data Selection"):
+            st.session_state.processing_step = 'selection'
+            st.rerun()
+        st.stop()
+
+    else:
         # Model configuration
         col1, col2 = st.columns(2)
         
@@ -1825,26 +2020,7 @@ elif st.session_state.processing_step == 'model':
                 else:
                     st.error(message)
 
-
-if st.session_state.processing_step == 'advanced':
-    st.markdown("#### 🤖 Advanced Analytics")
-    
-    # Initialize advanced_step if not exists
-    if 'advanced_step' not in st.session_state:
-        st.session_state.advanced_step = 'ml'
-    
-    # Secondary navigation
-    adv_col1, adv_col2 = st.columns(2)
-    with adv_col1:
-        if st.button("🤖 ML Models", key="adv_ml", 
-                    type="primary" if st.session_state.advanced_step == 'ml' else "secondary"):
-            st.session_state.advanced_step = 'ml'
-    
-    with adv_col2:
-        if st.button("🔗 Hybrid Model", key="adv_hybrid",
-                    type="primary" if st.session_state.advanced_step == 'hybrid' else "secondary"):
-            st.session_state.advanced_step = 'hybrid'
-            
+       
 elif st.session_state.processing_step == 'advanced':
     # Initialize advanced_step if not exists FIRST
     if 'advanced_step' not in st.session_state:
