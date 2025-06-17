@@ -2819,58 +2819,119 @@ elif st.session_state.processing_step == 'advanced':
                         # Model Export with ONNX
                         st.markdown("### 💾 Model Export")
 
-                        # Prepare exports button (separate from download buttons)
-                        if st.button("🔄 Prepare Model for Download", type="secondary", use_container_width=True):
-                            try:
-                                with st.spinner("Converting model to ONNX..."):
-                                    onnx_bytes, feature_json, success = analyzer.prepare_model_exports(
-                                        final_model, ml_x_columns, model_name
-                                    )
-                                    
-                                    if success:
-                                        st.session_state.ml_onnx_data = onnx_bytes
-                                        st.session_state.ml_feature_json = feature_json
-                                        st.session_state.ml_model_name_export = model_name
-                                        st.session_state.ml_timestamp = datetime.now().strftime('%Y%m%d_%H%M')
-                                        st.success("✅ Model prepared! Download buttons are now available below.")
-                                    else:
-                                        st.error(f"❌ {feature_json}")
-                            except Exception as e:
-                                st.error(f"Model export preparation failed: {str(e)}")
+                        # Check if model is available for export
+                        if 'ml_model' in st.session_state and st.session_state.ml_model is not None:
+                            
+                            # Show current model info
+                            st.info(f"🤖 **{st.session_state.get('ml_model_name', 'Model')}** ready for export")
+                            
+                            # Prepare exports button
+                            if st.button("🔄 Prepare Model for Download", type="secondary", use_container_width=True, key="prep_model_unique"):
+                                try:
+                                    with st.spinner("Converting model to ONNX..."):
+                                        # Get model data from session state
+                                        model = st.session_state.ml_model
+                                        feature_names = st.session_state.get('ml_feature_names', [])
+                                        model_name = st.session_state.get('ml_model_name', 'MLModel')
+                                        
+                                        if not feature_names:
+                                            st.error("❌ Feature names not found. Please retrain the model.")
+                                            st.stop()
+                                        
+                                        # Convert to ONNX
+                                        onnx_bytes, feature_json, success = analyzer.prepare_model_exports(
+                                            model, feature_names, model_name
+                                        )
+                                        
+                                        if success:
+                                            # Store in session state with unique keys
+                                            st.session_state['ml_onnx_ready'] = True
+                                            st.session_state['ml_onnx_data'] = onnx_bytes
+                                            st.session_state['ml_feature_json'] = feature_json
+                                            st.session_state['ml_model_name_export'] = model_name
+                                            st.session_state['ml_timestamp'] = datetime.now().strftime('%Y%m%d_%H%M')
+                                            
+                                            st.success("✅ Model converted to ONNX successfully!")
+                                            st.balloons()  # Visual feedback
+                                            st.rerun()  # Refresh to show download buttons
+                                        else:
+                                            st.error(f"❌ ONNX conversion failed: {feature_json}")
+                                            
+                                except Exception as e:
+                                    st.error(f"❌ Model export preparation failed: {str(e)}")
+                                    st.code(traceback.format_exc())
 
-                        # Download buttons (only show if data is prepared)
-                        if st.session_state.get('ml_onnx_data') is not None:
-                            st.markdown("**📥 Download Files:**")
+                            # Download buttons (only show if data is prepared and ready)
+                            if st.session_state.get('ml_onnx_ready', False) and st.session_state.get('ml_onnx_data') is not None:
+                                
+                                st.success("🎉 **Model is ready for download!**")
+                                
+                                # Model info display
+                                with st.expander("📋 Export Information", expanded=True):
+                                    st.write(f"**Model Type:** {st.session_state.get('ml_model_name_export', 'Unknown')}")
+                                    st.write(f"**Features:** {len(st.session_state.get('ml_feature_names', []))}")
+                                    st.write(f"**Export Time:** {st.session_state.get('ml_timestamp', 'Unknown')}")
+                                    st.write(f"**Format:** ONNX + JSON")
+                                
+                                st.markdown("**📥 Download Files:**")
+                                
+                                col1, col2, col3 = st.columns(3)
+                                
+                                with col1:
+                                    # Download ONNX model
+                                    try:
+                                        model_name = st.session_state.get('ml_model_name_export', 'model')
+                                        timestamp = st.session_state.get('ml_timestamp', datetime.now().strftime('%Y%m%d_%H%M'))
+                                        
+                                        st.download_button(
+                                            label=f"📦 {model_name}.onnx",
+                                            data=st.session_state['ml_onnx_data'],
+                                            file_name=f"{model_name.lower()}_model_{timestamp}.onnx",
+                                            mime="application/octet-stream",
+                                            use_container_width=True,
+                                            key="download_onnx_unique"
+                                        )
+                                    except Exception as e:
+                                        st.error(f"ONNX download error: {e}")
+                                
+                                with col2:
+                                    # Download feature info
+                                    try:
+                                        st.download_button(
+                                            label="📄 Features.json",
+                                            data=st.session_state['ml_feature_json'],
+                                            file_name=f"{model_name.lower()}_features_{timestamp}.json",
+                                            mime="application/json",
+                                            use_container_width=True,
+                                            key="download_json_unique"
+                                        )
+                                    except Exception as e:
+                                        st.error(f"JSON download error: {e}")
+                                
+                                with col3:
+                                    # Clear prepared data
+                                    if st.button("🗑️ Clear Export Data", use_container_width=True, key="clear_export_unique"):
+                                        # Clear all export-related session state
+                                        export_keys = ['ml_onnx_ready', 'ml_onnx_data', 'ml_feature_json', 
+                                                    'ml_model_name_export', 'ml_timestamp']
+                                        for key in export_keys:
+                                            if key in st.session_state:
+                                                del st.session_state[key]
+                                        st.success("🗑️ Export data cleared!")
+                                        st.rerun()
                             
-                            col1, col2, col3 = st.columns(3)
-                            
-                            with col1:
-                                # Download ONNX model
-                                st.download_button(
-                                    label=f"📦 {st.session_state.ml_model_name}.onnx",
-                                    data=st.session_state.ml_onnx_data,
-                                    file_name=f"{st.session_state.ml_model_name.lower()}_model_{st.session_state.ml_timestamp}.onnx",
-                                    mime="application/octet-stream",
-                                    use_container_width=True
-                                )
-                            
-                            with col2:
-                                # Download feature info
-                                st.download_button(
-                                    label="📄 Features.json",
-                                    data=st.session_state.ml_feature_json,
-                                    file_name=f"{st.session_state.ml_model_name.lower()}_features_{st.session_state.ml_timestamp}.json",
-                                    mime="application/json",
-                                    use_container_width=True
-                                )
-                            
-                            with col3:
-                                # Clear prepared data
-                                if st.button("🗑️ Clear Prepared Data", use_container_width=True):
-                                    for key in ['ml_onnx_data', 'ml_feature_json', 'ml_model_name', 'ml_timestamp']:
-                                        if key in st.session_state:
-                                            del st.session_state[key]
+                            elif st.session_state.get('ml_onnx_ready', False):
+                                st.warning("⚠️ Model preparation incomplete. Please try again.")
+                                # Clear incomplete state
+                                if st.button("🔄 Reset Preparation", key="reset_prep_unique"):
+                                    st.session_state['ml_onnx_ready'] = False
                                     st.rerun()
+                            
+                            else:
+                                st.info("👆 Click 'Prepare Model for Download' to convert your model to ONNX format")
+
+                        else:
+                            st.warning("⚠️ No trained model available for export. Please train a model first.")
 
                         # Other download options (unchanged)
                         st.markdown("**📊 Additional Downloads:**")
