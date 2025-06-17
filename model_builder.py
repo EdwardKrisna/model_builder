@@ -29,8 +29,27 @@ from sklearn.model_selection import train_test_split
 from sklearn.metrics import r2_score, mean_absolute_error, mean_squared_error
 from sklearn.preprocessing import LabelEncoder
 import optuna
+from sklearn.ensemble import GradientBoostingRegressor
+from skl2onnx import convert_sklearn
+from skl2onnx.common.data_types import FloatTensorType
+import onnx
 
 warnings.filterwarnings('ignore')
+
+def initialize_session_state():
+    """Initialize session state variables"""
+    defaults = {
+        'processing_step': 'selection',
+        'advanced_step': 'ml',
+        'data_changed': False,
+        'show_overview_stats': False,
+        'show_dtype_table': False,
+        'show_saved_vars': False
+    }
+    
+    for key, value in defaults.items():
+        if key not in st.session_state:
+            st.session_state[key] = value
 
 def evaluate(actual, predicted, squared=False, model=None):
     """
@@ -117,7 +136,7 @@ if fun_mode:
         unsafe_allow_html=True,
     )
 
-@st.cache_resource(show_spinner=False, ttl=3600)  # Add TTL to refresh connection
+@st.cache_resource(show_spinner=False, ttl=3600)
 def cached_connect_database():
     try:
         db_user = st.secrets["database"]["user"]
@@ -126,7 +145,6 @@ def cached_connect_database():
         db_port = st.secrets["database"]["port"]
         db_name = st.secrets["database"]["database"]
         
-        # Add connection pooling and timeout parameters
         connection_string = f"postgresql://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}?connect_timeout=10&application_name=streamlit_app"
         
         engine = create_engine(
@@ -145,19 +163,34 @@ def cached_connect_database():
         st.error(f"Database connection failed: {e}")
         return None
 
-@st.cache_data(ttl=1800, show_spinner=False)  # Cache for 30 minutes
+@st.cache_data(ttl=1800, show_spinner=False)
 def cached_load_property_data(_engine):
     """Load data with optimized query and chunking"""
     if _engine is None:
         return pd.DataFrame()
     
     try:
-        # Use more specific query to reduce data transfer
-        query = """
+        # Estimate memory usage first
+        count_query = """
+        SELECT COUNT(*) FROM engineered_property_data 
+        WHERE hpm BETWEEN 50000 AND 200000000;
+        """
+        with _engine.connect() as conn:
+            result = conn.execute(text(count_query))
+            total_count = result.scalar()
+        
+        # Warn if too large
+        if total_count > 50000:
+            st.warning(f"⚠️ Large dataset detected ({total_count:,} records). Loading first 50,000 for performance.")
+            limit = 50000
+        else:
+            limit = min(total_count, 100000)
+        
+        query = f"""
         SELECT * FROM engineered_property_data 
         WHERE hpm BETWEEN 50000 AND 200000000
         ORDER BY hpm
-        LIMIT 100000;  -- Add reasonable limit
+        LIMIT {limit};
         """
         
         # Use chunking for large datasets
@@ -166,8 +199,6 @@ def cached_load_property_data(_engine):
         
         for chunk in pd.read_sql(query, _engine, chunksize=chunk_size):
             df_chunks.append(chunk)
-            if len(df_chunks) * chunk_size >= 200000:  # Limit total rows
-                break
         
         if df_chunks:
             df = pd.concat(df_chunks, ignore_index=True)
@@ -386,14 +417,21 @@ class RealEstateAnalyzer:
                 if col in transformed_df.columns and transform != 'None':
                     if transform == 'log':
                         new_col = f'ln_{col}'
-                        transformed_df[new_col] = np.log(transformed_df[col] + 1)  # Add 1 to handle zeros
+                        # Check if already exists
+                        if new_col in transformed_df.columns:
+                            st.warning(f"Column {new_col} already exists. Overwriting.")
+                        transformed_df[new_col] = np.log(transformed_df[col] + 1)
                         self.transformed_columns[col] = new_col
                     elif transform == 'squared':
                         new_col = f'{col}_squared'
+                        if new_col in transformed_df.columns:
+                            st.warning(f"Column {new_col} already exists. Overwriting.")
                         transformed_df[new_col] = transformed_df[col] ** 2
                         self.transformed_columns[col] = new_col
                     elif transform == 'sqrt':
                         new_col = f'sqrt_{col}'
+                        if new_col in transformed_df.columns:
+                            st.warning(f"Column {new_col} already exists. Overwriting.")
                         transformed_df[new_col] = np.sqrt(np.abs(transformed_df[col]))
                         self.transformed_columns[col] = new_col
             
@@ -619,6 +657,19 @@ class RealEstateAnalyzer:
         except Exception as e:
             return False, f"OLS modeling failed: {str(e)}", None
     
+    def save_ols_variables(self, y_column, x_columns):
+        """Save OLS variables for reuse in ML models"""
+        self.saved_ols_variables = {
+            'y_column': y_column,
+            'x_columns': x_columns,
+            'timestamp': datetime.now().isoformat()
+        }
+        return True, "OLS variables saved successfully!"
+
+    def get_saved_ols_variables(self):
+        """Get saved OLS variables"""
+        return getattr(self, 'saved_ols_variables', None)
+    
     def get_model_results(self):
         """Get comprehensive model results"""
         if self.model is None:
@@ -771,6 +822,64 @@ class RealEstateAnalyzer:
                 global_train_metrics, global_test_metrics,
                 y_test_all, y_test_pred, False
             )
+    
+    def export_model_onnx(self, model, feature_names, model_name):
+        """Export sklearn model to ONNX format with feature info"""
+        try:
+            # Define initial input shape (None for batch size, len for features)
+            initial_type = [('float_input', FloatTensorType([None, len(feature_names)]))]
+            
+            # Convert to ONNX
+            onnx_model = convert_sklearn(model, initial_types=initial_type)
+            
+            # Create feature info JSON
+            feature_info = {
+                'model_name': model_name,
+                'feature_names': feature_names,
+                'feature_count': len(feature_names),
+                'model_type': str(type(model).__name__),
+                'timestamp': datetime.now().isoformat(),
+                'instructions': {
+                    'usage': 'Load ONNX model with onnxruntime and use feature_names for input ordering',
+                    'input_shape': [None, len(feature_names)],
+                    'input_type': 'float32'
+                }
+            }
+            
+            return onnx_model.SerializeToString(), json.dumps(feature_info, indent=2)
+            
+        except Exception as e:
+            return None, f"ONNX export failed: {str(e)}"
+    
+    def prepare_model_exports(self, model, feature_names, model_name):
+        """Prepare ONNX model and feature JSON for download"""
+        try:
+            # Define initial input shape
+            initial_type = [('float_input', FloatTensorType([None, len(feature_names)]))]
+            
+            # Convert to ONNX
+            onnx_model = convert_sklearn(model, initial_types=initial_type)
+            
+            # Create feature info JSON
+            feature_info = {
+                'model_name': model_name,
+                'feature_names': feature_names,
+                'feature_count': len(feature_names),
+                'model_type': str(type(model).__name__),
+                'timestamp': datetime.now().isoformat(),
+                'instructions': {
+                    'usage': 'Load ONNX model with onnxruntime and use feature_names for input ordering',
+                    'input_shape': [None, len(feature_names)],
+                    'input_type': 'float32'
+                }
+            }
+            
+            return onnx_model.SerializeToString(), json.dumps(feature_info, indent=2), True
+            
+        except Exception as e:
+            return None, f"ONNX export failed: {str(e)}", False
+
+initialize_session_state()
 
 # Initialize session state
 if 'analyzer' not in st.session_state:
@@ -916,6 +1025,11 @@ if st.session_state.processing_step == 'selection':
             else:
                 st.error(message)
                 st.stop()
+
+    # Add this check before any database operations
+    if analyzer.engine is None:
+        st.error("Database connection failed. Please check your connection settings.")
+        st.stop()
     
     st.info("🎯 **Start by selecting your data scope** - this makes analysis faster and more focused")
     
@@ -1152,11 +1266,14 @@ elif st.session_state.processing_step == 'dtype':
             # More efficient sample value extraction
             sample_values = []
             for col in analyzer.current_data.columns:
-                non_null_series = analyzer.current_data[col].dropna()
-                if len(non_null_series) > 0:
-                    sample_values.append(str(non_null_series.iloc[0]))
-                else:
-                    sample_values.append('N/A')
+                try:
+                    non_null_series = analyzer.current_data[col].dropna()
+                    if len(non_null_series) > 0:
+                        sample_values.append(str(non_null_series.iloc[0]))
+                    else:
+                        sample_values.append('N/A')
+                except Exception:
+                    sample_values.append('Error')
             
             dtype_df = pd.DataFrame({
                 'Column': analyzer.current_data.columns,
@@ -1183,84 +1300,15 @@ elif st.session_state.processing_step == 'filter':
 
     else:
         # Initialize selected_filters dictionary
-        # Initialize selected_filters dictionary
         selected_filters = {}
-
-        # Shortcut Geographic Filters
-        st.markdown("### 🚀 Quick Geographic Filters")
-        st.info("Pre-defined metropolitan area filters for quick analysis")
-
-        shortcut_filters = {
-            'bodebek': '🏙️ BODEBEK (Bogor, Depok, Tangerang, Bekasi)',
-            'jabodetabek': '🌆 JABODETABEK (Jakarta + surrounding areas)',
-            'jabodetabek_no_kepulauan_seribu': '🌆 JABODETABEK (No Kepulauan Seribu)',
-            'bandung': '🏔️ Bandung Metropolitan Area',
-            'bali': '🏝️ Bali Metropolitan Area',
-            'surabaya': '🏢 Surabaya Metropolitan Area'
-        }
-
-        col1, col2, col3 = st.columns(3)
-
-        with col1:
-            if st.button(shortcut_filters['bodebek'], use_container_width=True):
-                success, message = analyzer.apply_shortcut_filter('bodebek')
-                if success:
-                    st.success(message)
-                    st.rerun()
-                else:
-                    st.error(message)
-            
-            if st.button(shortcut_filters['jabodetabek'], use_container_width=True):
-                success, message = analyzer.apply_shortcut_filter('jabodetabek')
-                if success:
-                    st.success(message)
-                    st.rerun()
-                else:
-                    st.error(message)
-
-        with col2:
-            if st.button(shortcut_filters['jabodetabek_no_kepulauan_seribu'], use_container_width=True):
-                success, message = analyzer.apply_shortcut_filter('jabodetabek_no_kepulauan_seribu')
-                if success:
-                    st.success(message)
-                    st.rerun()
-                else:
-                    st.error(message)
-            
-            if st.button(shortcut_filters['bandung'], use_container_width=True):
-                success, message = analyzer.apply_shortcut_filter('bandung')
-                if success:
-                    st.success(message)
-                    st.rerun()
-                else:
-                    st.error(message)
-
-        with col3:
-            if st.button(shortcut_filters['bali'], use_container_width=True):
-                success, message = analyzer.apply_shortcut_filter('bali')
-                if success:
-                    st.success(message)
-                    st.rerun()
-                else:
-                    st.error(message)
-            
-            if st.button(shortcut_filters['surabaya'], use_container_width=True):
-                success, message = analyzer.apply_shortcut_filter('surabaya')
-                if success:
-                    st.success(message)
-                    st.rerun()
-                else:
-                    st.error(message)
-
-        st.markdown("---")
-
+        
         # Geographic Filtering (Priority Section)
         st.markdown("### 🗺️ Smart Geographic Filtering")
 
         # Clear geographic filters button
         if st.button("🗑️ Clear Geographic Filters"):
             # Clear the multiselect keys to reset selections
-            for key in ['geo_wadmpr', 'geo_wadmkk', 'geo_wadmkc']:
+            for key in ['filter_geo_wadmpr', 'filter_geo_wadmkk', 'filter_geo_wadmkc']:
                 if key in st.session_state:
                     del st.session_state[key]
             st.rerun()
@@ -1286,16 +1334,19 @@ elif st.session_state.processing_step == 'filter':
                         wadmpr_col = col
                         break
                 
-                if wadmpr_col:
-                    wadmpr_options = sorted(analyzer.current_data[wadmpr_col].dropna().unique())
-                    selected_wadmpr = st.multiselect(
-                        f"Select Province ({wadmpr_col})", 
-                        wadmpr_options,
-                        key="geo_wadmpr"
-                    )
-                    if selected_wadmpr:
-                        selected_filters[wadmpr_col] = {'type': 'categorical', 'value': selected_wadmpr}
-            
+                if wadmpr_col and wadmpr_col in analyzer.current_data.columns:
+                    try:
+                        wadmpr_options = sorted(analyzer.current_data[wadmpr_col].dropna().unique())
+                        selected_wadmpr = st.multiselect(
+                            f"Select Province ({wadmpr_col})", 
+                            wadmpr_options,
+                            key="filter_geo_wadmpr"  # Fixed key naming
+                        )
+                        if selected_wadmpr:
+                            selected_filters[wadmpr_col] = {'type': 'categorical', 'value': selected_wadmpr}
+                    except Exception as e:
+                        st.error(f"Error loading province options: {e}")
+
             with col2:
                 # Regency selection (filtered by selected provinces)
                 wadmkk_col = None
@@ -1317,7 +1368,7 @@ elif st.session_state.processing_step == 'filter':
                     selected_wadmkk = st.multiselect(
                         f"Select Regency/City ({wadmkk_col})", 
                         available_wadmkk,
-                        key="geo_wadmkk"
+                        key="filter_geo_wadmkk"
                     )
                     if selected_wadmkk:
                         selected_filters[wadmkk_col] = {'type': 'categorical', 'value': selected_wadmkk}
@@ -1343,7 +1394,7 @@ elif st.session_state.processing_step == 'filter':
                     selected_wadmkc = st.multiselect(
                         f"Select District ({wadmkc_col})", 
                         available_wadmkc,
-                        key="geo_wadmkc"
+                        key="filter_geo_wadmkc"
                     )
                     if selected_wadmkc:
                         selected_filters[wadmkc_col] = {'type': 'categorical', 'value': selected_wadmkc}
@@ -1353,23 +1404,19 @@ elif st.session_state.processing_step == 'filter':
                             if any(geo in k for geo in ['wadmpr', 'wadmkk', 'wadmkc', 'wadmkd'])}
 
         if geographic_filters:
-            st.info("📍 **Current Geographic Selection:**")
-            for col, config in geographic_filters.items():
-                level = "Province" if "wadmpr" in col else "Regency" if "wadmkk" in col else "District" if "wadmkc" in col else "Village"
-                st.write(f"- **{level}:** {len(config['value'])} selected")
-            
-            # Preview geographic filtering result
             preview_geo_df = analyzer.current_data.copy()
             for col, config in geographic_filters.items():
-                preview_geo_df = preview_geo_df[preview_geo_df[col].isin(config['value'])]
+                if col in preview_geo_df.columns:  # Safety check
+                    preview_geo_df = preview_geo_df[preview_geo_df[col].isin(config['value'])]
             
             geo_reduction = len(analyzer.current_data) - len(preview_geo_df)
-            if geo_reduction > 0:
+            
+            if len(preview_geo_df) == 0:
+                st.error("❌ Geographic filters eliminate all data. Please adjust your selection.")
+            elif geo_reduction > 0:
                 st.success(f"✅ Geographic filters will reduce data by {geo_reduction:,} records → {len(preview_geo_df):,} remaining")
             else:
                 st.info("ℹ️ Geographic filters don't reduce the current dataset")
-        else:
-            st.info("ℹ️ No geographic filters selected")
 
         st.markdown("### 🔍 Additional Filters")
 
@@ -1682,8 +1729,10 @@ elif st.session_state.processing_step == 'transform':
             # Shortcut for distance columns
             st.markdown("### 🚀 Quick Distance + (HPM & Luas Tanah) Transformations")
             distance_columns = [col for col in numeric_columns if 'distance_to_' in col.lower()]
-            distance_columns.append('hpm')
-            distance_columns.append('luas_tanah')
+            # Only add if they exist in the dataset
+            for col_name in ['hpm', 'luas_tanah']:
+                if col_name in numeric_columns:
+                    distance_columns.append(col_name)
             
             if distance_columns:
                 st.info(f"Found {len(distance_columns)} distance columns: {', '.join(distance_columns)}")
@@ -1867,158 +1916,183 @@ elif st.session_state.processing_step == 'model':
                 st.write(f"**Model formula:** {actual_y} ~ {' + '.join(actual_x)}")
         
         # Run OLS Model button
-        if st.button("📈 Run OLS Regression", type="primary") and x_columns:
-            with st.spinner("Fitting OLS model..."):
-                success, message, vif_df = analyzer.run_ols_model(y_column, x_columns)
-                
-                if success:
-                    st.success(message)
-                    
-                    # Display model results
-                    results = analyzer.get_model_results()
-                    
-                    if results:
-                        # Model metrics
-                        st.markdown("### 📊 Model Results")
+        # Add this after the existing OLS model configuration
+        if x_columns:
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                if st.button("📈 Run OLS Regression", type="primary") and x_columns:
+                    with st.spinner("Fitting OLS model..."):
+                        success, message, vif_df = analyzer.run_ols_model(y_column, x_columns)
+                        
+                        if success:
+                            st.success(message)
+                            
+                            # Display model results
+                            results = analyzer.get_model_results()
+                            
+                            if results:
+                                # Model metrics
+                                st.markdown("### 📊 Model Results")
 
-                        # Model summary
-                        with st.expander("📋 Detailed Model Summary", expanded=False):
-                            st.code(results['summary'])
-                        
-                        col1, col2,= st.columns(2)
-                        with col1:
-                            st.metric("R-squared", f"{results['rsquared']:.4f}")
-                        with col2:
-                            st.metric("Adj. R-squared", f"{results['rsquared_adj']:.4f}")
-                        
-                        # Coefficients table
-                        st.markdown("### 📊 Model Coefficients")
-                        coef_df = pd.DataFrame({
-                            'Coefficient': results['params'],
-                            'P-value': results['pvalues'],
-                            'CI_Lower': results['conf_int'][0],
-                            'CI_Upper': results['conf_int'][1]
-                        })
-                        coef_df['Significant'] = coef_df['P-value'] < 0.05
-                        st.dataframe(coef_df.style.format({
-                            'Coefficient': '{:.4f}',
-                            'P-value': '{:.4f}',
-                            'CI_Lower': '{:.4f}',
-                            'CI_Upper': '{:.4f}'
-                        }), use_container_width=True)
-                        
-                        # Model diagnostics plots
-                        st.markdown("### 📈 Model Diagnostics")
-                        
-                        # Create diagnostic plots using matplotlib style
-                        dataset_name = f"Real Estate Analysis - {len(analyzer.model_data)} observations"
-                        
-                        # Create three plots side by side
-                        col1, col2, col3 = st.columns(3)
-                        
-                        with col1:
-                            # Plot 1: Predicted vs Actual (using seaborn style)
-                            fig1, ax1 = plt.subplots(figsize=(6, 4))
-                            y_pred = results['fitted_values']
-                            y_actual = results['actual_values']
-                            
-                            sns.regplot(x=y_pred, y=y_actual, line_kws={"color": "red"}, ax=ax1)
-                            ax1.set_xlabel('Predicted Values')
-                            ax1.set_ylabel('Actual Values')
-                            ax1.set_title(f'{dataset_name}\nPredicted vs Actual')
-                            plt.tight_layout()
-                            st.pyplot(fig1)
-                        
-                        with col2:
-                            # Plot 2: Residuals vs Fitted
-                            fig2, ax2 = plt.subplots(figsize=(6, 4))
-                            residuals = results['residuals']
-                            fitted_values = results['fitted_values']
-                            
-                            sns.scatterplot(x=fitted_values, y=residuals, alpha=0.7, ax=ax2)
-                            ax2.axhline(0, color='gray', linestyle='--')
-                            ax2.set_xlabel('Fitted Values')
-                            ax2.set_ylabel('Residuals')
-                            ax2.set_title(f'{dataset_name}\nResiduals vs Fitted')
-                            plt.tight_layout()
-                            st.pyplot(fig2)
-                        
-                        with col3:
-                            # Plot 3: Residual Normality (KDE Plot)
-                            fig3, ax3 = plt.subplots(figsize=(6, 4))
-                            sns.kdeplot(residuals, fill=True, color='blue', ax=ax3)
-                            ax3.set_title(f'{dataset_name}\nResidual Normality Plot (KDE)')
-                            ax3.set_xlabel('Residuals')
-                            plt.tight_layout()
-                            st.pyplot(fig3)
-                        
-                        # VIF Results
-                        if vif_df is not None:
-                            st.markdown("### 📊 Variance Inflation Factors (VIF)")
-                            st.dataframe(vif_df.style.format({'VIF': '{:.2f}'}), use_container_width=True)
-                            
-                            # VIF interpretation
-                            high_vif = vif_df[vif_df['VIF'] > 5]
-                            if not high_vif.empty:
-                                st.warning(f"High VIF detected (>5): {', '.join(high_vif['feature'].tolist())}")
-                        
-                        # Export options
-                        st.markdown("### 💾 Export Results")
-                        
-                        col1, col2, col3 = st.columns(3)
-                        
-                        with col1:
-                            # Export model summary
-                            actual_y = analyzer.transformed_columns.get(y_column, y_column)
-                            actual_x = [analyzer.transformed_columns.get(col, col) for col in x_columns]
-                            
-                            model_summary = {
-                                'timestamp': datetime.now().isoformat(),
-                                'model_formula': f"{actual_y} ~ {' + '.join(actual_x)}",
-                                'original_variables': {
-                                    'y': y_column,
-                                    'x': x_columns
-                                },
-                                'transformed_variables': {
-                                    'y': actual_y,
-                                    'x': actual_x
-                                },
-                                'sample_size': len(analyzer.model_data),
-                                'r_squared': results['rsquared'],
-                                'adj_r_squared': results['rsquared_adj'],
-                                'f_statistic': results['fvalue'],
-                                'f_pvalue': results['f_pvalue'],
-                                'aic': results['aic'],
-                                'bic': results['bic']
-                            }
-                            
-                            st.download_button(
-                                label="📊 Download Model Summary",
-                                data=json.dumps(model_summary, indent=2),
-                                file_name=f"model_results_{datetime.now().strftime('%Y%m%d_%H%M')}.json",
-                                mime="application/json"
-                            )
-                        
-                        with col2:
-                            # Export coefficients
-                            st.download_button(
-                                label="📋 Download Coefficients",
-                                data=coef_df.to_csv(),
-                                file_name=f"model_coefficients_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
-                                mime="text/csv"
-                            )
-                        
-                        with col3:
-                            # Export VIF if available
-                            if vif_df is not None:
-                                st.download_button(
-                                    label="📊 Download VIF",
-                                    data=vif_df.to_csv(),
-                                    file_name=f"vif_results_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
-                                    mime="text/csv"
-                                )
-                else:
-                    st.error(message)
+                                # Model summary
+                                with st.expander("📋 Detailed Model Summary", expanded=False):
+                                    st.code(results['summary'])
+                                
+                                col1, col2,= st.columns(2)
+                                with col1:
+                                    st.metric("R-squared", f"{results['rsquared']:.4f}")
+                                with col2:
+                                    st.metric("Adj. R-squared", f"{results['rsquared_adj']:.4f}")
+                                
+                                # Coefficients table
+                                st.markdown("### 📊 Model Coefficients")
+                                coef_df = pd.DataFrame({
+                                    'Coefficient': results['params'],
+                                    'P-value': results['pvalues'],
+                                    'CI_Lower': results['conf_int'][0],
+                                    'CI_Upper': results['conf_int'][1]
+                                })
+                                coef_df['Significant'] = coef_df['P-value'] < 0.05
+                                st.dataframe(coef_df.style.format({
+                                    'Coefficient': '{:.4f}',
+                                    'P-value': '{:.4f}',
+                                    'CI_Lower': '{:.4f}',
+                                    'CI_Upper': '{:.4f}'
+                                }), use_container_width=True)
+                                
+                                # Model diagnostics plots
+                                st.markdown("### 📈 Model Diagnostics")
+                                
+                                # Create diagnostic plots using matplotlib style
+                                dataset_name = f"Real Estate Analysis - {len(analyzer.model_data)} observations"
+                                
+                                # Create three plots side by side
+                                col1, col2, col3 = st.columns(3)
+                                
+                                with col1:
+                                    # Plot 1: Predicted vs Actual (using seaborn style)
+                                    fig1, ax1 = plt.subplots(figsize=(6, 4))
+                                    y_pred = results['fitted_values']
+                                    y_actual = results['actual_values']
+                                    
+                                    sns.regplot(x=y_pred, y=y_actual, line_kws={"color": "red"}, ax=ax1)
+                                    ax1.set_xlabel('Predicted Values')
+                                    ax1.set_ylabel('Actual Values')
+                                    ax1.set_title(f'{dataset_name}\nPredicted vs Actual')
+                                    plt.tight_layout()
+                                    st.pyplot(fig1)
+                                
+                                with col2:
+                                    # Plot 2: Residuals vs Fitted
+                                    fig2, ax2 = plt.subplots(figsize=(6, 4))
+                                    residuals = results['residuals']
+                                    fitted_values = results['fitted_values']
+                                    
+                                    sns.scatterplot(x=fitted_values, y=residuals, alpha=0.7, ax=ax2)
+                                    ax2.axhline(0, color='gray', linestyle='--')
+                                    ax2.set_xlabel('Fitted Values')
+                                    ax2.set_ylabel('Residuals')
+                                    ax2.set_title(f'{dataset_name}\nResiduals vs Fitted')
+                                    plt.tight_layout()
+                                    st.pyplot(fig2)
+                                
+                                with col3:
+                                    # Plot 3: Residual Normality (KDE Plot)
+                                    fig3, ax3 = plt.subplots(figsize=(6, 4))
+                                    sns.kdeplot(residuals, fill=True, color='blue', ax=ax3)
+                                    ax3.set_title(f'{dataset_name}\nResidual Normality Plot (KDE)')
+                                    ax3.set_xlabel('Residuals')
+                                    plt.tight_layout()
+                                    st.pyplot(fig3)
+                                
+                                # VIF Results
+                                if vif_df is not None:
+                                    st.markdown("### 📊 Variance Inflation Factors (VIF)")
+                                    st.dataframe(vif_df.style.format({'VIF': '{:.2f}'}), use_container_width=True)
+                                    
+                                    # VIF interpretation
+                                    high_vif = vif_df[vif_df['VIF'] > 5]
+                                    if not high_vif.empty:
+                                        st.warning(f"High VIF detected (>5): {', '.join(high_vif['feature'].tolist())}")
+                                
+                                # Export options
+                                st.markdown("### 💾 Export Results")
+                                
+                                col1, col2, col3 = st.columns(3)
+                                
+                                with col1:
+                                    # Export model summary
+                                    actual_y = analyzer.transformed_columns.get(y_column, y_column)
+                                    actual_x = [analyzer.transformed_columns.get(col, col) for col in x_columns]
+                                    
+                                    model_summary = {
+                                        'timestamp': datetime.now().isoformat(),
+                                        'model_formula': f"{actual_y} ~ {' + '.join(actual_x)}",
+                                        'original_variables': {
+                                            'y': y_column,
+                                            'x': x_columns
+                                        },
+                                        'transformed_variables': {
+                                            'y': actual_y,
+                                            'x': actual_x
+                                        },
+                                        'sample_size': len(analyzer.model_data),
+                                        'r_squared': results['rsquared'],
+                                        'adj_r_squared': results['rsquared_adj'],
+                                        'f_statistic': results['fvalue'],
+                                        'f_pvalue': results['f_pvalue'],
+                                        'aic': results['aic'],
+                                        'bic': results['bic']
+                                    }
+                                    
+                                    st.download_button(
+                                        label="📊 Download Model Summary",
+                                        data=json.dumps(model_summary, indent=2),
+                                        file_name=f"model_results_{datetime.now().strftime('%Y%m%d_%H%M')}.json",
+                                        mime="application/json"
+                                    )
+                                
+                                with col2:
+                                    # Export coefficients
+                                    st.download_button(
+                                        label="📋 Download Coefficients",
+                                        data=coef_df.to_csv(),
+                                        file_name=f"model_coefficients_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
+                                        mime="text/csv"
+                                    )
+                                
+                                with col3:
+                                    # Export VIF if available
+                                    if vif_df is not None:
+                                        st.download_button(
+                                            label="📊 Download VIF",
+                                            data=vif_df.to_csv(),
+                                            file_name=f"vif_results_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
+                                            mime="text/csv"
+                                        )
+                        else:
+                            st.error(message)
+            
+            with col2:
+                if st.button("💾 Save Variables for ML", type="secondary", help="Save current variable selection for ML models"):
+                    success, message = analyzer.save_ols_variables(y_column, x_columns)
+                    if success:
+                        st.success(message)
+                        st.info(f"Saved: Y={y_column}, X={len(x_columns)} variables")
+                        # Show saved variables info
+                        st.session_state.show_saved_vars = True
+                    else:
+                        st.error(message)
+
+        # Show saved variables info if available
+        if hasattr(st.session_state, 'show_saved_vars') and st.session_state.show_saved_vars:
+            saved_vars = analyzer.get_saved_ols_variables()
+            if saved_vars:
+                with st.expander("💾 Saved Variables", expanded=True):
+                    st.write(f"**Target (Y):** {saved_vars['y_column']}")
+                    st.write(f"**Features (X):** {', '.join(saved_vars['x_columns'])}")
+                    st.write(f"**Saved at:** {saved_vars['timestamp']}")
 
        
 elif st.session_state.processing_step == 'advanced':
@@ -2035,13 +2109,13 @@ elif st.session_state.processing_step == 'advanced':
         if st.button("🤖 ML Models", key="adv_ml", 
                     type="primary" if st.session_state.advanced_step == 'ml' else "secondary"):
             st.session_state.advanced_step = 'ml'
-            st.rerun()  # Add this to force refresh
+            st.rerun()
     
     with adv_col2:
         if st.button("🔗 Hybrid Model", key="adv_hybrid",
                     type="primary" if st.session_state.advanced_step == 'hybrid' else "secondary"):
             st.session_state.advanced_step = 'hybrid'
-            st.rerun()  # Add this to force refresh
+            st.rerun()
     
     # Add a divider
     st.markdown("---")
@@ -2054,9 +2128,28 @@ elif st.session_state.processing_step == 'advanced':
             st.markdown('## Machine Learning Models')
 
         if analyzer.current_data is not None:
+
+            # Model Selection
+            st.markdown("### 🤖 Model Selection")
+            model_type = st.selectbox("Choose Algorithm", 
+                                    ["Random Forest", "Gradient Boosting (GBDT)"], 
+                                    key="advanced_ml_model_type")
+
+            model_name = "RandomForest" if model_type == "Random Forest" else "GradientBoosting"
+
             # Model Configuration
             st.markdown("### 🎯 Model Configuration")
             
+            # Check for saved OLS variables
+            saved_vars = analyzer.get_saved_ols_variables()
+            if saved_vars:
+                st.success(f"💾 **Saved OLS Variables Available**: Y={saved_vars['y_column']}, X={len(saved_vars['x_columns'])} variables")
+                
+                use_saved = st.checkbox("🔄 Use Saved OLS Variables", value=False, key="use_saved_vars")
+            else:
+                use_saved = False
+                st.info("💡 No saved variables from OLS step. Configure manually or run OLS first.")     
+
             col1, col2 = st.columns(2)
             
             with col1:
@@ -2065,15 +2158,15 @@ elif st.session_state.processing_step == 'advanced':
                 # Get all numeric columns (including transformed ones)
                 numeric_columns = analyzer.current_data.select_dtypes(include=[np.number]).columns.tolist()
                 
-                # Target variable (Y)
-                ml_y_column = st.selectbox("Target Variable (Y)", numeric_columns, 
-                                        key="ml_y_select")
-                
-                # Independent variables (X)
-                available_x_cols = [col for col in numeric_columns if col != ml_y_column]
-                ml_x_columns = st.multiselect("Feature Variables (X)", available_x_cols,
-                                            default=available_x_cols[:5] if len(available_x_cols) >= 5 else available_x_cols,
-                                            key="ml_x_select")
+                if use_saved and saved_vars:
+                    ml_y_column = saved_vars['y_column']
+                    ml_x_columns = saved_vars['x_columns']
+                else:
+                    ml_y_column = st.selectbox("Target Variable (Y)", numeric_columns, key="ml_y_select")
+                    available_x_cols = [col for col in numeric_columns if col != ml_y_column]
+                    ml_x_columns = st.multiselect("Feature Variables (X)", available_x_cols,
+                                                default=available_x_cols[:5] if len(available_x_cols) >= 5 else available_x_cols,
+                                                key="ml_x_select")
             
             with col2:
                 st.markdown("**Group Configuration:**")
@@ -2203,65 +2296,143 @@ elif st.session_state.processing_step == 'advanced':
                             st.error(f"Optuna optimization failed: {str(e)}")
             
             with tab2:
-                st.markdown("**Manual Random Forest Parameters**")
+                st.markdown("**Manual Parameters**")
                 
-                # Check if we have best params from Optuna
-                if 'best_params' in st.session_state:
-                    st.info("💡 Optuna found these optimal parameters. You can use them or modify below:")
-                    st.json(st.session_state.best_params)
-                
-                col1, col2, col3 = st.columns(3)
-                
-                with col1:
-                    manual_n_estimators = st.text_input("n_estimators", value="100")
-                    manual_max_depth = st.text_input("max_depth", value="10")
-                
-                with col2:
-                    manual_min_samples_split = st.text_input("min_samples_split", value="2")
-                    manual_min_samples_leaf = st.text_input("min_samples_leaf", value="1")
-                
-                with col3:
-                    manual_max_features = st.selectbox("max_features", ['sqrt', 'log2', 'None'], index=0)
-                    manual_random_state = st.text_input("random_state", value=str(random_state))
-            
+                if model_type == "Random Forest":
+                    # Check if we have best params from Optuna
+                    if 'best_params' in st.session_state:
+                        st.info("💡 Optuna found these optimal parameters. You can use them or modify below:")
+                        st.json(st.session_state.best_params)
+                        
+                        # Pre-fill with Optuna results
+                        default_n_est = str(st.session_state.best_params.get('n_estimators', 100))
+                        default_max_depth = str(st.session_state.best_params.get('max_depth', 10))
+                        default_min_split = str(st.session_state.best_params.get('min_samples_split', 2))
+                        default_min_leaf = str(st.session_state.best_params.get('min_samples_leaf', 1))
+                        default_max_feat = st.session_state.best_params.get('max_features', 'sqrt')
+                    else:
+                        # Default values
+                        default_n_est = "100"
+                        default_max_depth = "10"
+                        default_min_split = "2"
+                        default_min_leaf = "1"
+                        default_max_feat = 'sqrt'
+                    
+                    col1, col2, col3 = st.columns(3)
+                    
+                    with col1:
+                        manual_n_estimators = st.text_input("n_estimators", value=default_n_est)
+                        manual_max_depth = st.text_input("max_depth", value=default_max_depth)
+                    
+                    with col2:
+                        manual_min_samples_split = st.text_input("min_samples_split", value=default_min_split)
+                        manual_min_samples_leaf = st.text_input("min_samples_leaf", value=default_min_leaf)
+                    
+                    with col3:
+                        manual_max_features = st.selectbox("max_features", ['sqrt', 'log2', 'None'], 
+                                                        index=['sqrt', 'log2', 'None'].index(default_max_feat) if default_max_feat in ['sqrt', 'log2', 'None'] else 0)
+                        manual_random_state = st.text_input("random_state", value=str(random_state))
+
+                elif model_type == "Gradient Boosting (GBDT)":
+                    # Check if we have best params from Optuna
+                    if 'best_params' in st.session_state:
+                        st.info("💡 Optuna found these optimal parameters. You can use them or modify below:")
+                        st.json(st.session_state.best_params)
+                        
+                        # Pre-fill with Optuna results
+                        default_n_est = str(st.session_state.best_params.get('n_estimators', 100))
+                        default_learning_rate = str(st.session_state.best_params.get('learning_rate', 0.1))
+                        default_max_depth = str(st.session_state.best_params.get('max_depth', 6))
+                        default_subsample = str(st.session_state.best_params.get('subsample', 1.0))
+                        default_min_split = str(st.session_state.best_params.get('min_samples_split', 2))
+                        default_min_leaf = str(st.session_state.best_params.get('min_samples_leaf', 1))
+                    else:
+                        # Default values
+                        default_n_est = "100"
+                        default_learning_rate = "0.1"
+                        default_max_depth = "6"
+                        default_subsample = "1.0"
+                        default_min_split = "2"
+                        default_min_leaf = "1"
+                    
+                    col1, col2, col3 = st.columns(3)
+                    
+                    with col1:
+                        manual_n_estimators = st.text_input("n_estimators", value=default_n_est)
+                        manual_learning_rate = st.text_input("learning_rate", value=default_learning_rate)
+                    
+                    with col2:
+                        manual_max_depth = st.text_input("max_depth", value=default_max_depth)
+                        manual_subsample = st.text_input("subsample", value=default_subsample)
+                    
+                    with col3:
+                        manual_random_state = st.text_input("random_state", value=str(random_state))
+                        manual_min_samples_split = st.text_input("min_samples_split", value=default_min_split)
+                        manual_min_samples_leaf = st.text_input("min_samples_leaf", value=default_min_leaf)
+
             # Model Training
             st.markdown("### 🚀 Model Training & Evaluation")
             
-            if st.button("🤖 Train Random Forest Model", type="primary") and ml_x_columns:
-                
+            if st.button(f"🤖 Train {model_name} Model", type="primary") and ml_x_columns:
                 try:
-                    # Parse manual parameters
-                    try:
-                        n_est = int(manual_n_estimators)
-                        max_d = int(manual_max_depth) if manual_max_depth != 'None' else None
-                        min_split = int(manual_min_samples_split)
-                        min_leaf = int(manual_min_samples_leaf)
-                        max_feat = manual_max_features if manual_max_features != 'None' else None
-                        rand_state = int(manual_random_state)
-                    except ValueError:
-                        st.error("Please enter valid integer values for parameters")
-                        st.stop()
+                    # Parse and validate parameters
+                    n_est = int(manual_n_estimators)
+                    if n_est < 1 or n_est > 1000:
+                        raise ValueError("n_estimators must be between 1 and 1000")
                     
-                    # Create Random Forest model
-                    rf_model = RandomForestRegressor(
-                        n_estimators=n_est,
-                        max_depth=max_d,
-                        min_samples_split=min_split,
-                        min_samples_leaf=min_leaf,
-                        max_features=max_feat,
-                        random_state=rand_state
-                    )
+                    max_d = int(manual_max_depth) if manual_max_depth not in ['None', ''] else None
+                    if max_d is not None and (max_d < 1 or max_d > 50):
+                        raise ValueError("max_depth must be between 1 and 50")
                     
-                    with st.spinner("Training Random Forest model..."):
+                    min_split = int(manual_min_samples_split)
+                    if min_split < 2:
+                        raise ValueError("min_samples_split must be >= 2")
+                    
+                    min_leaf = int(manual_min_samples_leaf)
+                    if min_leaf < 1:
+                        raise ValueError("min_samples_leaf must be >= 1")
+                    
+                    max_feat = manual_max_features if manual_max_features != 'None' else None
+                    rand_state = int(manual_random_state)
+                    
+                    # Add GBDT parameters only when needed
+                    if model_type == "Gradient Boosting (GBDT)":
+                        learning_rate = float(manual_learning_rate)
+                        subsample = float(manual_subsample)
+                    
+                    # Create model based on model_type
+                    if model_type == "Random Forest":
+                        model = RandomForestRegressor(
+                            n_estimators=n_est,
+                            max_depth=max_d,
+                            min_samples_split=min_split,
+                            min_samples_leaf=min_leaf,
+                            max_features=max_feat,
+                            random_state=rand_state
+                        )
+                    elif model_type == "Gradient Boosting (GBDT)":
+                        model = GradientBoostingRegressor(
+                            n_estimators=n_est,
+                            learning_rate=learning_rate,
+                            max_depth=max_d,
+                            subsample=subsample,
+                            min_samples_split=min_split,
+                            min_samples_leaf=min_leaf,
+                            random_state=rand_state
+                        )
+                    
+                    with st.spinner(f"Training {model_name} model..."):
                         # Run model training and evaluation
                         final_model, evaluation_df, train_results_df, global_train_metrics, global_test_metrics, y_test_last, y_pred_last, is_log_transformed = analyzer.goval_machine_learning(
-                            ml_x_columns, ml_y_column, rf_model,
+                            ml_x_columns, ml_y_column, model,
                             group_column if use_group else None,
                             n_splits, rand_state, min_sample
                         )
                         
-                        # Store model in session state
+                        # Store all necessary variables in session state
                         st.session_state.ml_model = final_model
+                        st.session_state.ml_model_name = model_name
+                        st.session_state.ml_feature_names = ml_x_columns
                         st.session_state.ml_evaluation_df = evaluation_df
                         st.session_state.ml_train_df = train_results_df
                         st.session_state.ml_global_train = global_train_metrics
@@ -2269,139 +2440,194 @@ elif st.session_state.processing_step == 'advanced':
                         st.session_state.ml_y_test_last = y_test_last
                         st.session_state.ml_y_pred_last = y_pred_last
                         st.session_state.ml_is_log_transformed = is_log_transformed
-                    
-                    st.success("✅ Model training completed!")
-                    
-                    # Display Results
-                    st.markdown("### 📊 Model Results")
-                    
-                    # Global metrics
-                    col1, col2 = st.columns(2)
-                    
-                    with col1:
-                        st.markdown("**🏋️ Training Metrics (Average)**")
-                        for metric, value in global_train_metrics.items():
-                            st.metric(f"Train {metric}", f"{value:.4f}")
-                    
-                    with col2:
-                        st.markdown("**🎯 Test Metrics (Average)**")
-                        for metric, value in global_test_metrics.items():
-                            st.metric(f"Test {metric}", f"{value:.4f}")
-                    
-                    # Detailed Results
-                    st.markdown("### 📈 Detailed Cross-Validation Results")
-                    
-                    tab1, tab2, tab3 = st.tabs(["📊 Test Results", "🏋️ Train Results", "📈 Visualization"])
-                    
-                    with tab1:
-                        st.markdown("**Test Results by Fold:**")
-                        st.dataframe(evaluation_df, use_container_width=True)
                         
-                        st.markdown("**Test Results Summary:**")
-                        st.dataframe(evaluation_df.describe(), use_container_width=True)
-                    
-                    with tab2:
-                        st.markdown("**Train Results Summary:**")
-                        st.dataframe(train_results_df.describe(), use_container_width=True)
-                    
-                    with tab3:
-                        # Actual vs Predicted plot
-                        fig, ax = plt.subplots(figsize=(8, 6))
+                        st.success("✅ Model training completed!")
                         
-                        if is_log_transformed:
-                            y_actual_plot = np.exp(y_test_last)
-                            y_pred_plot = np.exp(y_pred_last)
-                        else:
-                            y_actual_plot = y_test_last
-                            y_pred_plot = y_pred_last
+                        # Display Results
+                        st.markdown("### 📊 Model Results")
                         
-                        sns.scatterplot(x=y_actual_plot, y=y_pred_plot, alpha=0.6, ax=ax)
-                        ax.plot([y_actual_plot.min(), y_actual_plot.max()], 
-                            [y_actual_plot.min(), y_actual_plot.max()], 'r--', lw=2)
-                        ax.set_xlabel('Actual Values')
-                        ax.set_ylabel('Predicted Values')
-                        ax.set_title('Actual vs Predicted (Last Fold)')
-                        plt.tight_layout()
-                        st.pyplot(fig)
-                    
-                    # Model Export
-                    st.markdown("### 💾 Model Export")
-                    
-                    col1, col2, col3 = st.columns(3)
-                    
-                    with col1:
-                        # Download model
-                        model_filename = f"rf_model_{datetime.now().strftime('%Y%m%d_%H%M')}.pkl"
-                        model_bytes = pickle.dumps(final_model)
+                        # Global metrics
+                        col1, col2 = st.columns(2)
                         
-                        st.download_button(
-                            label="📦 Download Model (.pkl)",
-                            data=model_bytes,
-                            file_name=model_filename,
-                            mime="application/octet-stream"
-                        )
-                    
-                    with col2:
-                        # Download evaluation results
-                        eval_csv = evaluation_df.to_csv(index=False)
-                        st.download_button(
-                            label="📊 Download Results (.csv)",
-                            data=eval_csv,
-                            file_name=f"ml_evaluation_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
-                            mime="text/csv"
-                        )
-                    
-                    with col3:
-                        # Download model info
-                        model_info = {
-                            'timestamp': datetime.now().isoformat(),
-                            'algorithm': 'RandomForestRegressor',
-                            'target_variable': ml_y_column,
-                            'features': ml_x_columns,
-                            'parameters': {
-                                'n_estimators': n_est,
-                                'max_depth': max_d,
-                                'min_samples_split': min_split,
-                                'min_samples_leaf': min_leaf,
-                                'max_features': max_feat,
-                                'random_state': rand_state
-                            },
-                            'group_column': group_column if use_group else None,
-                            'n_splits': n_splits,
-                            'min_sample': min_sample,
-                            'is_log_transformed': is_log_transformed,
-                            'global_test_metrics': global_test_metrics,
-                            'global_train_metrics': global_train_metrics
-                        }
+                        with col1:
+                            st.markdown("**🏋️ Training Metrics (Average)**")
+                            for metric, value in global_train_metrics.items():
+                                st.metric(f"Train {metric}", f"{value:.4f}")
                         
-                        st.download_button(
-                            label="📋 Download Model Info (.json)",
-                            data=json.dumps(model_info, indent=2),
-                            file_name=f"ml_model_info_{datetime.now().strftime('%Y%m%d_%H%M')}.json",
-                            mime="application/json"
-                        )
-                    
+                        with col2:
+                            st.markdown("**🎯 Test Metrics (Average)**")
+                            for metric, value in global_test_metrics.items():
+                                st.metric(f"Test {metric}", f"{value:.4f}")
+                        
+                        # Detailed Results
+                        st.markdown("### 📈 Detailed Cross-Validation Results")
+                        
+                        tab1, tab2, tab3 = st.tabs(["📊 Test Results", "🏋️ Train Results", "📈 Visualization"])
+                        
+                        with tab1:
+                            st.markdown("**Test Results by Fold:**")
+                            st.dataframe(evaluation_df, use_container_width=True)
+                            
+                            st.markdown("**Test Results Summary:**")
+                            st.dataframe(evaluation_df.describe(), use_container_width=True)
+                        
+                        with tab2:
+                            st.markdown("**Train Results Summary:**")
+                            st.dataframe(train_results_df.describe(), use_container_width=True)
+                        
+                        with tab3:
+                            # Actual vs Predicted plot
+                            fig, ax = plt.subplots(figsize=(8, 6))
+                            
+                            if is_log_transformed:
+                                y_actual_plot = np.exp(y_test_last)
+                                y_pred_plot = np.exp(y_pred_last)
+                            else:
+                                y_actual_plot = y_test_last
+                                y_pred_plot = y_pred_last
+                            
+                            sns.scatterplot(x=y_actual_plot, y=y_pred_plot, alpha=0.6, ax=ax)
+                            ax.plot([y_actual_plot.min(), y_actual_plot.max()], 
+                                [y_actual_plot.min(), y_actual_plot.max()], 'r--', lw=2)
+                            ax.set_xlabel('Actual Values')
+                            ax.set_ylabel('Predicted Values')
+                            ax.set_title('Actual vs Predicted (Last Fold)')
+                            plt.tight_layout()
+                            st.pyplot(fig)
+                        
+                        # Model Export with ONNX
+                        st.markdown("### 💾 Model Export")
+
+                        # Prepare exports button (separate from download buttons)
+                        if st.button("🔄 Prepare Model for Download", type="secondary", use_container_width=True):
+                            try:
+                                with st.spinner("Converting model to ONNX..."):
+                                    onnx_bytes, feature_json, success = analyzer.prepare_model_exports(
+                                        final_model, ml_x_columns, model_name
+                                    )
+                                    
+                                    if success:
+                                        st.session_state.ml_onnx_data = onnx_bytes
+                                        st.session_state.ml_feature_json = feature_json
+                                        st.session_state.ml_model_name_export = model_name
+                                        st.session_state.ml_timestamp = datetime.now().strftime('%Y%m%d_%H%M')
+                                        st.success("✅ Model prepared! Download buttons are now available below.")
+                                    else:
+                                        st.error(f"❌ {feature_json}")
+                            except Exception as e:
+                                st.error(f"Model export preparation failed: {str(e)}")
+
+                        # Download buttons (only show if data is prepared)
+                        if st.session_state.get('ml_onnx_data') is not None:
+                            st.markdown("**📥 Download Files:**")
+                            
+                            col1, col2, col3 = st.columns(3)
+                            
+                            with col1:
+                                # Download ONNX model
+                                st.download_button(
+                                    label=f"📦 {st.session_state.ml_model_name}.onnx",
+                                    data=st.session_state.ml_onnx_data,
+                                    file_name=f"{st.session_state.ml_model_name.lower()}_model_{st.session_state.ml_timestamp}.onnx",
+                                    mime="application/octet-stream",
+                                    use_container_width=True
+                                )
+                            
+                            with col2:
+                                # Download feature info
+                                st.download_button(
+                                    label="📄 Features.json",
+                                    data=st.session_state.ml_feature_json,
+                                    file_name=f"{st.session_state.ml_model_name.lower()}_features_{st.session_state.ml_timestamp}.json",
+                                    mime="application/json",
+                                    use_container_width=True
+                                )
+                            
+                            with col3:
+                                # Clear prepared data
+                                if st.button("🗑️ Clear Prepared Data", use_container_width=True):
+                                    for key in ['ml_onnx_data', 'ml_feature_json', 'ml_model_name', 'ml_timestamp']:
+                                        if key in st.session_state:
+                                            del st.session_state[key]
+                                    st.rerun()
+
+                        # Other download options (unchanged)
+                        st.markdown("**📊 Additional Downloads:**")
+
+                        col1, col2 = st.columns(2)
+
+                        with col1:
+                            # Download evaluation results
+                            eval_csv = evaluation_df.to_csv(index=False)
+                            st.download_button(
+                                label="📊 Download Results (.csv)",
+                                data=eval_csv,
+                                file_name=f"ml_evaluation_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
+                                mime="text/csv",
+                                use_container_width=True
+                            )
+
+                        with col2:
+                            # Download model info
+                            model_info = {
+                                'timestamp': datetime.now().isoformat(),
+                                'algorithm': model_name,
+                                'target_variable': ml_y_column,
+                                'features': ml_x_columns,
+                                'model_format': 'ONNX',
+                                'usage_example': {
+                                    'python': f'''
+                        import onnxruntime as ort
+                        import numpy as np
+                        import json
+
+                        # Load model and features
+                        session = ort.InferenceSession('{model_name.lower()}_model.onnx')
+                        with open('{model_name.lower()}_features.json', 'r') as f:
+                            feature_info = json.load(f)
+
+                        # Prepare input (ensure correct feature order)
+                        input_data = your_data[feature_info['feature_names']].values.astype(np.float32)
+
+                        # Make predictions
+                        predictions = session.run(None, {{'float_input': input_data}})[0]
+                                    '''
+                                },
+                                'global_test_metrics': global_test_metrics,
+                                'global_train_metrics': global_train_metrics
+                            }
+                            
+                            st.download_button(
+                                label="📋 Download Model Info (.json)",
+                                data=json.dumps(model_info, indent=2),
+                                file_name=f"ml_model_info_{datetime.now().strftime('%Y%m%d_%H%M')}.json",
+                                mime="application/json",
+                                use_container_width=True
+                            )
+                        
+                        # Show current model status
+                        if 'ml_model' in st.session_state:
+                            st.markdown("---")
+                            st.success(f"🤖 {model_name} model is ready!")
+                            
+                            # Quick model info
+                            with st.expander("📋 Current Model Info"):
+                                st.write(f"**Algorithm:** {model_name}")
+                                if 'ml_global_test' in st.session_state:
+                                    metrics = st.session_state.ml_global_test
+                                    st.write(f"**Test R²:** {metrics['R2']:.4f}")
+                                    st.write(f"**Test PE10:** {metrics['PE10']:.4f}")
+                                    st.write(f"**Test RT20:** {metrics['RT20']:.4f}")
+                                    st.write(f"**Test FSD:** {metrics['FSD']:.4f}")
+                
+                except ValueError as e:
+                    st.error(f"Invalid parameter value: {e}")
                 except Exception as e:
                     st.error(f"Model training failed: {str(e)}")
                     st.code(traceback.format_exc())
-            
+
             elif not ml_x_columns:
                 st.warning("Please select at least one feature variable to train the model")
-            
-            # Show current model status
-            if 'ml_model' in st.session_state:
-                st.markdown("---")
-                st.success("🤖 Random Forest model is ready!")
-                
-                # Quick model info
-                with st.expander("📋 Current Model Info"):
-                    st.write(f"**Algorithm:** Random Forest Regressor")
-                    if 'ml_global_test' in st.session_state:
-                        metrics = st.session_state.ml_global_test
-                        st.write(f"**Test R²:** {metrics['R2']:.4f}")
-                        st.write(f"**Test PE10:** {metrics['PE10']:.4f}")
-                        st.write(f"**Test RT20:** {metrics['RT20']:.4f}")
-                        st.write(f"**Test FSD:** {metrics['FSD']:.4f}")
         
         else:
             st.warning("Please load and process data first")
@@ -2435,36 +2661,29 @@ elif st.session_state.processing_step == 'advanced':
             numeric_columns = analyzer.current_data.select_dtypes(include=[np.number]).columns.tolist()
             
             col1, col2 = st.columns(2)
-            
+        
             with col1:
-                # Target variable (Y)
                 hybrid_y_column = st.selectbox("Target Variable (Y)", numeric_columns, 
                                             index=numeric_columns.index('ln_hpm') if 'ln_hpm' in numeric_columns else 0,
                                             key="hybrid_y_select")
             
             with col2:
-                # Cross-validation settings
                 hybrid_n_splits = st.number_input("CV Folds", min_value=3, max_value=20, value=5, key="hybrid_cv_folds")
             
-            # Independent variables (X) - using checkbox approach for full names
+            # Independent variables selection
             st.markdown("**Independent Variables (X):**")
             available_x_cols = [col for col in numeric_columns if col != hybrid_y_column]
             
-            # Create columns for checkboxes (3 columns to save space)
             checkbox_cols = st.columns(3)
             hybrid_x_columns = []
             
             for i, col in enumerate(available_x_cols):
                 with checkbox_cols[i % 3]:
-                    if st.checkbox(col, value=(i < 5), key=f"hybrid_x_{col}"):  # Default first 5 selected
+                    if st.checkbox(col, value=(i < 5), key=f"hybrid_x_{col}"):
                         hybrid_x_columns.append(col)
             
-            if hybrid_x_columns:
-                st.success(f"✅ Selected {len(hybrid_x_columns)} features for hybrid model")
-            
-            # Hyperparameter Configuration
-            st.markdown("### ⚙️ Random Forest Parameters (for Residuals)")
-            
+            # Random Forest Parameters section
+            st.markdown("### ⚙️ Random Forest Parameters")
             param_col1, param_col2, param_col3 = st.columns(3)
             
             with param_col1:
@@ -2508,6 +2727,10 @@ elif st.session_state.processing_step == 'advanced':
                         
                         fold_predictions = []
                         progress_bar = st.progress(0)
+
+                        # Store final models for export
+                        final_ols_model = None
+                        final_rf_model = None
                         
                         # Cross-validation loop
                         for fold, (train_idx, test_idx) in enumerate(kf.split(X)):
@@ -2572,8 +2795,10 @@ elif st.session_state.processing_step == 'advanced':
                             # Diagnostic metric
                             results['RF_Residual_R2'].append(rf_residual_r2)
                             
-                            # Store predictions for plotting (last fold)
+                            # Store models from last fold for export
                             if fold == hybrid_n_splits - 1:
+                                final_ols_model = ols_model
+                                final_rf_model = rf_model
                                 fold_predictions = {
                                     'y_actual': y_test,
                                     'ols_pred': ols_pred_test,
@@ -2604,6 +2829,9 @@ elif st.session_state.processing_step == 'advanced':
                         }
                         
                         # Store in session state
+                        st.session_state.final_ols_model = final_ols_model
+                        st.session_state.final_rf_model = final_rf_model
+                        st.session_state.hybrid_feature_names = hybrid_x_columns
                         st.session_state.hybrid_results = results
                         st.session_state.hybrid_avg_metrics = avg_metrics
                         st.session_state.hybrid_predictions = fold_predictions
@@ -2744,135 +2972,113 @@ elif st.session_state.processing_step == 'advanced':
                     plt.tight_layout()
                     st.pyplot(fig)
                     
-                    # Train final models on full dataset for saving
+                    # Hybrid Model Export
                     st.markdown("### 💾 Save Trained Models")
-                    
-                    with st.spinner("Training final models on full dataset..."):
-                        # Prepare full dataset
-                        X_full = df_model[hybrid_x_columns]
-                        y_full = df_model[hybrid_y_column]
-                        
-                        # Train final OLS model
-                        X_full_ols = sm.add_constant(X_full)
-                        final_ols_model = sm.OLS(y_full, X_full_ols).fit()
-                        ols_pred_full = final_ols_model.predict(X_full_ols)
-                        residuals_full = y_full - ols_pred_full
-                        
-                        # Train final RF model on full dataset residuals
-                        final_rf_model = RandomForestRegressor(
-                            n_estimators=hybrid_n_estimators,
-                            max_depth=hybrid_max_depth,
-                            min_samples_split=hybrid_min_samples_split,
-                            min_samples_leaf=hybrid_min_samples_leaf,
-                            max_features=hybrid_max_features,
-                            random_state=hybrid_random_state
-                        )
-                        final_rf_model.fit(X_full, residuals_full)
-                        
-                        # Store final models in session state
-                        st.session_state.final_ols_model = final_ols_model
-                        st.session_state.final_rf_model = final_rf_model
-                        st.session_state.hybrid_feature_names = hybrid_x_columns
-                    
-                    st.success("✅ Final models trained and ready for download!")
-                    
-                    # Model download section
-                    col1, col2, col3 = st.columns(3)
-                    
-                    with col1:
-                        # Download OLS model
-                        ols_model_bytes = pickle.dumps(st.session_state.final_ols_model)
-                        st.download_button(
-                            label="📦 Download OLS Model (.pkl)",
-                            data=ols_model_bytes,
-                            file_name=f"hybrid_ols_model_{datetime.now().strftime('%Y%m%d_%H%M')}.pkl",
-                            mime="application/octet-stream",
-                            help="Download the trained OLS model (Step 1 of hybrid)"
-                        )
-                    
-                    with col2:
-                        # Download RF model
-                        rf_model_bytes = pickle.dumps(st.session_state.final_rf_model)
-                        st.download_button(
-                            label="📦 Download RF Model (.pkl)",
-                            data=rf_model_bytes,
-                            file_name=f"hybrid_rf_model_{datetime.now().strftime('%Y%m%d_%H%M')}.pkl",
-                            mime="application/octet-stream",
-                            help="Download the Random Forest model trained on OLS residuals (Step 2 of hybrid)"
-                        )
-                    
-                    with col3:
-                        # Download both models as a package
-                        hybrid_package = {
-                            'ols_model': st.session_state.final_ols_model,
-                            'rf_model': st.session_state.final_rf_model,
-                            'feature_names': hybrid_x_columns,
-                            'target_name': hybrid_y_column,
-                            'model_info': st.session_state.hybrid_model_info,
-                            'performance_metrics': avg_metrics,
-                            'usage_instructions': {
-                                'step1': 'Load both models',
-                                'step2': 'Get OLS prediction: ols_pred = ols_model.predict(X_with_constant)',
-                                'step3': 'Get RF residual prediction: rf_pred = rf_model.predict(X)',
-                                'step4': 'Final prediction: final_pred = ols_pred + rf_pred'
-                            }
-                        }
-                        
-                        hybrid_package_bytes = pickle.dumps(hybrid_package)
-                        st.download_button(
-                            label="📦 Download Hybrid Package (.pkl)",
-                            data=hybrid_package_bytes,
-                            file_name=f"hybrid_model_package_{datetime.now().strftime('%Y%m%d_%H%M')}.pkl",
-                            mime="application/octet-stream",
-                            help="Download complete hybrid model package with usage instructions"
-                        )
-                    
-                    # Usage instructions
-                    with st.expander("📖 How to Use Downloaded Models", expanded=False):
-                        st.markdown("""
-                        **Using the Hybrid Model Package:**
-                        
-                        ```python
-                        import pickle
-                        import pandas as pd
-                        import statsmodels.api as sm
-                        
-                        # Load the hybrid package
-                        with open('hybrid_model_package.pkl', 'rb') as f:
-                            package = pickle.load(f)
-                        
-                        ols_model = package['ols_model']
-                        rf_model = package['rf_model']
-                        feature_names = package['feature_names']
-                        
-                        # Make predictions on new data
-                        def predict_hybrid(new_data):
-                            # Ensure features are in correct order
-                            X_new = new_data[feature_names]
+
+                    # Prepare hybrid models button
+                    if st.button("🔄 Prepare Hybrid Models for Download", type="secondary", use_container_width=True):
+                        with st.spinner("Preparing hybrid models..."):
+                            # Prepare RF model as ONNX
+                            rf_onnx_bytes, rf_feature_json, rf_success = analyzer.prepare_model_exports(
+                                final_rf_model, hybrid_x_columns, "HybridRF_Residuals"
+                            )
                             
-                            # Step 1: OLS prediction (add constant)
-                            X_new_ols = sm.add_constant(X_new)
-                            ols_pred = ols_model.predict(X_new_ols)
-                            
-                            # Step 2: RF residual prediction
-                            rf_pred = rf_model.predict(X_new)
-                            
-                            # Step 3: Combine predictions
-                            final_pred = ols_pred + rf_pred
-                            
-                            return final_pred
+                            if rf_success:
+                                # Prepare OLS model as pickle (since ONNX doesn't support OLS directly)
+                                ols_model_bytes = pickle.dumps(final_ols_model)
+                                
+                                # Create hybrid feature info
+                                hybrid_feature_info = {
+                                    'model_type': 'Hybrid_OLS_RF',
+                                    'feature_names': hybrid_x_columns,
+                                    'target_name': hybrid_y_column,
+                                    'instructions': {
+                                        'step1': 'Load OLS model (pickle) and RF model (ONNX)',
+                                        'step2': 'Get OLS prediction first',
+                                        'step3': 'Get RF residual prediction',
+                                        'step4': 'Final prediction = OLS + RF residual'
+                                    },
+                                    'timestamp': datetime.now().isoformat(),
+                                    'usage_example': '''
+                    import pickle
+                    import onnxruntime as ort
+                    import statsmodels.api as sm
+                    import numpy as np
+
+                    # Load models
+                    with open('hybrid_ols_model.pkl', 'rb') as f:
+                        ols_model = pickle.load(f)
+                    rf_session = ort.InferenceSession('hybrid_rf_model.onnx')
+
+                    # Make predictions
+                    def predict_hybrid(X_new):
+                        # Step 1: OLS prediction
+                        X_ols = sm.add_constant(X_new)
+                        ols_pred = ols_model.predict(X_ols)
                         
-                        # Example usage
-                        # new_predictions = predict_hybrid(your_new_data)
-                        ```
+                        # Step 2: RF residual prediction  
+                        rf_pred = rf_session.run(None, {'float_input': X_new.astype(np.float32)})[0]
                         
-                        **Individual Models:**
-                        - **OLS Model**: Use `ols_model.predict(X_with_constant)` 
-                        - **RF Model**: Use `rf_model.predict(X)` on same features to get residual predictions
-                        """)
-                    
-                    # Export options
-                    st.markdown("### 💾 Export Hybrid Model Results")
+                        # Step 3: Combine
+                        return ols_pred + rf_pred.flatten()
+                                    '''
+                                }
+                                
+                                # Store in session state
+                                st.session_state.hybrid_rf_onnx = rf_onnx_bytes
+                                st.session_state.hybrid_ols_pkl = ols_model_bytes
+                                st.session_state.hybrid_feature_json = json.dumps(hybrid_feature_info, indent=2)
+                                st.session_state.hybrid_timestamp = datetime.now().strftime('%Y%m%d_%H%M')
+                                
+                                st.success("✅ Hybrid models prepared! Download buttons are now available below.")
+                            else:
+                                st.error(f"❌ {rf_feature_json}")
+
+                    # Download buttons for hybrid models
+                    if 'hybrid_rf_onnx' in st.session_state:
+                        st.markdown("**📥 Download Hybrid Model Files:**")
+                        
+                        col1, col2, col3 = st.columns(3)
+                        
+                        with col1:
+                            # Download RF ONNX model
+                            st.download_button(
+                                label="📦 Hybrid_RF.onnx",
+                                data=st.session_state.hybrid_rf_onnx,
+                                file_name=f"hybrid_rf_model_{st.session_state.hybrid_timestamp}.onnx",
+                                mime="application/octet-stream",
+                                use_container_width=True
+                            )
+                        
+                        with col2:
+                            # Download OLS pickle model
+                            st.download_button(
+                                label="📦 Hybrid_OLS.pkl", 
+                                data=st.session_state.hybrid_ols_pkl,
+                                file_name=f"hybrid_ols_model_{st.session_state.hybrid_timestamp}.pkl",
+                                mime="application/octet-stream",
+                                use_container_width=True
+                            )
+                        
+                        with col3:
+                            # Download feature info
+                            st.download_button(
+                                label="📄 Hybrid_Features.json",
+                                data=st.session_state.hybrid_feature_json,
+                                file_name=f"hybrid_features_{st.session_state.hybrid_timestamp}.json",
+                                mime="application/json",
+                                use_container_width=True
+                            )
+                        
+                        # Clear hybrid data button
+                        if st.button("🗑️ Clear Prepared Hybrid Data", use_container_width=True):
+                            for key in ['hybrid_rf_onnx', 'hybrid_ols_pkl', 'hybrid_feature_json', 'hybrid_timestamp']:
+                                if key in st.session_state:
+                                    del st.session_state[key]
+                            st.rerun()
+
+                    # Other hybrid downloads
+                    st.markdown("**📊 Additional Hybrid Downloads:**")
                     
                     col1, col2, col3 = st.columns(3)
                     
