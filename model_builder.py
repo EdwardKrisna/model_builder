@@ -2693,7 +2693,7 @@ elif st.session_state.processing_step == 'advanced':
 
             # Model Training
             st.markdown("### 🚀 Model Training & Evaluation")
-            
+
             if st.button(f"🤖 Train {model_name} Model", type="primary") and ml_x_columns:
                 try:
                     # Parse and validate parameters
@@ -2821,7 +2821,7 @@ elif st.session_state.processing_step == 'advanced':
 
                         # Check if model is available for export
                         if 'ml_model' in st.session_state and st.session_state.ml_model is not None:
-                            
+    
                             # Show current model info
                             st.info(f"🤖 **{st.session_state.get('ml_model_name', 'Model')}** ready for export")
                             
@@ -2836,27 +2836,26 @@ elif st.session_state.processing_step == 'advanced':
                                         
                                         if not feature_names:
                                             st.error("❌ Feature names not found. Please retrain the model.")
-                                            st.stop()
-                                        
-                                        # Convert to ONNX
-                                        onnx_bytes, feature_json, success = analyzer.prepare_model_exports(
-                                            model, feature_names, model_name
-                                        )
-                                        
-                                        if success:
-                                            # Store in session state with unique keys
-                                            st.session_state['ml_onnx_ready'] = True
-                                            st.session_state['ml_onnx_data'] = onnx_bytes
-                                            st.session_state['ml_feature_json'] = feature_json
-                                            st.session_state['ml_model_name_export'] = model_name
-                                            st.session_state['ml_timestamp'] = datetime.now().strftime('%Y%m%d_%H%M')
-                                            
-                                            st.success("✅ Model converted to ONNX successfully!")
-                                            st.balloons()  # Visual feedback
-                                            st.rerun()  # Refresh to show download buttons
                                         else:
-                                            st.error(f"❌ ONNX conversion failed: {feature_json}")
+                                            # Convert to ONNX
+                                            onnx_bytes, feature_json, success = analyzer.prepare_model_exports(
+                                                model, feature_names, model_name
+                                            )
                                             
+                                            if success:
+                                                # Store in session state with unique keys
+                                                st.session_state['ml_onnx_ready'] = True
+                                                st.session_state['ml_onnx_data'] = onnx_bytes
+                                                st.session_state['ml_feature_json'] = feature_json
+                                                st.session_state['ml_model_name_export'] = model_name
+                                                st.session_state['ml_timestamp'] = datetime.now().strftime('%Y%m%d_%H%M')
+                                                
+                                                st.success("✅ Model converted to ONNX successfully!")
+                                                st.balloons()  # Visual feedback
+                                                # ❌ REMOVED: st.rerun() - this was causing the reload issue
+                                            else:
+                                                st.error(f"❌ ONNX conversion failed: {feature_json}")
+                                                
                                 except Exception as e:
                                     st.error(f"❌ Model export preparation failed: {str(e)}")
                                     st.code(traceback.format_exc())
@@ -2880,13 +2879,13 @@ elif st.session_state.processing_step == 'advanced':
                                 with col1:
                                     # Download ONNX model
                                     try:
-                                        model_name = st.session_state.get('ml_model_name_export', 'model')
+                                        model_name_export = st.session_state.get('ml_model_name_export', 'model')
                                         timestamp = st.session_state.get('ml_timestamp', datetime.now().strftime('%Y%m%d_%H%M'))
                                         
                                         st.download_button(
-                                            label=f"📦 {model_name}.onnx",
+                                            label=f"📦 {model_name_export}.onnx",
                                             data=st.session_state['ml_onnx_data'],
-                                            file_name=f"{model_name.lower()}_model_{timestamp}.onnx",
+                                            file_name=f"{model_name_export.lower()}_model_{timestamp}.onnx",
                                             mime="application/octet-stream",
                                             use_container_width=True,
                                             key="download_onnx_unique"
@@ -2900,7 +2899,7 @@ elif st.session_state.processing_step == 'advanced':
                                         st.download_button(
                                             label="📄 Features.json",
                                             data=st.session_state['ml_feature_json'],
-                                            file_name=f"{model_name.lower()}_features_{timestamp}.json",
+                                            file_name=f"{model_name_export.lower()}_features_{timestamp}.json",
                                             mime="application/json",
                                             use_container_width=True,
                                             key="download_json_unique"
@@ -2909,7 +2908,7 @@ elif st.session_state.processing_step == 'advanced':
                                         st.error(f"JSON download error: {e}")
                                 
                                 with col3:
-                                    # Clear prepared data
+                                    # Clear prepared data (with confirmation)
                                     if st.button("🗑️ Clear Export Data", use_container_width=True, key="clear_export_unique"):
                                         # Clear all export-related session state
                                         export_keys = ['ml_onnx_ready', 'ml_onnx_data', 'ml_feature_json', 
@@ -2918,14 +2917,14 @@ elif st.session_state.processing_step == 'advanced':
                                             if key in st.session_state:
                                                 del st.session_state[key]
                                         st.success("🗑️ Export data cleared!")
-                                        st.rerun()
+                                        # ❌ REMOVED: st.rerun() - let user manually refresh if needed
                             
                             elif st.session_state.get('ml_onnx_ready', False):
-                                st.warning("⚠️ Model preparation incomplete. Please try again.")
+                                st.warning("⚠️ Model preparation incomplete. Please try 'Prepare Model for Download' again.")
                                 # Clear incomplete state
                                 if st.button("🔄 Reset Preparation", key="reset_prep_unique"):
                                     st.session_state['ml_onnx_ready'] = False
-                                    st.rerun()
+                                    # ❌ REMOVED: st.rerun() - let user see the result
                             
                             else:
                                 st.info("👆 Click 'Prepare Model for Download' to convert your model to ONNX format")
@@ -2933,39 +2932,44 @@ elif st.session_state.processing_step == 'advanced':
                         else:
                             st.warning("⚠️ No trained model available for export. Please train a model first.")
 
-                        # Other download options (unchanged)
-                        st.markdown("**📊 Additional Downloads:**")
+                        # Other download options (NO AUTO RELOAD)
+                        st.markdown("### 📊 Additional Downloads")
 
                         col1, col2 = st.columns(2)
 
                         with col1:
                             # Download evaluation results
-                            eval_csv = evaluation_df.to_csv(index=False)
-                            st.download_button(
-                                label="📊 Download Results (.csv)",
-                                data=eval_csv,
-                                file_name=f"ml_evaluation_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
-                                mime="text/csv",
-                                use_container_width=True
-                            )
+                            if 'ml_evaluation_df' in st.session_state:
+                                eval_csv = st.session_state.ml_evaluation_df.to_csv(index=False)
+                                st.download_button(
+                                    label="📊 Download Results (.csv)",
+                                    data=eval_csv,
+                                    file_name=f"ml_evaluation_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
+                                    mime="text/csv",
+                                    use_container_width=True,
+                                    key="download_results_csv"
+                                )
+                            else:
+                                st.info("No evaluation results available")
 
                         with col2:
                             # Download model info
-                            model_info = {
-                                'timestamp': datetime.now().isoformat(),
-                                'algorithm': model_name,
-                                'target_variable': ml_y_column,
-                                'features': ml_x_columns,
-                                'model_format': 'ONNX',
-                                'usage_example': {
-                                    'python': f'''
+                            if 'ml_model' in st.session_state:
+                                model_info = {
+                                    'timestamp': datetime.now().isoformat(),
+                                    'algorithm': st.session_state.get('ml_model_name', 'Unknown'),
+                                    'target_variable': st.session_state.get('ml_y_column', 'Unknown'),
+                                    'features': st.session_state.get('ml_feature_names', []),
+                                    'model_format': 'ONNX',
+                                    'usage_example': {
+                                        'python': f'''
                         import onnxruntime as ort
                         import numpy as np
                         import json
 
                         # Load model and features
-                        session = ort.InferenceSession('{model_name.lower()}_model.onnx')
-                        with open('{model_name.lower()}_features.json', 'r') as f:
+                        session = ort.InferenceSession('model.onnx')
+                        with open('features.json', 'r') as f:
                             feature_info = json.load(f)
 
                         # Prepare input (ensure correct feature order)
@@ -2973,46 +2977,48 @@ elif st.session_state.processing_step == 'advanced':
 
                         # Make predictions
                         predictions = session.run(None, {{'float_input': input_data}})[0]
-                                    '''
-                                },
-                                'global_test_metrics': global_test_metrics,
-                                'global_train_metrics': global_train_metrics
-                            }
-                            
-                            st.download_button(
-                                label="📋 Download Model Info (.json)",
-                                data=json.dumps(model_info, indent=2),
-                                file_name=f"ml_model_info_{datetime.now().strftime('%Y%m%d_%H%M')}.json",
-                                mime="application/json",
-                                use_container_width=True
-                            )
-                        
-                        # Show current model status
+                                        '''
+                                    },
+                                    'global_test_metrics': st.session_state.get('ml_global_test', {}),
+                                    'global_train_metrics': st.session_state.get('ml_global_train', {})
+                                }
+                                
+                                st.download_button(
+                                    label="📋 Download Model Info (.json)",
+                                    data=json.dumps(model_info, indent=2),
+                                    file_name=f"ml_model_info_{datetime.now().strftime('%Y%m%d_%H%M')}.json",
+                                    mime="application/json",
+                                    use_container_width=True,
+                                    key="download_model_info"
+                                )
+                            else:
+                                st.info("No model info available")
+
+                        # Show current model status (without auto-reload)
                         if 'ml_model' in st.session_state:
                             st.markdown("---")
-                            st.success(f"🤖 {model_name} model is ready!")
+                            st.success(f"🤖 {st.session_state.get('ml_model_name', 'Model')} ready!")
                             
                             # Quick model info
                             with st.expander("📋 Current Model Info"):
-                                st.write(f"**Algorithm:** {model_name}")
+                                st.write(f"**Algorithm:** {st.session_state.get('ml_model_name', 'Unknown')}")
                                 if 'ml_global_test' in st.session_state:
                                     metrics = st.session_state.ml_global_test
-                                    st.write(f"**Test R²:** {metrics['R2']:.4f}")
-                                    st.write(f"**Test PE10:** {metrics['PE10']:.4f}")
-                                    st.write(f"**Test RT20:** {metrics['RT20']:.4f}")
-                                    st.write(f"**Test FSD:** {metrics['FSD']:.4f}")
-                
-                except ValueError as e:
-                    st.error(f"Invalid parameter value: {e}")
-                except Exception as e:
-                    st.error(f"Model training failed: {str(e)}")
-                    st.code(traceback.format_exc())
+                                    st.write(f"**Test R²:** {metrics.get('R2', 'N/A'):.4f}")
+                                    st.write(f"**Test PE10:** {metrics.get('PE10', 'N/A'):.4f}")
+                                    st.write(f"**Test RT20:** {metrics.get('RT20', 'N/A'):.4f}")
+                                    st.write(f"**Test FSD:** {metrics.get('FSD', 'N/A'):.4f}")
 
-            elif not ml_x_columns:
-                st.warning("Please select at least one feature variable to train the model")
-        
-        else:
-            st.warning("Please load and process data first")
+                        # Manual refresh option (if user wants to refresh)
+                        st.markdown("---")
+                        if st.button("🔄 Refresh Page", help="Manual refresh if needed"):
+                            st.rerun()
+
+                except ValueError as e:
+                    st.error(f"❌ Parameter validation error: {str(e)}")
+                except Exception as e:
+                    st.error(f"❌ Model training failed: {str(e)}")
+                    st.code(traceback.format_exc())
 
     elif st.session_state.advanced_step == 'hybrid':
         if fun_mode:
