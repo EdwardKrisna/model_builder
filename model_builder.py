@@ -2695,6 +2695,19 @@ elif st.session_state.processing_step == 'advanced':
             st.markdown("### 🚀 Model Training & Evaluation")
 
             if st.button(f"🤖 Train {model_name} Model", type="primary") and ml_x_columns:
+                # Add this INSIDE the if block but BEFORE the try block
+                manual_n_estimators = getattr(st.session_state, 'manual_n_estimators', '100')
+                manual_max_depth = getattr(st.session_state, 'manual_max_depth', '10')
+                manual_min_samples_split = getattr(st.session_state, 'manual_min_samples_split', '2')
+                manual_min_samples_leaf = getattr(st.session_state, 'manual_min_samples_leaf', '1')
+                manual_max_features = getattr(st.session_state, 'manual_max_features', 'sqrt')
+                manual_random_state = getattr(st.session_state, 'manual_random_state', str(random_state))
+                
+                # GBDT specific variables if needed
+                if model_type == "Gradient Boosting (GBDT)":
+                    manual_learning_rate = getattr(st.session_state, 'manual_learning_rate', '0.1')
+                    manual_subsample = getattr(st.session_state, 'manual_subsample', '1.0')
+                
                 try:
                     # Parse and validate parameters
                     n_est = int(manual_n_estimators)
