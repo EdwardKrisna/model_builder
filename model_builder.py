@@ -1176,7 +1176,7 @@ st.markdown('<div class="section-divider"></div>', unsafe_allow_html=True)
 # Step-based interface
 if st.session_state.processing_step == 'selection':
     if fun_mode:
-        st.markdown('## <img src="https://media.giphy.com/media/v1.Y2lkPWVjZjA1ZTQ3YmlxbTR0YzJnamJ2dno5NHVlNzR1YnZscHF6ZG5neGplZTFzYiZlcD12MV9naWZzX3NlYXJjaCZjdD1n/l2JhOVyjSLCvUdkZ2/giphy.gif" alt="selection gif" style="height:96px; vertical-align:middle;"> Data Selection', unsafe_allow_html=True)
+        st.markdown('## <img src="https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExZ3I3MnhtZjR3b2FvZ2RkNHowZ3ZyaTVwN21yOG1reW1xYnhmbGFqZCZlcD12MV9naWZzX3NlYXJjaCZjdD1n/f2MC2O2bzX8d9DVnwf/giphy.gif" alt="selection gif" style="height:96px; vertical-align:middle;"> Data Selection', unsafe_allow_html=True)
     else:
         st.markdown('## 📍 Data Selection')
     
@@ -3247,6 +3247,16 @@ elif st.session_state.processing_step == 'advanced':
         if analyzer.current_data is not None:
             # Model Configuration
             st.markdown("### 🎯 Model Configuration")
+
+            # Check for saved OLS variables
+            saved_vars = analyzer.get_saved_ols_variables()
+            if saved_vars:
+                st.success(f"💾 **Saved OLS Variables Available**: Y={saved_vars['y_column']}, X={len(saved_vars['x_columns'])} variables")
+                
+                use_saved = st.checkbox("🔄 Use Saved OLS Variables", value=False, key="use_saved_vars")
+            else:
+                use_saved = False
+                st.info("💡 No saved variables from OLS step. Configure manually or run OLS first.")
             
             # Get all numeric columns (including transformed ones)
             numeric_columns = analyzer.current_data.select_dtypes(include=[np.number]).columns.tolist()
