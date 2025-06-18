@@ -182,9 +182,9 @@ def cached_load_property_data(_engine):
             total_count = result.scalar()
         
         # Warn if too large
-        if total_count > 50000:
+        if total_count > 100000:
             st.warning(f"⚠️ Large dataset detected ({total_count:,} records). Loading first 50,000 for performance.")
-            limit = 50000
+            limit = 100000
         else:
             limit = min(total_count, 100000)
         
