@@ -2401,12 +2401,13 @@ elif st.session_state.processing_step == 'model':
         st.markdown("**Independent Variables (X):**")
         checkbox_cols_ols = st.columns(3)
         x_columns = []
-        for col in available_x_cols:
+
+        for i, col in enumerate(available_x_cols):
             with checkbox_cols_ols[i % 3]:
-                if st.checkbox(col, value=(i < 5), key=f"x_var_{col}"):
+                default_value = (col in available_x_cols[:5]) if len(available_x_cols) >= 5 else True
+                if st.checkbox(col, value=default_value, key=f"x_var_{col}"):
                     x_columns.append(col)
-                # if st.checkbox(col, value=(i < 5), key=f"hybrid_x_{col}"):
-                #         hybrid_x_columns.append(col)
+                
 
         # with col2:
         #     st.markdown("**Model Information:**")
