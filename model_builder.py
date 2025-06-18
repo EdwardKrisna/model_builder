@@ -3252,37 +3252,67 @@ elif st.session_state.processing_step == 'advanced':
             saved_vars = analyzer.get_saved_ols_variables()
             if saved_vars:
                 st.success(f"💾 **Saved OLS Variables Available**: Y={saved_vars['y_column']}, X={len(saved_vars['x_columns'])} variables")
-                
                 use_saved = st.checkbox("🔄 Use Saved OLS Variables", value=False, key="use_saved_vars")
             else:
                 use_saved = False
                 st.info("💡 No saved variables from OLS step. Configure manually or run OLS first.")
-            
+
             # Get all numeric columns (including transformed ones)
             numeric_columns = analyzer.current_data.select_dtypes(include=[np.number]).columns.tolist()
-            
-            col1, col2 = st.columns(2)
-        
-            with col1:
-                hybrid_y_column = st.selectbox("Target Variable (Y)", numeric_columns, 
-                                            index=numeric_columns.index('ln_hpm') if 'ln_hpm' in numeric_columns else 0,
-                                            key="hybrid_y_select")
-            
-            with col2:
-                hybrid_n_splits = st.number_input("CV Folds", min_value=3, max_value=20, value=5, key="hybrid_cv_folds")
-            
-            # Independent variables selection
-            st.markdown("**Independent Variables (X):**")
-            available_x_cols = [col for col in numeric_columns if col != hybrid_y_column]
-            
-            checkbox_cols = st.columns(3)
-            hybrid_x_columns = []
-            
-            for i, col in enumerate(available_x_cols):
-                with checkbox_cols[i % 3]:
-                    if st.checkbox(col, value=(i < 5), key=f"hybrid_x_{col}"):
-                        hybrid_x_columns.append(col)
-            
+
+            ml_y_column = None
+            ml_x_columns = []
+
+            if use_saved and saved_vars:
+                # Use saved variables directly
+                ml_y_column = saved_vars['y_column']
+                ml_x_columns = saved_vars['x_columns']
+
+                st.markdown(f"**Using saved target variable (Y):** `{ml_y_column}`")
+                st.markdown(f"**Using saved independent variables (X):** {ml_x_columns}")
+
+            else:
+                col1, col2 = st.columns(2)
+
+                with col1:
+                    hybrid_y_column = st.selectbox(
+                        "Target Variable (Y)",
+                        numeric_columns,
+                        index=numeric_columns.index('ln_hpm') if 'ln_hpm' in numeric_columns else 0,
+                        key="hybrid_y_select",
+                        disabled=use_saved  # Disable if using saved variables
+                    )
+
+                with col2:
+                    hybrid_n_splits = st.number_input(
+                        "CV Folds",
+                        min_value=3,
+                        max_value=20,
+                        value=5,
+                        key="hybrid_cv_folds",
+                        disabled=use_saved  # Disable if using saved variables
+                    )
+
+                st.markdown("**Independent Variables (X):**")
+                available_x_cols = [col for col in numeric_columns if col != hybrid_y_column]
+
+                checkbox_cols = st.columns(3)
+                hybrid_x_columns = []
+
+                for i, col in enumerate(available_x_cols):
+                    with checkbox_cols[i % 3]:
+                        checked = (i < 5)
+                        # Disable checkboxes if using saved variables
+                        if use_saved:
+                            st.checkbox(col, value=False, key=f"hybrid_x_{col}", disabled=True)
+                        else:
+                            if st.checkbox(col, value=checked, key=f"hybrid_x_{col}"):
+                                hybrid_x_columns.append(col)
+
+                # Assign to unified variables for downstream usage
+                ml_y_column = hybrid_y_column
+                ml_x_columns = hybrid_x_columns
+                
             # Random Forest Parameters section
             st.markdown("### ⚙️ Random Forest Parameters")
             param_col1, param_col2, param_col3 = st.columns(3)
