@@ -2087,9 +2087,9 @@ elif st.session_state.processing_step == 'transform':
                         except Exception as e:
                             st.error(f"Batch transformation failed: {str(e)}")
                 
-                st.markdown("**Distance Columns Found:**")
-                for col in distance_columns:
-                    st.write(f"- {col}")
+                # st.markdown("**Distance Columns Found:**")
+                # for col in distance_columns:
+                #     st.write(f"- {col}")
                 
                 st.markdown("---")
             
@@ -2151,45 +2151,189 @@ elif st.session_state.processing_step == 'transform':
                         st.write(f"- Min: {preview_data.min():.2f}")
                         st.write(f"- Max: {preview_data.max():.2f}")
                         st.write(f"- Mean: {preview_data.mean():.2f}")
+
+            st.markdown("---")
+            
+        # Categorical Encoding Section
+        st.markdown("### 🏷️ Categorical Column Encoding")
         
-        # Show current transformations
-        if analyzer.transformed_columns:
-            st.markdown("### 🔄 Current Transformations")
-            st.success(f"You have {len(analyzer.transformed_columns)} transformed columns available for modeling:")
-            
-            transformation_df = pd.DataFrame([
-                {'Original Column': original, 'Transformed Column': transformed, 'Available for OLS': '✅', 'Available for ML': '✅'}
-                for original, transformed in analyzer.transformed_columns.items()
-            ])
-            st.dataframe(transformation_df, use_container_width=True)
-            
-            # Option to remove transformations
-            st.markdown("**Remove Transformations:**")
-            cols_to_remove = st.multiselect("Select transformed columns to remove", 
-                                          list(analyzer.transformed_columns.values()),
-                                          key="remove_transforms")
-            
-            if cols_to_remove and st.button("🗑️ Remove Selected Transformations", type="secondary"):
-                try:
-                    # Remove columns from dataframe
-                    analyzer.current_data = analyzer.current_data.drop(columns=cols_to_remove, errors='ignore')
-                    
-                    # Remove from transformed_columns tracking
-                    to_remove_original = []
-                    for original, transformed in analyzer.transformed_columns.items():
-                        if transformed in cols_to_remove:
-                            to_remove_original.append(original)
-                    
-                    for original in to_remove_original:
-                        del analyzer.transformed_columns[original]
-                    
-                    st.success(f"Removed {len(cols_to_remove)} transformed columns")
-                    st.rerun()
-                    
-                except Exception as e:
-                    st.error(f"Error removing transformations: {str(e)}")
+        # Detect categorical columns automatically
+        categorical_columns = analyzer.current_data.select_dtypes(include=['object', 'category']).columns.tolist()
+        
+        # Also include numeric columns with low cardinality (likely categorical)
+        numeric_low_cardinality = []
+        for col in analyzer.current_data.select_dtypes(include=[np.number]).columns:
+            unique_count = analyzer.current_data[col].nunique()
+            total_count = len(analyzer.current_data[col].dropna())
+            if unique_count <= 20 and unique_count / total_count < 0.1:  # Less than 10% unique values
+                numeric_low_cardinality.append(col)
+        
+        all_categorical = categorical_columns + numeric_low_cardinality
+        
+        if not all_categorical:
+            st.info("No categorical columns detected in your dataset.")
         else:
-            st.info("No transformations applied yet. Transform some variables to make them available for OLS and ML modeling.")
+            st.info(f"Found {len(all_categorical)} categorical columns: {', '.join(all_categorical)}")
+            
+            # Initialize session state for encoding configurations
+            if 'encoding_configs' not in st.session_state:
+                st.session_state.encoding_configs = {}
+            
+            # For each categorical column, show encoding options
+            encoding_configs = {}
+            
+            for i, cat_col in enumerate(all_categorical):
+                with st.expander(f"🏷️ Configure Encoding for: **{cat_col}**", expanded=False):
+                    unique_values = sorted(analyzer.current_data[cat_col].dropna().unique())
+                    unique_count = len(unique_values)
+                    
+                    st.write(f"**Column Info:**")
+                    st.write(f"- Unique values: {unique_count}")
+                    st.write(f"- Sample values: {unique_values[:5]}")
+                    if unique_count > 5:
+                        st.write(f"- ... and {unique_count - 5} more")
+                    
+                    # Encoding method selection
+                    col1, col2 = st.columns([1, 2])
+                    
+                    with col1:
+                        encoding_method = st.selectbox(
+                            "Encoding Method:",
+                            ["None", "Ordinal (ordered score)", "One-Hot Encoding"],
+                            key=f"encoding_method_{cat_col}_{i}"
+                        )
+                    
+                    with col2:
+                        if encoding_method != "None":
+                            # Preview of new columns that will be created
+                            if encoding_method == "Ordinal (ordered score)":
+                                st.info(f"📊 Will create: **{cat_col}_ordinal** (numeric column)")
+                            elif encoding_method == "One-Hot Encoding":
+                                # Show preview of one-hot column names
+                                preview_cols = [f"is_{str(val).lower().replace(' ', '_')}" for val in unique_values[:3]]
+                                if len(unique_values) > 3:
+                                    preview_cols.append(f"... and {len(unique_values) - 3} more")
+                                st.info(f"📊 Will create: {', '.join(preview_cols)}")
+                    
+                    # Custom order for ordinal encoding
+                    custom_order = None
+                    if encoding_method == "Ordinal (ordered score)":
+                        st.markdown("**🔢 Define Order (Optional):**")
+                        
+                        col1, col2 = st.columns([1, 1])
+                        
+                        with col1:
+                            use_custom_order = st.checkbox(
+                                "Use custom order", 
+                                key=f"use_custom_order_{cat_col}_{i}"
+                            )
+                        
+                        with col2:
+                            if use_custom_order:
+                                st.info("💡 Drag to reorder or use the selectbox below")
+                        
+                        if use_custom_order:
+                            # Show current default order
+                            st.write("**Default alphabetical order:**")
+                            st.write(" → ".join([f"{j}: {val}" for j, val in enumerate(unique_values)]))
+                            
+                            # Allow user to define custom order using multiselect
+                            st.markdown("**Define your custom order:**")
+                            custom_order = st.multiselect(
+                                "Select values in your preferred order (from lowest to highest score):",
+                                unique_values,
+                                default=unique_values,
+                                key=f"custom_order_{cat_col}_{i}",
+                                help="The first selected item gets score 0, second gets 1, etc."
+                            )
+                            
+                            if len(custom_order) != len(unique_values):
+                                st.warning(f"⚠️ Please select all {len(unique_values)} values to define complete order")
+                            else:
+                                st.success("✅ Custom order defined:")
+                                st.write(" → ".join([f"{j}: {val}" for j, val in enumerate(custom_order)]))
+                        else:
+                            custom_order = unique_values  # Use default alphabetical order
+                    
+                    # Store configuration
+                    if encoding_method != "None":
+                        encoding_configs[cat_col] = {
+                            'method': encoding_method,
+                            'custom_order': custom_order if encoding_method == "Ordinal (ordered score)" else None,
+                            'unique_values': unique_values
+                        }
+            
+            # Apply all encodings button
+            if encoding_configs:
+                st.markdown("### 🚀 Apply Categorical Encodings")
+                
+                # Show summary of what will be done
+                st.markdown("**📋 Encoding Summary:**")
+                for col, config in encoding_configs.items():
+                    if config['method'] == "Ordinal (ordered score)":
+                        order_info = "custom order" if config['custom_order'] != sorted(config['unique_values']) else "alphabetical order"
+                        st.write(f"• **{col}** → Ordinal encoding ({order_info}) → **{col}_ordinal**")
+                    elif config['method'] == "One-Hot Encoding":
+                        st.write(f"• **{col}** → One-Hot encoding → {len(config['unique_values'])} new columns")
+                
+                if st.button("🎯 Apply All Categorical Encodings", type="primary"):
+                    try:
+                        with st.spinner("Applying categorical encodings..."):
+                            encoded_df = analyzer.current_data.copy()
+                            encoding_results = []
+                            
+                            for col, config in encoding_configs.items():
+                                if config['method'] == "Ordinal (ordered score)":
+                                    # Apply ordinal encoding
+                                    order = config['custom_order'] if config['custom_order'] else config['unique_values']
+                                    
+                                    # Create mapping dictionary
+                                    ordinal_mapping = {val: idx for idx, val in enumerate(order)}
+                                    
+                                    # Apply mapping
+                                    new_col_name = f"{col}_ordinal"
+                                    encoded_df[new_col_name] = encoded_df[col].map(ordinal_mapping)
+                                    
+                                    encoding_results.append(f"✅ {col} → {new_col_name} (ordinal)")
+                                    
+                                    # Track in transformed columns
+                                    analyzer.transformed_columns[col] = new_col_name
+                                
+                                elif config['method'] == "One-Hot Encoding":
+                                    # Apply one-hot encoding
+                                    for val in config['unique_values']:
+                                        # Create column name (clean the value name)
+                                        clean_val = str(val).lower().replace(' ', '_').replace('-', '_')
+                                        clean_val = ''.join(c for c in clean_val if c.isalnum() or c == '_')
+                                        new_col_name = f"is_{clean_val}"
+                                        
+                                        # Create binary column
+                                        encoded_df[new_col_name] = (encoded_df[col] == val).astype(int)
+                                    
+                                    encoding_results.append(f"✅ {col} → {len(config['unique_values'])} one-hot columns")
+                            
+                            # Update analyzer data
+                            analyzer.current_data = encoded_df
+                            st.session_state.data_changed = True
+                            
+                            # Show results
+                            st.success(f"🎉 Successfully applied {len(encoding_configs)} categorical encodings!")
+                            
+                            for result in encoding_results:
+                                st.success(result)
+                            
+                            # Show preview of encoded data
+                            st.markdown("### 👀 Encoded Data Preview")
+                            st.dataframe(analyzer.current_data.head(10), use_container_width=True)
+                            
+                            st.rerun()
+                            
+                    except Exception as e:
+                        st.error(f"❌ Categorical encoding failed: {str(e)}")
+                        st.code(traceback.format_exc())
+            
+            else:
+                st.info("💡 Configure encoding methods above, then apply all encodings at once.")
 
 elif st.session_state.processing_step == 'model':
     if fun_mode:
