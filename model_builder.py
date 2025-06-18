@@ -2399,12 +2399,36 @@ elif st.session_state.processing_step == 'model':
         # Independent variables (X)
         available_x_cols = [col for col in numeric_columns if col != y_column]
         st.markdown("**Independent Variables (X):**")
+        default_checked_cols = [
+        'ln_distance_to_airport',
+        'ln_distance_to_bus_stop',
+        'ln_distance_to_cafe',
+        'ln_distance_to_cemetery',
+        'ln_distance_to_convenience_store',
+        'ln_distance_to_government',
+        'ln_distance_to_hotel',
+        'ln_distance_to_mall',
+        'ln_distance_to_retail',
+        'ln_distance_to_school',
+        'ln_distance_to_main_road',
+        'ln_distance_to_big_city',
+        'ln_distance_to_coastline',
+        'ln_distance_to_pharmacy',
+        'ln_distance_to_railways',
+        'ln_distance_to_sport_center',
+        'ln_distance_to_clinic',
+        'ln_distance_to_hospital',
+        'ln_distance_to_park',
+        'ln_hpm',
+        'ln_luas_tanah'
+        ]
+
         checkbox_cols_ols = st.columns(3)
         x_columns = []
 
         for i, col in enumerate(available_x_cols):
             with checkbox_cols_ols[i % 3]:
-                default_value = (col in available_x_cols[:5]) if len(available_x_cols) >= 5 else True
+                default_value = col in default_checked_cols
                 if st.checkbox(col, value=default_value, key=f"x_var_{col}"):
                     x_columns.append(col)
                 
