@@ -3260,6 +3260,8 @@ elif st.session_state.processing_step == 'advanced':
             # Get all numeric columns (including transformed ones)
             numeric_columns = analyzer.current_data.select_dtypes(include=[np.number]).columns.tolist()
 
+            # Initialize variables
+            hybrid_x_columns = []
             ml_y_column = None
             ml_x_columns = []
 
@@ -3297,19 +3299,15 @@ elif st.session_state.processing_step == 'advanced':
                 available_x_cols = [col for col in numeric_columns if col != hybrid_y_column]
 
                 checkbox_cols = st.columns(3)
-                hybrid_x_columns = []
-
                 for i, col in enumerate(available_x_cols):
                     with checkbox_cols[i % 3]:
                         checked = (i < 5)
-                        # Disable checkboxes if using saved variables
                         if use_saved:
                             st.checkbox(col, value=False, key=f"hybrid_x_{col}", disabled=True)
                         else:
                             if st.checkbox(col, value=checked, key=f"hybrid_x_{col}"):
                                 hybrid_x_columns.append(col)
 
-                # Assign to unified variables for downstream usage
                 ml_y_column = hybrid_y_column
                 ml_x_columns = hybrid_x_columns
                 
