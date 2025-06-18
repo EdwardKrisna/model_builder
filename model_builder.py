@@ -243,19 +243,63 @@ def cached_clean_data(df, cleaning_options):
                 cleaned_df[categorical_cols] = cleaned_df[categorical_cols].fillna(modes)
         
         # Remove outliers (optimized)
-        if cleaning_options.get('remove_outliers', False) and cleaning_options.get('outlier_column'):
+        if cleaning_options.get('remove_outliers', False) and cleaning_options.get('outlier_column') and cleaning_options.get('group_column'):
             outlier_col = cleaning_options['outlier_column']
-            if outlier_col in cleaned_df.columns:
-                # Use quantile method which is faster
-                Q1 = cleaned_df[outlier_col].quantile(0.25)
-                Q3 = cleaned_df[outlier_col].quantile(0.75)
-                IQR = Q3 - Q1
-                lower_bound = Q1 - 1.5 * IQR
-                upper_bound = Q3 + 1.5 * IQR
-                
-                # Use boolean indexing (faster than query)
-                mask = (cleaned_df[outlier_col] >= lower_bound) & (cleaned_df[outlier_col] <= upper_bound)
-                cleaned_df = cleaned_df[mask]
+            group_col = cleaning_options['group_column']
+
+            if outlier_col in cleaned_df.columns and group_col in cleaned_df.columns:
+                # Prepare lists to store valid indexes (non-outliers)
+                valid_idx = []
+
+                # Parameters for trimming and skew threshold
+                p10_quantile = 0.1
+                p90_quantile = 0.9
+                skew_threshold = 0.5
+
+                # Process group-wise
+                for group in cleaned_df[group_col].unique():
+                    group_df = cleaned_df[cleaned_df[group_col] == group]
+                    values = group_df[outlier_col]
+
+                    # Calculate 10th and 90th quantiles
+                    p10 = np.quantile(values, p10_quantile)
+                    p90 = np.quantile(values, p90_quantile)
+
+                    # Trim data
+                    trimmed_vals = values[(values > p10) & (values < p90)]
+
+                    if len(trimmed_vals) == 0:
+                        # If no trimmed data, keep all by default
+                        valid_idx.extend(group_df.index.tolist())
+                        continue
+
+                    std = np.std(trimmed_vals)
+                    mean = np.mean(trimmed_vals)
+                    median = np.median(trimmed_vals)
+                    skew_score = skew(trimmed_vals, axis=0, bias=True)
+
+                    if std == 0:
+                        # No variation, keep all
+                        valid_idx.extend(group_df.index.tolist())
+                        continue
+
+                    center = median if abs(skew_score) > skew_threshold else mean
+
+                    bottom = (center - p10) / std
+                    lower_border = center - math.ceil(bottom) * std
+
+                    upper = (p90 - center) / std
+                    upper_border = center + math.ceil(upper) * std
+
+                    # Select non-outliers for this group
+                    group_valid_idx = group_df[
+                        (group_df[outlier_col] >= lower_border) & (group_df[outlier_col] <= upper_border)
+                    ].index.tolist()
+
+                    valid_idx.extend(group_valid_idx)
+
+                # Filter cleaned_df to keep only non-outliers
+                cleaned_df = cleaned_df.loc[valid_idx]
         
         return cleaned_df
         
@@ -2006,10 +2050,20 @@ elif st.session_state.processing_step == 'clean':
             st.markdown("**Outlier Removal:**")
             remove_outliers = st.checkbox("Remove outliers", value=False)
             outlier_column = None
+            group_column = None
+
             if remove_outliers:
-                numeric_cols = analyzer.current_data.select_dtypes(include=[np.number]).columns
+                numeric_cols = analyzer.current_data.select_dtypes(include=[np.number]).columns.tolist()
                 outlier_column = st.selectbox("Column for outlier detection", numeric_cols)
-        
+                
+                # Select group column (categorical or numeric with low cardinality)
+                candidate_groups = analyzer.current_data.select_dtypes(include=['object', 'category']).columns.tolist()
+                numeric_low_card = [col for col in analyzer.current_data.select_dtypes(include=[np.number]).columns
+                                if analyzer.current_data[col].nunique() <= 20]
+                candidate_groups.extend(numeric_low_card)
+                
+                group_column = st.selectbox("Group column (for group-wise outlier detection)", candidate_groups)
+
         # Cleaning options dictionary
         cleaning_options = {
             'remove_duplicates': remove_duplicates,
