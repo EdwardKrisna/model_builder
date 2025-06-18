@@ -2399,10 +2399,12 @@ elif st.session_state.processing_step == 'model':
         # Independent variables (X)
         available_x_cols = [col for col in numeric_columns if col != y_column]
         st.markdown("**Independent Variables (X):**")
+        checkbox_cols_ols = st.columns(3)
         x_columns = []
         for col in available_x_cols:
-            if st.checkbox(col, value=(col in available_x_cols[:5] if len(available_x_cols) >= 5 else True), key=f"x_var_{col}"):
-                x_columns.append(col)
+            with checkbox_cols_ols[i % 3]:
+                if st.checkbox(col, value=(col in available_x_cols[:5] if len(available_x_cols) >= 5 else True), key=f"x_var_{col}"):
+                    x_columns.append(col)
 
         # with col2:
         #     st.markdown("**Model Information:**")
