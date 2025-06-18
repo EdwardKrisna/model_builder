@@ -2157,18 +2157,17 @@ elif st.session_state.processing_step == 'transform':
             # Categorical Encoding Section
             st.markdown("### 🏷️ Categorical Column Encoding")
             
-            # Detect categorical columns automatically
-            categorical_columns = analyzer.current_data.select_dtypes(include=['object', 'category']).columns.tolist()
-            
-            # Also include numeric columns with low cardinality (likely categorical)
-            numeric_low_cardinality = []
-            for col in analyzer.current_data.select_dtypes(include=[np.number]).columns:
-                unique_count = analyzer.current_data[col].nunique()
-                total_count = len(analyzer.current_data[col].dropna())
-                if unique_count <= 20 and unique_count / total_count < 0.1:  # Less than 10% unique values
-                    numeric_low_cardinality.append(col)
-            
-            all_categorical = categorical_columns + numeric_low_cardinality
+            # Specific columns for encoding
+            target_columns = ['bentuk_tapak', 'posisi_tapak', 'orientasi', 'kondisi_wilayah_sekita', 
+                            'jenis_jalan_utama', 'perkerasan_jalan', 'jenis_jalan']
+
+            # Filter to only include columns that exist in the dataframe
+            all_categorical = [col for col in target_columns if col in analyzer.current_data.columns]
+
+            # Show which columns were found/missing
+            missing_columns = [col for col in target_columns if col not in analyzer.current_data.columns]
+            if missing_columns:
+                st.warning(f"⚠️ These columns were not found in the dataset: {', '.join(missing_columns)}")
             
             if not all_categorical:
                 st.info("No categorical columns detected in your dataset.")
