@@ -2158,7 +2158,7 @@ elif st.session_state.processing_step == 'transform':
             st.markdown("### 🏷️ Categorical Column Encoding")
             
             # Specific columns for encoding
-            target_columns = ['bentuk_tapak', 'posisi_tapak', 'orientasi', 'kondisi_wilayah_sekita', 
+            target_columns = ['bentuk_tapak', 'posisi_tapak', 'orientasi', 'kondisi_wilayah_sekitar', 
                             'jenis_jalan_utama', 'perkerasan_jalan', 'jenis_jalan']
 
             # Filter to only include columns that exist in the dataframe
