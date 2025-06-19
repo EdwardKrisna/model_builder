@@ -2746,82 +2746,131 @@ elif st.session_state.processing_step == 'advanced':
         st.markdown('## <img src="https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExaWZoeTByeWI1YmdsMHU3dnJ3ejNnem04MmM4Zjh5eThvbG10ZjFiaCZlcD12MV9naWZzX3NlYXJjaCZjdD1n/Gf1RA1jNSpbbuDE40m/giphy.gif" alt="data gif" style="height:96px; vertical-align:middle;"> Machine Learning Models', unsafe_allow_html=True)
     else:
         st.markdown('## Machine Learning Models')
-    
-    # NOW Route to correct advanced model based on advanced_step
-    # Complete ML Section Implementation
-    # Replace the existing 'if st.session_state.advanced_step == 'ml':' section with this code
 
-    # Complete ML Section Implementation
-    # Replace the existing 'if st.session_state.advanced_step == 'ml':' section with this code
+    if analyzer.current_data is not None:
 
-    if st.session_state.advanced_step == 'ml':
-        if fun_mode:
-            st.markdown('## <img src="https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExaWZoeTByeWI1YmdsMHU3dnJ3ejNnem04MmM4Zjh5eThvbG10ZjFiaCZlcD12MV9naWZzX3NlYXJjaCZjdD1n/Gf1RA1jNSpbbuDE40m/giphy.gif" alt="data gif" style="height:96px; vertical-align:middle;"> Machine Learning Models', unsafe_allow_html=True)
-        else:
-            st.markdown('## Machine Learning Models')
-
-        if analyzer.current_data is not None:
-
-            # Helper functions for RERF
-            def evaluate_rerf_optuna(X_columns, y_column, data, n_estimators, max_depth, min_samples_split, min_samples_leaf, max_features, group_column, n_splits, random_state, min_sample):
-                """Evaluate RERF model for Optuna optimization"""
-                try:
-                    from sklearn.model_selection import KFold
-                    
-                    # Prepare data
-                    model_vars = [y_column] + X_columns
-                    df_model = data[model_vars].dropna()
-                    X = df_model[X_columns]
-                    y = df_model[y_column]
-                    
-                    # Cross-validation setup
-                    if group_column is None:
-                        kf = KFold(n_splits=n_splits, shuffle=True, random_state=random_state)
-                        splits = list(kf.split(X))
-                    else:
-                        # Group-based splits (simplified for Optuna)
-                        splits = []
-                        for fold in range(n_splits):
-                            X_train_, X_test_ = [], []
-                            y_train_, y_test_ = [], []
-                            
-                            for group_value in data[group_column].unique():
-                                data_group = data[data[group_column] == group_value]
-                                if len(data_group) > min_sample:
-                                    X_group = data_group[X_columns]
-                                    y_group = data_group[y_column]
-                                    X_train, X_test, y_train, y_test = train_test_split(
-                                        X_group, y_group, test_size=0.33, random_state=random_state + fold
-                                    )
-                                    X_train_.append(X_train)
-                                    X_test_.append(X_test)
-                                    y_train_.append(y_train)
-                                    y_test_.append(y_test)
-                                else:
-                                    X_train_.append(data_group[X_columns])
-                                    y_train_.append(data_group[y_column])
-                            
-                            if X_train_ and X_test_:
-                                X_train_all = pd.concat(X_train_)
-                                X_test_all = pd.concat(X_test_)
-                                y_train_all = pd.concat(y_train_)
-                                y_test_all = pd.concat(y_test_)
-                                
-                                train_idx = X_train_all.index
-                                test_idx = X_test_all.index
-                                splits.append((train_idx, test_idx))
-                    
-                    # Evaluate across folds
-                    fold_metrics = []
-                    for train_idx, test_idx in splits:
-                        if group_column is None:
-                            X_train, X_test = X.iloc[train_idx], X.iloc[test_idx]
-                            y_train, y_test = y.iloc[train_idx], y.iloc[test_idx]
-                        else:
-                            X_train, X_test = df_model.loc[train_idx, X_columns], df_model.loc[test_idx, X_columns]
-                            y_train, y_test = df_model.loc[train_idx, y_column], df_model.loc[test_idx, y_column]
+        # Helper functions for RERF
+        def evaluate_rerf_optuna(X_columns, y_column, data, n_estimators, max_depth, min_samples_split, min_samples_leaf, max_features, group_column, n_splits, random_state, min_sample):
+            """Evaluate RERF model for Optuna optimization"""
+            try:
+                from sklearn.model_selection import KFold
+                
+                # Prepare data
+                model_vars = [y_column] + X_columns
+                df_model = data[model_vars].dropna()
+                X = df_model[X_columns]
+                y = df_model[y_column]
+                
+                # Cross-validation setup
+                if group_column is None:
+                    kf = KFold(n_splits=n_splits, shuffle=True, random_state=random_state)
+                    splits = list(kf.split(X))
+                else:
+                    # Group-based splits (simplified for Optuna)
+                    splits = []
+                    for fold in range(n_splits):
+                        X_train_, X_test_ = [], []
+                        y_train_, y_test_ = [], []
                         
-                        # RERF: Linear Regression + RF on residuals
+                        for group_value in data[group_column].unique():
+                            data_group = data[data[group_column] == group_value]
+                            if len(data_group) > min_sample:
+                                X_group = data_group[X_columns]
+                                y_group = data_group[y_column]
+                                X_train, X_test, y_train, y_test = train_test_split(
+                                    X_group, y_group, test_size=0.33, random_state=random_state + fold
+                                )
+                                X_train_.append(X_train)
+                                X_test_.append(X_test)
+                                y_train_.append(y_train)
+                                y_test_.append(y_test)
+                            else:
+                                X_train_.append(data_group[X_columns])
+                                y_train_.append(data_group[y_column])
+                        
+                        if X_train_ and X_test_:
+                            X_train_all = pd.concat(X_train_)
+                            X_test_all = pd.concat(X_test_)
+                            y_train_all = pd.concat(y_train_)
+                            y_test_all = pd.concat(y_test_)
+                            
+                            train_idx = X_train_all.index
+                            test_idx = X_test_all.index
+                            splits.append((train_idx, test_idx))
+                
+                # Evaluate across folds
+                fold_metrics = []
+                for train_idx, test_idx in splits:
+                    if group_column is None:
+                        X_train, X_test = X.iloc[train_idx], X.iloc[test_idx]
+                        y_train, y_test = y.iloc[train_idx], y.iloc[test_idx]
+                    else:
+                        X_train, X_test = df_model.loc[train_idx, X_columns], df_model.loc[test_idx, X_columns]
+                        y_train, y_test = df_model.loc[train_idx, y_column], df_model.loc[test_idx, y_column]
+                    
+                    # RERF: Linear Regression + RF on residuals
+                    lr_model = LinearRegression()
+                    lr_model.fit(X_train, y_train)
+                    lr_pred_train = lr_model.predict(X_train)
+                    lr_pred_test = lr_model.predict(X_test)
+                    
+                    # Calculate residuals
+                    residuals_train = y_train - lr_pred_train
+                    
+                    # Train RF on residuals
+                    rf_model = RandomForestRegressor(
+                        n_estimators=n_estimators,
+                        max_depth=max_depth,
+                        min_samples_split=min_samples_split,
+                        min_samples_leaf=min_samples_leaf,
+                        max_features=max_features,
+                        random_state=random_state
+                    )
+                    rf_model.fit(X_train, residuals_train)
+                    rf_pred_residuals_test = rf_model.predict(X_test)
+                    
+                    # Final RERF prediction
+                    rerf_pred_test = lr_pred_test + rf_pred_residuals_test
+                    
+                    # Evaluate with same function as other models - FIXED
+                    test_metrics = evaluate(y_test, rerf_pred_test, squared=True)
+                    fold_metrics.append(test_metrics)
+                
+                # Average metrics across folds
+                avg_r2 = np.mean([m['R2'] for m in fold_metrics])
+                return avg_r2
+                
+            except Exception as e:
+                return -999
+
+        def train_rerf_model(data, X_columns, y_column, linear_model, rf_model, group_column, n_splits, random_state, min_sample):
+            """Train RERF model with same structure as goval_machine_learning - FIXED EVALUATION"""
+            try:
+                # Prepare data
+                model_vars = [y_column] + X_columns
+                df_model = data[model_vars].dropna()
+                X = df_model[X_columns]
+                y = df_model[y_column]
+                
+                evaluation_results = {'Fold': [], 'R2': [], 'FSD': [], 'PE10': [], 'RT20': []}
+                train_results = {'R2': [], 'FSD': [], 'PE10': [], 'RT20': []}
+                
+                global_train_metrics = {'R2': 0, 'FSD': 0, 'PE10': 0, 'RT20': 0}
+                global_test_metrics = {'R2': 0, 'FSD': 0, 'PE10': 0, 'RT20': 0}
+                
+                final_linear_model = None
+                final_rf_model = None
+                
+                # Cross-validation
+                if group_column is None:
+                    from sklearn.model_selection import KFold
+                    kf = KFold(n_splits=n_splits, shuffle=True, random_state=random_state)
+                    
+                    for fold, (train_idx, test_idx) in enumerate(kf.split(X)):
+                        X_train, X_test = X.iloc[train_idx], X.iloc[test_idx]
+                        y_train, y_test = y.iloc[train_idx], y.iloc[test_idx]
+                        
+                        # Train Linear Regression
                         lr_model = LinearRegression()
                         lr_model.fit(X_train, y_train)
                         lr_pred_train = lr_model.predict(X_train)
@@ -2831,1057 +2880,992 @@ elif st.session_state.processing_step == 'advanced':
                         residuals_train = y_train - lr_pred_train
                         
                         # Train RF on residuals
-                        rf_model = RandomForestRegressor(
-                            n_estimators=n_estimators,
-                            max_depth=max_depth,
-                            min_samples_split=min_samples_split,
-                            min_samples_leaf=min_samples_leaf,
-                            max_features=max_features,
-                            random_state=random_state
+                        rf_model_fold = RandomForestRegressor(
+                            n_estimators=rf_model.n_estimators,
+                            max_depth=rf_model.max_depth,
+                            min_samples_split=rf_model.min_samples_split,
+                            min_samples_leaf=rf_model.min_samples_leaf,
+                            max_features=rf_model.max_features,
+                            random_state=rf_model.random_state
                         )
-                        rf_model.fit(X_train, residuals_train)
-                        rf_pred_residuals_test = rf_model.predict(X_test)
+                        rf_model_fold.fit(X_train, residuals_train)
+                        rf_pred_residuals_train = rf_model_fold.predict(X_train)
+                        rf_pred_residuals_test = rf_model_fold.predict(X_test)
                         
-                        # Final RERF prediction
+                        # Final RERF predictions
+                        rerf_pred_train = lr_pred_train + rf_pred_residuals_train
                         rerf_pred_test = lr_pred_test + rf_pred_residuals_test
                         
-                        # Evaluate with same function as other models - FIXED
+                        # FIXED: Evaluate with same function as other models
+                        train_metrics = evaluate(y_train, rerf_pred_train, squared=True)
                         test_metrics = evaluate(y_test, rerf_pred_test, squared=True)
-                        fold_metrics.append(test_metrics)
-                    
-                    # Average metrics across folds
-                    avg_r2 = np.mean([m['R2'] for m in fold_metrics])
-                    return avg_r2
-                    
-                except Exception as e:
-                    return -999
-
-            def train_rerf_model(data, X_columns, y_column, linear_model, rf_model, group_column, n_splits, random_state, min_sample):
-                """Train RERF model with same structure as goval_machine_learning - FIXED EVALUATION"""
-                try:
-                    # Prepare data
-                    model_vars = [y_column] + X_columns
-                    df_model = data[model_vars].dropna()
-                    X = df_model[X_columns]
-                    y = df_model[y_column]
-                    
-                    evaluation_results = {'Fold': [], 'R2': [], 'FSD': [], 'PE10': [], 'RT20': []}
-                    train_results = {'R2': [], 'FSD': [], 'PE10': [], 'RT20': []}
-                    
-                    global_train_metrics = {'R2': 0, 'FSD': 0, 'PE10': 0, 'RT20': 0}
-                    global_test_metrics = {'R2': 0, 'FSD': 0, 'PE10': 0, 'RT20': 0}
-                    
-                    final_linear_model = None
-                    final_rf_model = None
-                    
-                    # Cross-validation
-                    if group_column is None:
-                        from sklearn.model_selection import KFold
-                        kf = KFold(n_splits=n_splits, shuffle=True, random_state=random_state)
                         
-                        for fold, (train_idx, test_idx) in enumerate(kf.split(X)):
-                            X_train, X_test = X.iloc[train_idx], X.iloc[test_idx]
-                            y_train, y_test = y.iloc[train_idx], y.iloc[test_idx]
-                            
-                            # Train Linear Regression
-                            lr_model = LinearRegression()
-                            lr_model.fit(X_train, y_train)
-                            lr_pred_train = lr_model.predict(X_train)
-                            lr_pred_test = lr_model.predict(X_test)
-                            
-                            # Calculate residuals
-                            residuals_train = y_train - lr_pred_train
-                            
-                            # Train RF on residuals
-                            rf_model_fold = RandomForestRegressor(
-                                n_estimators=rf_model.n_estimators,
-                                max_depth=rf_model.max_depth,
-                                min_samples_split=rf_model.min_samples_split,
-                                min_samples_leaf=rf_model.min_samples_leaf,
-                                max_features=rf_model.max_features,
-                                random_state=rf_model.random_state
-                            )
-                            rf_model_fold.fit(X_train, residuals_train)
-                            rf_pred_residuals_train = rf_model_fold.predict(X_train)
-                            rf_pred_residuals_test = rf_model_fold.predict(X_test)
-                            
-                            # Final RERF predictions
-                            rerf_pred_train = lr_pred_train + rf_pred_residuals_train
-                            rerf_pred_test = lr_pred_test + rf_pred_residuals_test
-                            
-                            # FIXED: Evaluate with same function as other models
-                            train_metrics = evaluate(y_train, rerf_pred_train, squared=True)
-                            test_metrics = evaluate(y_test, rerf_pred_test, squared=True)
-                            
-                            # Store metrics
-                            for metric in global_train_metrics.keys():
-                                global_train_metrics[metric] += train_metrics[metric]
-                                global_test_metrics[metric] += test_metrics[metric]
-                            
-                            train_results['R2'].append(train_metrics['R2'])
-                            train_results['FSD'].append(train_metrics['FSD'])
-                            train_results['PE10'].append(train_metrics['PE10'])
-                            train_results['RT20'].append(train_metrics['RT20'])
-                            
-                            evaluation_results['Fold'].append(f"Fold-{fold + 1}")
-                            evaluation_results['R2'].append(test_metrics['R2'])
-                            evaluation_results['FSD'].append(test_metrics['FSD'])
-                            evaluation_results['PE10'].append(test_metrics['PE10'])
-                            evaluation_results['RT20'].append(test_metrics['RT20'])
-                            
-                            # Store final models from last fold
-                            if fold == n_splits - 1:
-                                final_linear_model = lr_model
-                                final_rf_model = rf_model_fold
-                                y_test_last = y_test
-                                rerf_pred_last = rerf_pred_test
-                    
+                        # Store metrics
+                        for metric in global_train_metrics.keys():
+                            global_train_metrics[metric] += train_metrics[metric]
+                            global_test_metrics[metric] += test_metrics[metric]
+                        
+                        train_results['R2'].append(train_metrics['R2'])
+                        train_results['FSD'].append(train_metrics['FSD'])
+                        train_results['PE10'].append(train_metrics['PE10'])
+                        train_results['RT20'].append(train_metrics['RT20'])
+                        
+                        evaluation_results['Fold'].append(f"Fold-{fold + 1}")
+                        evaluation_results['R2'].append(test_metrics['R2'])
+                        evaluation_results['FSD'].append(test_metrics['FSD'])
+                        evaluation_results['PE10'].append(test_metrics['PE10'])
+                        evaluation_results['RT20'].append(test_metrics['RT20'])
+                        
+                        # Store final models from last fold
+                        if fold == n_splits - 1:
+                            final_linear_model = lr_model
+                            final_rf_model = rf_model_fold
+                            y_test_last = y_test
+                            rerf_pred_last = rerf_pred_test
+                
+                else:
+                    # Group-based cross-validation
+                    for fold in range(n_splits):
+                        X_train_, X_test_ = [], []
+                        y_train_, y_test_ = [], []
+                        
+                        for group_value in data[group_column].unique():
+                            data_group = data[data[group_column] == group_value]
+                            if len(data_group) > min_sample:
+                                X_group = data_group[X_columns]
+                                y_group = data_group[y_column]
+                                X_train, X_test, y_train, y_test = train_test_split(
+                                    X_group, y_group, test_size=0.33, random_state=random_state + fold
+                                )
+                                X_train_.append(X_train)
+                                X_test_.append(X_test)
+                                y_train_.append(y_train)
+                                y_test_.append(y_test)
+                            else:
+                                X_train_.append(data_group[X_columns])
+                                y_train_.append(data_group[y_column])
+                        
+                        X_train_all = pd.concat(X_train_)
+                        X_test_all = pd.concat(X_test_)
+                        y_train_all = pd.concat(y_train_)
+                        y_test_all = pd.concat(y_test_)
+                        
+                        # Train Linear Regression
+                        lr_model = LinearRegression()
+                        lr_model.fit(X_train_all, y_train_all)
+                        lr_pred_train = lr_model.predict(X_train_all)
+                        lr_pred_test = lr_model.predict(X_test_all)
+                        
+                        # Calculate residuals
+                        residuals_train = y_train_all - lr_pred_train
+                        
+                        # Train RF on residuals
+                        rf_model_fold = RandomForestRegressor(
+                            n_estimators=rf_model.n_estimators,
+                            max_depth=rf_model.max_depth,
+                            min_samples_split=rf_model.min_samples_split,
+                            min_samples_leaf=rf_model.min_samples_leaf,
+                            max_features=rf_model.max_features,
+                            random_state=rf_model.random_state
+                        )
+                        rf_model_fold.fit(X_train_all, residuals_train)
+                        rf_pred_residuals_train = rf_model_fold.predict(X_train_all)
+                        rf_pred_residuals_test = rf_model_fold.predict(X_test_all)
+                        
+                        # Final RERF predictions
+                        rerf_pred_train = lr_pred_train + rf_pred_residuals_train
+                        rerf_pred_test = lr_pred_test + rf_pred_residuals_test
+                        
+                        # FIXED: Evaluate with same function as other models
+                        train_metrics = evaluate(y_train_all, rerf_pred_train, squared=True)
+                        test_metrics = evaluate(y_test_all, rerf_pred_test, squared=True)
+                        
+                        # Store metrics
+                        for metric in global_train_metrics.keys():
+                            global_train_metrics[metric] += train_metrics[metric]
+                            global_test_metrics[metric] += test_metrics[metric]
+                        
+                        train_results['R2'].append(train_metrics['R2'])
+                        train_results['FSD'].append(train_metrics['FSD'])
+                        train_results['PE10'].append(train_metrics['PE10'])
+                        train_results['RT20'].append(train_metrics['RT20'])
+                        
+                        evaluation_results['Fold'].append(f"Fold-{fold + 1}")
+                        evaluation_results['R2'].append(test_metrics['R2'])
+                        evaluation_results['FSD'].append(test_metrics['FSD'])
+                        evaluation_results['PE10'].append(test_metrics['PE10'])
+                        evaluation_results['RT20'].append(test_metrics['RT20'])
+                        
+                        # Store final models from last fold
+                        if fold == n_splits - 1:
+                            final_linear_model = lr_model
+                            final_rf_model = rf_model_fold
+                            y_test_last = y_test_all
+                            rerf_pred_last = rerf_pred_test
+                
+                # Average metrics
+                for metric in global_train_metrics.keys():
+                    global_train_metrics[metric] /= n_splits
+                    global_test_metrics[metric] /= n_splits
+                
+                # Create combined model
+                final_model = {
+                    'linear': final_linear_model,
+                    'rf': final_rf_model,
+                    'type': 'rerf'
+                }
+                
+                evaluation_df = pd.DataFrame(evaluation_results)
+                train_results_df = pd.DataFrame(train_results)
+                
+                # Check if log transformed
+                is_log_transformed = ('ln_' in y_column) or ('log_' in y_column.lower())
+                
+                return (
+                    final_model, evaluation_df, train_results_df,
+                    global_train_metrics, global_test_metrics,
+                    y_test_last, rerf_pred_last, is_log_transformed
+                )
+                
+            except Exception as e:
+                st.error(f"RERF training failed: {str(e)}")
+                return None, None, None, None, None, None, None, False
+
+        # Model Configuration
+        st.markdown("### 🎯 Model Configuration")
+        
+        # Check for saved OLS variables
+        saved_vars = analyzer.get_saved_ols_variables()
+        if saved_vars:
+            st.success(f"💾 **Saved OLS Variables Available**: Y={saved_vars['y_column']}, X={len(saved_vars['x_columns'])} variables")
+            
+            use_saved = st.checkbox("🔄 Use Saved OLS Variables", value=False, key="use_saved_vars")
+        else:
+            use_saved = False
+            st.info("💡 No saved variables from OLS step. Configure manually or run OLS first.")     
+
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.markdown("**Model Variables:**")
+            
+            # Get all numeric columns (including transformed ones)
+            numeric_columns = analyzer.current_data.select_dtypes(include=[np.number]).columns.tolist()
+            
+            if use_saved and saved_vars:
+                ml_y_column = saved_vars['y_column']
+                ml_x_columns = saved_vars['x_columns']
+                st.write(f"**Target (Y):** {ml_y_column}")
+                st.write(f"**Features ({len(ml_x_columns)}):** {', '.join(ml_x_columns[:3])}{'...' if len(ml_x_columns) > 3 else ''}")
+            else:
+                ml_y_column = st.selectbox("Target Variable (Y)", numeric_columns, key="ml_y_select")
+                available_x_cols = [col for col in numeric_columns if col != ml_y_column]
+                ml_x_columns = st.multiselect("Feature Variables (X)", available_x_cols,
+                                            default=available_x_cols[:5] if len(available_x_cols) >= 5 else available_x_cols,
+                                            key="ml_x_select")
+        
+        with col2:
+            st.markdown("**Cross-Validation Configuration:**")
+            
+            # Group column selection
+            use_group = st.checkbox("Use Group-Based Cross-Validation", value=False)
+            group_column = None
+            
+            if use_group:
+                # Find geographic columns
+                geo_candidates = []
+                for col in analyzer.current_data.columns:
+                    if any(geo in col for geo in ['wadmpr', 'wadmkk', 'wadmkc', 'wadmkd']):
+                        geo_candidates.append(col)
+                
+                # Also include encoded columns
+                encoded_candidates = [col for col in analyzer.current_data.columns if '_encoded' in col.lower()]
+                
+                all_group_candidates = geo_candidates + encoded_candidates
+                
+                if all_group_candidates:
+                    group_column = st.selectbox("Select Group Column", all_group_candidates)
+                else:
+                    st.warning("No geographic or encoded columns found for grouping")
+                    use_group = False
+            
+            min_sample = st.number_input("Minimum Sample per Group", min_value=1, max_value=10, value=3)
+            n_splits = st.number_input("Cross-Validation Folds", min_value=3, max_value=20, value=10)
+            random_state = st.number_input("Random State", min_value=1, max_value=1000, value=101)
+
+        # Tab structure
+        tab1, tab2, tab3 = st.tabs(["🎯 Hyperparameter Tuning", "🚀 Model Training & Evaluation", "📊 Model Comparison"])
+        
+        with tab1:
+            st.markdown("### 🎯 Optuna Hyperparameter Optimization")
+            st.info("💡 **Optional**: Optimize hyperparameters for better model performance")
+            
+            if not ml_x_columns:
+                st.warning("⚠️ Please configure model variables first")
+            else:
+                col1, col2, col3 = st.columns(3)
+                
+                with col1:
+                    st.markdown("**Models to Optimize:**")
+                    optimize_rf = st.checkbox("Random Forest", value=True, key="opt_rf")
+                    optimize_gbdt = st.checkbox("Gradient Boosting", value=True, key="opt_gbdt")
+                    optimize_rerf = st.checkbox("RERF (Linear+RF)", value=True, key="opt_rerf")
+                
+                with col2:
+                    st.markdown("**Optimization Settings:**")
+                    objective_metric = st.selectbox("Optimization Objective", 
+                                                ['R2', 'PE10', 'RT20', 'FSD'], 
+                                                index=0)
+                    n_trials = st.number_input("Number of Trials", min_value=10, max_value=200, value=50)
+                
+                with col3:
+                    st.markdown("**Current Best Parameters:**")
+                    if 'optuna_results' in st.session_state:
+                        results = st.session_state.optuna_results
+                        for model_name, params in results.items():
+                            st.write(f"**{model_name}**: {params.get('best_value', 'N/A'):.4f}")
                     else:
-                        # Group-based cross-validation
-                        for fold in range(n_splits):
-                            X_train_, X_test_ = [], []
-                            y_train_, y_test_ = [], []
+                        st.info("No optimization results yet")
+                
+                if st.button("🔍 Run Hyperparameter Optimization", type="primary"):
+                    
+                    optuna_results = {}
+                    models_to_optimize = []
+                    
+                    if optimize_rf:
+                        models_to_optimize.append(('Random Forest', RandomForestRegressor))
+                    if optimize_gbdt:
+                        models_to_optimize.append(('Gradient Boosting', GradientBoostingRegressor))
+                    if optimize_rerf:
+                        models_to_optimize.append(('RERF', 'rerf_special'))
+                    
+                    if not models_to_optimize:
+                        st.error("Please select at least one model to optimize")
+                    else:
+                        progress_bar = st.progress(0)
+                        status_text = st.empty()
+                        
+                        for i, (model_name, model_class) in enumerate(models_to_optimize):
+                            status_text.text(f"Optimizing {model_name}...")
+                            progress_bar.progress((i) / len(models_to_optimize))
                             
-                            for group_value in data[group_column].unique():
-                                data_group = data[data[group_column] == group_value]
-                                if len(data_group) > min_sample:
-                                    X_group = data_group[X_columns]
-                                    y_group = data_group[y_column]
-                                    X_train, X_test, y_train, y_test = train_test_split(
-                                        X_group, y_group, test_size=0.33, random_state=random_state + fold
+                            def objective(trial):
+                                try:
+                                    if model_name == 'Random Forest':
+                                        n_estimators = trial.suggest_int('n_estimators', 50, 500)
+                                        max_depth = trial.suggest_int('max_depth', 3, 20)
+                                        min_samples_split = trial.suggest_int('min_samples_split', 2, 10)
+                                        min_samples_leaf = trial.suggest_int('min_samples_leaf', 1, 5)
+                                        max_features = trial.suggest_categorical('max_features', ['sqrt', 'log2', None])
+                                        
+                                        model = RandomForestRegressor(
+                                            n_estimators=n_estimators,
+                                            max_depth=max_depth,
+                                            min_samples_split=min_samples_split,
+                                            min_samples_leaf=min_samples_leaf,
+                                            max_features=max_features,
+                                            random_state=random_state
+                                        )
+                                        
+                                    elif model_name == 'Gradient Boosting':
+                                        n_estimators = trial.suggest_int('n_estimators', 50, 500)
+                                        max_depth = trial.suggest_int('max_depth', 3, 15)
+                                        min_samples_split = trial.suggest_int('min_samples_split', 2, 10)
+                                        min_samples_leaf = trial.suggest_int('min_samples_leaf', 1, 5)
+                                        learning_rate = trial.suggest_float('learning_rate', 0.01, 0.3)
+                                        subsample = trial.suggest_float('subsample', 0.8, 1.0)
+                                        
+                                        model = GradientBoostingRegressor(
+                                            n_estimators=n_estimators,
+                                            max_depth=max_depth,
+                                            min_samples_split=min_samples_split,
+                                            min_samples_leaf=min_samples_leaf,
+                                            learning_rate=learning_rate,
+                                            subsample=subsample,
+                                            random_state=random_state
+                                        )
+                                        
+                                    elif model_name == 'RERF':
+                                        # For RERF, optimize only RF part
+                                        n_estimators = trial.suggest_int('n_estimators', 50, 500)
+                                        max_depth = trial.suggest_int('max_depth', 3, 20)
+                                        min_samples_split = trial.suggest_int('min_samples_split', 2, 10)
+                                        min_samples_leaf = trial.suggest_int('min_samples_leaf', 1, 5)
+                                        max_features = trial.suggest_categorical('max_features', ['sqrt', 'log2', None])
+                                        
+                                        # Use RERF evaluator
+                                        return evaluate_rerf_optuna(
+                                            ml_x_columns, ml_y_column, analyzer.current_data,
+                                            n_estimators, max_depth, min_samples_split, min_samples_leaf, max_features,
+                                            group_column if use_group else None, n_splits, random_state, min_sample
+                                        )
+                                    
+                                    # Run evaluation for RF and GBDT
+                                    _, _, _, _, global_test_metrics, _, _, _ = analyzer.goval_machine_learning(
+                                        ml_x_columns, ml_y_column, model, 
+                                        group_column if use_group else None,
+                                        n_splits, random_state, min_sample
                                     )
-                                    X_train_.append(X_train)
-                                    X_test_.append(X_test)
-                                    y_train_.append(y_train)
-                                    y_test_.append(y_test)
-                                else:
-                                    X_train_.append(data_group[X_columns])
-                                    y_train_.append(data_group[y_column])
+                                    
+                                    # Return objective based on selected metric
+                                    if objective_metric == 'R2':
+                                        return global_test_metrics['R2']
+                                    elif objective_metric == 'PE10':
+                                        return global_test_metrics['PE10']
+                                    elif objective_metric == 'RT20':
+                                        return -global_test_metrics['RT20']  # Minimize
+                                    elif objective_metric == 'FSD':
+                                        return -global_test_metrics['FSD']  # Minimize
+                                        
+                                except Exception as e:
+                                    return -999
                             
-                            X_train_all = pd.concat(X_train_)
-                            X_test_all = pd.concat(X_test_)
-                            y_train_all = pd.concat(y_train_)
-                            y_test_all = pd.concat(y_test_)
+                            # Run optimization
+                            study = optuna.create_study(direction='maximize')
+                            study.optimize(objective, n_trials=n_trials)
                             
-                            # Train Linear Regression
-                            lr_model = LinearRegression()
-                            lr_model.fit(X_train_all, y_train_all)
-                            lr_pred_train = lr_model.predict(X_train_all)
-                            lr_pred_test = lr_model.predict(X_test_all)
+                            # Store results
+                            optuna_results[model_name] = {
+                                'best_params': study.best_params,
+                                'best_value': study.best_value
+                            }
                             
-                            # Calculate residuals
-                            residuals_train = y_train_all - lr_pred_train
-                            
-                            # Train RF on residuals
-                            rf_model_fold = RandomForestRegressor(
-                                n_estimators=rf_model.n_estimators,
-                                max_depth=rf_model.max_depth,
-                                min_samples_split=rf_model.min_samples_split,
-                                min_samples_leaf=rf_model.min_samples_leaf,
-                                max_features=rf_model.max_features,
-                                random_state=rf_model.random_state
-                            )
-                            rf_model_fold.fit(X_train_all, residuals_train)
-                            rf_pred_residuals_train = rf_model_fold.predict(X_train_all)
-                            rf_pred_residuals_test = rf_model_fold.predict(X_test_all)
-                            
-                            # Final RERF predictions
-                            rerf_pred_train = lr_pred_train + rf_pred_residuals_train
-                            rerf_pred_test = lr_pred_test + rf_pred_residuals_test
-                            
-                            # FIXED: Evaluate with same function as other models
-                            train_metrics = evaluate(y_train_all, rerf_pred_train, squared=True)
-                            test_metrics = evaluate(y_test_all, rerf_pred_test, squared=True)
-                            
-                            # Store metrics
-                            for metric in global_train_metrics.keys():
-                                global_train_metrics[metric] += train_metrics[metric]
-                                global_test_metrics[metric] += test_metrics[metric]
-                            
-                            train_results['R2'].append(train_metrics['R2'])
-                            train_results['FSD'].append(train_metrics['FSD'])
-                            train_results['PE10'].append(train_metrics['PE10'])
-                            train_results['RT20'].append(train_metrics['RT20'])
-                            
-                            evaluation_results['Fold'].append(f"Fold-{fold + 1}")
-                            evaluation_results['R2'].append(test_metrics['R2'])
-                            evaluation_results['FSD'].append(test_metrics['FSD'])
-                            evaluation_results['PE10'].append(test_metrics['PE10'])
-                            evaluation_results['RT20'].append(test_metrics['RT20'])
-                            
-                            # Store final models from last fold
-                            if fold == n_splits - 1:
-                                final_linear_model = lr_model
-                                final_rf_model = rf_model_fold
-                                y_test_last = y_test_all
-                                rerf_pred_last = rerf_pred_test
+                            progress_bar.progress((i + 1) / len(models_to_optimize))
+                        
+                        # Store in session state
+                        st.session_state.optuna_results = optuna_results
+                        
+                        status_text.text("Optimization completed!")
+                        progress_bar.progress(1.0)
+                        
+                        st.success("✅ Hyperparameter optimization completed!")
+                        
+                        # Show results
+                        for model_name, result in optuna_results.items():
+                            st.markdown(f"**{model_name} Best Parameters:**")
+                            st.json(result['best_params'])
+                            st.write(f"**Best {objective_metric}:** {result['best_value']:.4f}")
+                            st.markdown("---")
+
+        with tab2:
+            st.markdown("### 🚀 Model Training & Evaluation")
+            
+            if not ml_x_columns:
+                st.warning("⚠️ Please configure model variables first")
+            else:
+                # Manual Parameters for each model
+                st.markdown("#### ⚙️ Model Parameters")
+                
+                # Random Forest Parameters
+                with st.expander("🌳 Random Forest Parameters", expanded=True):
+                    col1, col2, col3 = st.columns(3)
                     
-                    # Average metrics
-                    for metric in global_train_metrics.keys():
-                        global_train_metrics[metric] /= n_splits
-                        global_test_metrics[metric] /= n_splits
+                    # Check if we have Optuna results
+                    rf_defaults = {}
+                    if 'optuna_results' in st.session_state and 'Random Forest' in st.session_state.optuna_results:
+                        rf_defaults = st.session_state.optuna_results['Random Forest']['best_params']
+                        st.info("💡 Using Optuna optimized parameters as defaults")
                     
-                    # Create combined model
-                    final_model = {
-                        'linear': final_linear_model,
-                        'rf': final_rf_model,
-                        'type': 'rerf'
-                    }
+                    with col1:
+                        rf_n_estimators = st.number_input(
+                            "n_estimators", 
+                            min_value=10, max_value=1000, 
+                            value=rf_defaults.get('n_estimators', 100),
+                            key="rf_n_est"
+                        )
+                        rf_max_depth = st.number_input(
+                            "max_depth", 
+                            min_value=1, max_value=50, 
+                            value=rf_defaults.get('max_depth', 10),
+                            key="rf_max_depth"
+                        )
                     
-                    evaluation_df = pd.DataFrame(evaluation_results)
-                    train_results_df = pd.DataFrame(train_results)
+                    with col2:
+                        rf_min_samples_split = st.number_input(
+                            "min_samples_split", 
+                            min_value=2, max_value=20, 
+                            value=rf_defaults.get('min_samples_split', 2),
+                            key="rf_min_split"
+                        )
+                        rf_min_samples_leaf = st.number_input(
+                            "min_samples_leaf", 
+                            min_value=1, max_value=10, 
+                            value=rf_defaults.get('min_samples_leaf', 1),
+                            key="rf_min_leaf"
+                        )
                     
-                    # Check if log transformed
-                    is_log_transformed = ('ln_' in y_column) or ('log_' in y_column.lower())
+                    with col3:
+                        rf_max_features_default = rf_defaults.get('max_features', 'sqrt')
+                        rf_max_features_options = ['sqrt', 'log2', None]
+                        rf_max_features_index = rf_max_features_options.index(rf_max_features_default) if rf_max_features_default in rf_max_features_options else 0
+                        
+                        rf_max_features = st.selectbox(
+                            "max_features", 
+                            rf_max_features_options,
+                            index=rf_max_features_index,
+                            key="rf_max_feat"
+                        )
+                
+                # Gradient Boosting Parameters
+                with st.expander("🚀 Gradient Boosting Parameters", expanded=True):
+                    col1, col2, col3 = st.columns(3)
                     
-                    return (
-                        final_model, evaluation_df, train_results_df,
-                        global_train_metrics, global_test_metrics,
-                        y_test_last, rerf_pred_last, is_log_transformed
+                    # Check if we have Optuna results
+                    gbdt_defaults = {}
+                    if 'optuna_results' in st.session_state and 'Gradient Boosting' in st.session_state.optuna_results:
+                        gbdt_defaults = st.session_state.optuna_results['Gradient Boosting']['best_params']
+                        st.info("💡 Using Optuna optimized parameters as defaults")
+                    
+                    with col1:
+                        gbdt_n_estimators = st.number_input(
+                            "n_estimators", 
+                            min_value=10, max_value=1000, 
+                            value=gbdt_defaults.get('n_estimators', 100),
+                            key="gbdt_n_est"
+                        )
+                        gbdt_learning_rate = st.number_input(
+                            "learning_rate", 
+                            min_value=0.01, max_value=0.5, 
+                            value=gbdt_defaults.get('learning_rate', 0.1),
+                            step=0.01,
+                            key="gbdt_lr"
+                        )
+                    
+                    with col2:
+                        gbdt_max_depth = st.number_input(
+                            "max_depth", 
+                            min_value=1, max_value=20, 
+                            value=gbdt_defaults.get('max_depth', 6),
+                            key="gbdt_max_depth"
+                        )
+                        gbdt_subsample = st.number_input(
+                            "subsample", 
+                            min_value=0.5, max_value=1.0, 
+                            value=gbdt_defaults.get('subsample', 1.0),
+                            step=0.1,
+                            key="gbdt_subsample"
+                        )
+                    
+                    with col3:
+                        gbdt_min_samples_split = st.number_input(
+                            "min_samples_split", 
+                            min_value=2, max_value=20, 
+                            value=gbdt_defaults.get('min_samples_split', 2),
+                            key="gbdt_min_split"
+                        )
+                        gbdt_min_samples_leaf = st.number_input(
+                            "min_samples_leaf", 
+                            min_value=1, max_value=10, 
+                            value=gbdt_defaults.get('min_samples_leaf', 1),
+                            key="gbdt_min_leaf"
+                        )
+                
+                # RERF Parameters
+                with st.expander("🔗 RERF (Linear + Random Forest) Parameters", expanded=True):
+                    st.info("🔗 RERF combines Linear Regression + Random Forest on residuals")
+                    col1, col2, col3 = st.columns(3)
+                    
+                    # Check if we have Optuna results
+                    rerf_defaults = {}
+                    if 'optuna_results' in st.session_state and 'RERF' in st.session_state.optuna_results:
+                        rerf_defaults = st.session_state.optuna_results['RERF']['best_params']
+                        st.info("💡 Using Optuna optimized parameters as defaults")
+                    
+                    with col1:
+                        rerf_n_estimators = st.number_input(
+                            "RF n_estimators", 
+                            min_value=10, max_value=1000, 
+                            value=rerf_defaults.get('n_estimators', 100),
+                            key="rerf_n_est"
+                        )
+                        rerf_max_depth = st.number_input(
+                            "RF max_depth", 
+                            min_value=1, max_value=50, 
+                            value=rerf_defaults.get('max_depth', 10),
+                            key="rerf_max_depth"
+                        )
+                    
+                    with col2:
+                        rerf_min_samples_split = st.number_input(
+                            "RF min_samples_split", 
+                            min_value=2, max_value=20, 
+                            value=rerf_defaults.get('min_samples_split', 2),
+                            key="rerf_min_split"
+                        )
+                        rerf_min_samples_leaf = st.number_input(
+                            "RF min_samples_leaf", 
+                            min_value=1, max_value=10, 
+                            value=rerf_defaults.get('min_samples_leaf', 1),
+                            key="rerf_min_leaf"
+                        )
+                    
+                    with col3:
+                        rerf_max_features_default = rerf_defaults.get('max_features', 'sqrt')
+                        rerf_max_features_options = ['sqrt', 'log2', None]
+                        rerf_max_features_index = rerf_max_features_options.index(rerf_max_features_default) if rerf_max_features_default in rerf_max_features_options else 0
+                        
+                        rerf_max_features = st.selectbox(
+                            "RF max_features", 
+                            rerf_max_features_options,
+                            index=rerf_max_features_index,
+                            key="rerf_max_feat"
+                        )
+                        
+                        st.info("Linear Regression has no hyperparameters")
+                
+                # Train All Models Button
+                st.markdown("#### 🚀 Model Training")
+                
+                if st.button("🤖 Train All Models", type="primary", use_container_width=True):
+                    with st.spinner("Training all models sequentially..."):
+                        
+                        all_results = {}
+                        overall_progress = st.progress(0)
+                        status_text = st.empty()
+                        
+                        # Model configurations
+                        models_config = [
+                            {
+                                'name': 'Random Forest',
+                                'model': RandomForestRegressor(
+                                    n_estimators=rf_n_estimators,
+                                    max_depth=rf_max_depth,
+                                    min_samples_split=rf_min_samples_split,
+                                    min_samples_leaf=rf_min_samples_leaf,
+                                    max_features=rf_max_features,
+                                    random_state=random_state
+                                ),
+                                'type': 'standard'
+                            },
+                            {
+                                'name': 'Gradient Boosting',
+                                'model': GradientBoostingRegressor(
+                                    n_estimators=gbdt_n_estimators,
+                                    learning_rate=gbdt_learning_rate,
+                                    max_depth=gbdt_max_depth,
+                                    subsample=gbdt_subsample,
+                                    min_samples_split=gbdt_min_samples_split,
+                                    min_samples_leaf=gbdt_min_samples_leaf,
+                                    random_state=random_state
+                                ),
+                                'type': 'standard'
+                            },
+                            {
+                                'name': 'RERF',
+                                'model': {
+                                    'linear': LinearRegression(),
+                                    'rf': RandomForestRegressor(
+                                        n_estimators=rerf_n_estimators,
+                                        max_depth=rerf_max_depth,
+                                        min_samples_split=rerf_min_samples_split,
+                                        min_samples_leaf=rerf_min_samples_leaf,
+                                        max_features=rerf_max_features,
+                                        random_state=random_state
+                                    )
+                                },
+                                'type': 'rerf'
+                            }
+                        ]
+                        
+                        # Train each model
+                        for i, model_config in enumerate(models_config):
+                            model_name = model_config['name']
+                            status_text.text(f"Training {model_name}...")
+                            overall_progress.progress(i / len(models_config))
+                            
+                            try:
+                                if model_config['type'] == 'standard':
+                                    # Standard sklearn models
+                                    final_model, evaluation_df, train_results_df, global_train_metrics, global_test_metrics, y_test_last, y_pred_last, is_log_transformed = analyzer.goval_machine_learning(
+                                        ml_x_columns, ml_y_column, model_config['model'],
+                                        group_column if use_group else None,
+                                        n_splits, random_state, min_sample
+                                    )
+                                    
+                                elif model_config['type'] == 'rerf':
+                                    # RERF implementation
+                                    final_model, evaluation_df, train_results_df, global_train_metrics, global_test_metrics, y_test_last, y_pred_last, is_log_transformed = train_rerf_model(
+                                        analyzer.current_data, ml_x_columns, ml_y_column,
+                                        model_config['model']['linear'], model_config['model']['rf'],
+                                        group_column if use_group else None,
+                                        n_splits, random_state, min_sample
+                                    )
+                                
+                                # Store results
+                                all_results[model_name] = {
+                                    'model': final_model,
+                                    'evaluation_df': evaluation_df,
+                                    'train_results_df': train_results_df,
+                                    'global_train_metrics': global_train_metrics,
+                                    'global_test_metrics': global_test_metrics,
+                                    'y_test_last': y_test_last,
+                                    'y_pred_last': y_pred_last,
+                                    'is_log_transformed': is_log_transformed,
+                                    'feature_names': ml_x_columns,
+                                    'target_name': ml_y_column
+                                }
+                                
+                            except Exception as e:
+                                st.error(f"❌ {model_name} training failed: {str(e)}")
+                                continue
+                        
+                        overall_progress.progress(1.0)
+                        status_text.text("All models trained successfully!")
+                        
+                        # Store in session state for comparison
+                        if 'all_model_results' not in st.session_state:
+                            st.session_state.all_model_results = {}
+                        
+                        # Add timestamp to results
+                        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                        st.session_state.all_model_results[timestamp] = all_results
+                        
+                        st.success(f"✅ All models trained successfully! Results saved with timestamp: {timestamp}")
+                        
+                        # Show quick metrics comparison
+                        st.markdown("### 📊 Quick Results Summary")
+                        
+                        metrics_df = pd.DataFrame({
+                            model_name: {
+                                'Test R²': result['global_test_metrics']['R2'],
+                                'Test PE10': result['global_test_metrics']['PE10'],
+                                'Test RT20': result['global_test_metrics']['RT20'],
+                                'Test FSD': result['global_test_metrics']['FSD']
+                            }
+                            for model_name, result in all_results.items()
+                        }).T
+                        
+                        st.dataframe(metrics_df.style.format({
+                            'Test R²': '{:.4f}',
+                            'Test PE10': '{:.4f}',
+                            'Test RT20': '{:.4f}',
+                            'Test FSD': '{:.4f}'
+                        }), use_container_width=True)
+                        
+                        # Model downloads - FIXED: No restart on download
+                        st.markdown("### 💾 Download Trained Models")
+                        
+                        download_cols = st.columns(len(all_results))
+                        
+                        for i, (model_name, result) in enumerate(all_results.items()):
+                            with download_cols[i]:
+                                st.markdown(f"**{model_name}**")
+                                
+                                # Prepare model for download (Pickle format)
+                                model_data = {
+                                    'model': result['model'],
+                                    'feature_names': result['feature_names'],
+                                    'target_name': result['target_name'],
+                                    'model_type': model_name,
+                                    'metrics': result['global_test_metrics'],
+                                    'timestamp': timestamp,
+                                    'usage_instructions': {
+                                        'load_model': 'import pickle; with open("model.pkl", "rb") as f: model_data = pickle.load(f)',
+                                        'access_model': 'model = model_data["model"]',
+                                        'feature_names': 'features = model_data["feature_names"]',
+                                        'make_prediction': 'predictions = model.predict(X_new)' if model_name != 'RERF' else 'lr_pred = model["linear"].predict(X_new); rf_pred = model["rf"].predict(X_new); final_pred = lr_pred + rf_pred'
+                                    }
+                                }
+                                
+                                model_bytes = pickle.dumps(model_data)
+                                
+                                st.download_button(
+                                    label=f"📦 {model_name}.pkl",
+                                    data=model_bytes,
+                                    file_name=f"{model_name.lower().replace(' ', '_')}_model_{timestamp}.pkl",
+                                    mime="application/octet-stream",
+                                    key=f"download_{model_name}_{timestamp}",
+                                    use_container_width=True
+                                )
+
+        with tab3:
+            st.markdown("### 📊 Model Comparison Dashboard")
+            
+            if 'all_model_results' not in st.session_state or not st.session_state.all_model_results:
+                st.info("🎯 Train models first to see comparison results here")
+            else:
+                # Show all training sessions
+                st.markdown("#### 📈 Training History")
+                
+                session_options = list(st.session_state.all_model_results.keys())
+                selected_session = st.selectbox(
+                    "Select Training Session",
+                    session_options,
+                    index=len(session_options)-1,  # Default to latest
+                    key="comparison_session"
+                )
+                
+                if selected_session:
+                    results = st.session_state.all_model_results[selected_session]
+                    
+                    # Metrics Comparison
+                    st.markdown("#### 📊 Performance Metrics Comparison")
+                    
+                    # Create metrics comparison chart
+                    metrics_data = []
+                    for model_name, result in results.items():
+                        metrics = result['global_test_metrics']
+                        metrics_data.append({
+                            'Model': model_name,
+                            'R²': metrics['R2'],
+                            'PE10': metrics['PE10'],
+                            'RT20': metrics['RT20'],
+                            'FSD': metrics['FSD']
+                        })
+                    
+                    metrics_df = pd.DataFrame(metrics_data)
+                    
+                    # Display metrics table
+                    st.dataframe(metrics_df.style.format({
+                        'R²': '{:.4f}',
+                        'PE10': '{:.4f}',
+                        'RT20': '{:.4f}',
+                        'FSD': '{:.4f}'
+                    }), use_container_width=True)
+                    
+                    # Side-by-side bar charts for metrics comparison
+                    st.markdown("#### 📊 Metrics Comparison Charts")
+                    
+                    # Create side-by-side bar charts
+                    fig_metrics = make_subplots(
+                        rows=2, cols=2,
+                        subplot_titles=('R² (Higher is Better)', 'PE10 (Higher is Better)', 
+                                      'RT20 (Lower is Better)', 'FSD (Lower is Better)'),
+                        specs=[[{"secondary_y": False}, {"secondary_y": False}],
+                               [{"secondary_y": False}, {"secondary_y": False}]]
                     )
                     
-                except Exception as e:
-                    st.error(f"RERF training failed: {str(e)}")
-                    return None, None, None, None, None, None, None, False
-
-            # Model Configuration
-            st.markdown("### 🎯 Model Configuration")
-            
-            # Check for saved OLS variables
-            saved_vars = analyzer.get_saved_ols_variables()
-            if saved_vars:
-                st.success(f"💾 **Saved OLS Variables Available**: Y={saved_vars['y_column']}, X={len(saved_vars['x_columns'])} variables")
-                
-                use_saved = st.checkbox("🔄 Use Saved OLS Variables", value=False, key="use_saved_vars")
-            else:
-                use_saved = False
-                st.info("💡 No saved variables from OLS step. Configure manually or run OLS first.")     
-
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                st.markdown("**Model Variables:**")
-                
-                # Get all numeric columns (including transformed ones)
-                numeric_columns = analyzer.current_data.select_dtypes(include=[np.number]).columns.tolist()
-                
-                if use_saved and saved_vars:
-                    ml_y_column = saved_vars['y_column']
-                    ml_x_columns = saved_vars['x_columns']
-                    st.write(f"**Target (Y):** {ml_y_column}")
-                    st.write(f"**Features ({len(ml_x_columns)}):** {', '.join(ml_x_columns[:3])}{'...' if len(ml_x_columns) > 3 else ''}")
-                else:
-                    ml_y_column = st.selectbox("Target Variable (Y)", numeric_columns, key="ml_y_select")
-                    available_x_cols = [col for col in numeric_columns if col != ml_y_column]
-                    ml_x_columns = st.multiselect("Feature Variables (X)", available_x_cols,
-                                                default=available_x_cols[:5] if len(available_x_cols) >= 5 else available_x_cols,
-                                                key="ml_x_select")
-            
-            with col2:
-                st.markdown("**Cross-Validation Configuration:**")
-                
-                # Group column selection
-                use_group = st.checkbox("Use Group-Based Cross-Validation", value=False)
-                group_column = None
-                
-                if use_group:
-                    # Find geographic columns
-                    geo_candidates = []
-                    for col in analyzer.current_data.columns:
-                        if any(geo in col for geo in ['wadmpr', 'wadmkk', 'wadmkc', 'wadmkd']):
-                            geo_candidates.append(col)
+                    models = metrics_df['Model'].tolist()
+                    colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd']
                     
-                    # Also include encoded columns
-                    encoded_candidates = [col for col in analyzer.current_data.columns if '_encoded' in col.lower()]
+                    # R² chart
+                    fig_metrics.add_trace(
+                        go.Bar(x=models, y=metrics_df['R²'], name='R²', 
+                               marker_color=colors[0], showlegend=False),
+                        row=1, col=1
+                    )
                     
-                    all_group_candidates = geo_candidates + encoded_candidates
+                    # PE10 chart
+                    fig_metrics.add_trace(
+                        go.Bar(x=models, y=metrics_df['PE10'], name='PE10', 
+                               marker_color=colors[1], showlegend=False),
+                        row=1, col=2
+                    )
                     
-                    if all_group_candidates:
-                        group_column = st.selectbox("Select Group Column", all_group_candidates)
-                    else:
-                        st.warning("No geographic or encoded columns found for grouping")
-                        use_group = False
-                
-                min_sample = st.number_input("Minimum Sample per Group", min_value=1, max_value=10, value=3)
-                n_splits = st.number_input("Cross-Validation Folds", min_value=3, max_value=20, value=10)
-                random_state = st.number_input("Random State", min_value=1, max_value=1000, value=101)
-
-            # Tab structure
-            tab1, tab2, tab3 = st.tabs(["🎯 Hyperparameter Tuning", "🚀 Model Training & Evaluation", "📊 Model Comparison"])
-            
-            with tab1:
-                st.markdown("### 🎯 Optuna Hyperparameter Optimization")
-                st.info("💡 **Optional**: Optimize hyperparameters for better model performance")
-                
-                if not ml_x_columns:
-                    st.warning("⚠️ Please configure model variables first")
-                else:
+                    # RT20 chart
+                    fig_metrics.add_trace(
+                        go.Bar(x=models, y=metrics_df['RT20'], name='RT20', 
+                               marker_color=colors[2], showlegend=False),
+                        row=2, col=1
+                    )
+                    
+                    # FSD chart
+                    fig_metrics.add_trace(
+                        go.Bar(x=models, y=metrics_df['FSD'], name='FSD', 
+                               marker_color=colors[3], showlegend=False),
+                        row=2, col=2
+                    )
+                    
+                    fig_metrics.update_layout(
+                        height=600,
+                        title_text="Model Performance Comparison",
+                        showlegend=False
+                    )
+                    
+                    st.plotly_chart(fig_metrics, use_container_width=True)
+                    
+                    # Combined Actual vs Predicted Plot
+                    st.markdown("#### 🎯 Combined Actual vs Predicted Comparison")
+                    
+                    fig_pred = go.Figure()
+                    
+                    # Add scatter plot for each model
+                    for i, (model_name, result) in enumerate(results.items()):
+                        y_actual = result['y_test_last']
+                        y_pred = result['y_pred_last']
+                        
+                        # Apply log transformation if necessary
+                        if result['is_log_transformed']:
+                            y_actual_plot = np.exp(y_actual)
+                            y_pred_plot = np.exp(y_pred)
+                            axis_title = "Values (Original Scale)"
+                        else:
+                            y_actual_plot = y_actual
+                            y_pred_plot = y_pred
+                            axis_title = "Values"
+                        
+                        fig_pred.add_trace(go.Scatter(
+                            x=y_actual_plot,
+                            y=y_pred_plot,
+                            mode='markers',
+                            name=f'{model_name} (R²={result["global_test_metrics"]["R2"]:.3f})',
+                            marker=dict(
+                                color=colors[i % len(colors)],
+                                size=6,
+                                opacity=0.7
+                            ),
+                            hovertemplate=f'<b>{model_name}</b><br>' +
+                                        'Actual: %{x:.0f}<br>' +
+                                        'Predicted: %{y:.0f}<br>' +
+                                        '<extra></extra>'
+                        ))
+                    
+                    # Add perfect prediction line
+                    if results:
+                        # Get overall min/max for the diagonal line
+                        all_actual = []
+                        all_pred = []
+                        for result in results.values():
+                            if result['is_log_transformed']:
+                                all_actual.extend(np.exp(result['y_test_last']))
+                                all_pred.extend(np.exp(result['y_pred_last']))
+                            else:
+                                all_actual.extend(result['y_test_last'])
+                                all_pred.extend(result['y_pred_last'])
+                        
+                        min_val = min(min(all_actual), min(all_pred))
+                        max_val = max(max(all_actual), max(all_pred))
+                        
+                        fig_pred.add_trace(go.Scatter(
+                            x=[min_val, max_val],
+                            y=[min_val, max_val],
+                            mode='lines',
+                            name='Perfect Prediction',
+                            line=dict(color='red', dash='dash', width=2),
+                            hovertemplate='Perfect Prediction Line<extra></extra>'
+                        ))
+                    
+                    fig_pred.update_layout(
+                        title='Actual vs Predicted Values - All Models',
+                        xaxis_title=f'Actual {axis_title}',
+                        yaxis_title=f'Predicted {axis_title}',
+                        height=600,
+                        hovermode='closest'
+                    )
+                    
+                    st.plotly_chart(fig_pred, use_container_width=True)
+                    
+                    # Model Rankings
+                    st.markdown("#### 🏆 Model Rankings")
+                    
+                    # Calculate rankings for each metric
+                    rankings_data = []
+                    for model_name in models:
+                        model_data = metrics_df[metrics_df['Model'] == model_name].iloc[0]
+                        rankings_data.append({
+                            'Model': model_name,
+                            'R² Rank': metrics_df['R²'].rank(ascending=False)[metrics_df['Model'] == model_name].iloc[0],
+                            'PE10 Rank': metrics_df['PE10'].rank(ascending=False)[metrics_df['Model'] == model_name].iloc[0],
+                            'RT20 Rank': metrics_df['RT20'].rank(ascending=True)[metrics_df['Model'] == model_name].iloc[0],  # Lower is better
+                            'FSD Rank': metrics_df['FSD'].rank(ascending=True)[metrics_df['Model'] == model_name].iloc[0],   # Lower is better
+                        })
+                    
+                    rankings_df = pd.DataFrame(rankings_data)
+                    
+                    # Calculate average rank
+                    rankings_df['Average Rank'] = rankings_df[['R² Rank', 'PE10 Rank', 'RT20 Rank', 'FSD Rank']].mean(axis=1)
+                    rankings_df = rankings_df.sort_values('Average Rank')
+                    
+                    # Add ranking indicators
+                    rankings_df['Overall Rank'] = range(1, len(rankings_df) + 1)
+                    
+                    # Display rankings
+                    col1, col2 = st.columns(2)
+                    
+                    with col1:
+                        st.markdown("**📊 Detailed Rankings by Metric:**")
+                        st.dataframe(rankings_df[['Model', 'R² Rank', 'PE10 Rank', 'RT20 Rank', 'FSD Rank', 'Average Rank']].style.format({
+                            'R² Rank': '{:.0f}',
+                            'PE10 Rank': '{:.0f}',
+                            'RT20 Rank': '{:.0f}',
+                            'FSD Rank': '{:.0f}',
+                            'Average Rank': '{:.1f}'
+                        }), use_container_width=True)
+                    
+                    with col2:
+                        st.markdown("**🏆 Overall Model Ranking:**")
+                        for i, row in rankings_df.iterrows():
+                            rank = row['Overall Rank']
+                            model = row['Model']
+                            avg_rank = row['Average Rank']
+                            
+                            if rank == 1:
+                                st.success(f"🥇 **{rank}. {model}** (Avg Rank: {avg_rank:.1f})")
+                            elif rank == 2:
+                                st.info(f"🥈 **{rank}. {model}** (Avg Rank: {avg_rank:.1f})")
+                            elif rank == 3:
+                                st.warning(f"🥉 **{rank}. {model}** (Avg Rank: {avg_rank:.1f})")
+                            else:
+                                st.write(f"**{rank}. {model}** (Avg Rank: {avg_rank:.1f})")
+                    
+                    # Download comparison results - FIXED: No restart on download
+                    st.markdown("#### 💾 Download Comparison Results")
+                    
                     col1, col2, col3 = st.columns(3)
                     
                     with col1:
-                        st.markdown("**Models to Optimize:**")
-                        optimize_rf = st.checkbox("Random Forest", value=True, key="opt_rf")
-                        optimize_gbdt = st.checkbox("Gradient Boosting", value=True, key="opt_gbdt")
-                        optimize_rerf = st.checkbox("RERF (Linear+RF)", value=True, key="opt_rerf")
+                        # Download metrics comparison
+                        st.download_button(
+                            label="📊 Download Metrics (.csv)",
+                            data=metrics_df.to_csv(index=False),
+                            file_name=f"model_metrics_comparison_{selected_session}.csv",
+                            mime="text/csv",
+                            key=f"download_metrics_{selected_session}",
+                            use_container_width=True
+                        )
                     
                     with col2:
-                        st.markdown("**Optimization Settings:**")
-                        objective_metric = st.selectbox("Optimization Objective", 
-                                                    ['R2', 'PE10', 'RT20', 'FSD'], 
-                                                    index=0)
-                        n_trials = st.number_input("Number of Trials", min_value=10, max_value=200, value=50)
+                        # Download rankings
+                        st.download_button(
+                            label="🏆 Download Rankings (.csv)",
+                            data=rankings_df.to_csv(index=False),
+                            file_name=f"model_rankings_{selected_session}.csv",
+                            mime="text/csv",
+                            key=f"download_rankings_{selected_session}",
+                            use_container_width=True
+                        )
                     
                     with col3:
-                        st.markdown("**Current Best Parameters:**")
-                        if 'optuna_results' in st.session_state:
-                            results = st.session_state.optuna_results
-                            for model_name, params in results.items():
-                                st.write(f"**{model_name}**: {params.get('best_value', 'N/A'):.4f}")
-                        else:
-                            st.info("No optimization results yet")
-                    
-                    if st.button("🔍 Run Hyperparameter Optimization", type="primary"):
-                        
-                        optuna_results = {}
-                        models_to_optimize = []
-                        
-                        if optimize_rf:
-                            models_to_optimize.append(('Random Forest', RandomForestRegressor))
-                        if optimize_gbdt:
-                            models_to_optimize.append(('Gradient Boosting', GradientBoostingRegressor))
-                        if optimize_rerf:
-                            models_to_optimize.append(('RERF', 'rerf_special'))
-                        
-                        if not models_to_optimize:
-                            st.error("Please select at least one model to optimize")
-                        else:
-                            progress_bar = st.progress(0)
-                            status_text = st.empty()
-                            
-                            for i, (model_name, model_class) in enumerate(models_to_optimize):
-                                status_text.text(f"Optimizing {model_name}...")
-                                progress_bar.progress((i) / len(models_to_optimize))
-                                
-                                def objective(trial):
-                                    try:
-                                        if model_name == 'Random Forest':
-                                            n_estimators = trial.suggest_int('n_estimators', 50, 500)
-                                            max_depth = trial.suggest_int('max_depth', 3, 20)
-                                            min_samples_split = trial.suggest_int('min_samples_split', 2, 10)
-                                            min_samples_leaf = trial.suggest_int('min_samples_leaf', 1, 5)
-                                            max_features = trial.suggest_categorical('max_features', ['sqrt', 'log2', None])
-                                            
-                                            model = RandomForestRegressor(
-                                                n_estimators=n_estimators,
-                                                max_depth=max_depth,
-                                                min_samples_split=min_samples_split,
-                                                min_samples_leaf=min_samples_leaf,
-                                                max_features=max_features,
-                                                random_state=random_state
-                                            )
-                                            
-                                        elif model_name == 'Gradient Boosting':
-                                            n_estimators = trial.suggest_int('n_estimators', 50, 500)
-                                            max_depth = trial.suggest_int('max_depth', 3, 15)
-                                            min_samples_split = trial.suggest_int('min_samples_split', 2, 10)
-                                            min_samples_leaf = trial.suggest_int('min_samples_leaf', 1, 5)
-                                            learning_rate = trial.suggest_float('learning_rate', 0.01, 0.3)
-                                            subsample = trial.suggest_float('subsample', 0.8, 1.0)
-                                            
-                                            model = GradientBoostingRegressor(
-                                                n_estimators=n_estimators,
-                                                max_depth=max_depth,
-                                                min_samples_split=min_samples_split,
-                                                min_samples_leaf=min_samples_leaf,
-                                                learning_rate=learning_rate,
-                                                subsample=subsample,
-                                                random_state=random_state
-                                            )
-                                            
-                                        elif model_name == 'RERF':
-                                            # For RERF, optimize only RF part
-                                            n_estimators = trial.suggest_int('n_estimators', 50, 500)
-                                            max_depth = trial.suggest_int('max_depth', 3, 20)
-                                            min_samples_split = trial.suggest_int('min_samples_split', 2, 10)
-                                            min_samples_leaf = trial.suggest_int('min_samples_leaf', 1, 5)
-                                            max_features = trial.suggest_categorical('max_features', ['sqrt', 'log2', None])
-                                            
-                                            # Use RERF evaluator
-                                            return evaluate_rerf_optuna(
-                                                ml_x_columns, ml_y_column, analyzer.current_data,
-                                                n_estimators, max_depth, min_samples_split, min_samples_leaf, max_features,
-                                                group_column if use_group else None, n_splits, random_state, min_sample
-                                            )
-                                        
-                                        # Run evaluation for RF and GBDT
-                                        _, _, _, _, global_test_metrics, _, _, _ = analyzer.goval_machine_learning(
-                                            ml_x_columns, ml_y_column, model, 
-                                            group_column if use_group else None,
-                                            n_splits, random_state, min_sample
-                                        )
-                                        
-                                        # Return objective based on selected metric
-                                        if objective_metric == 'R2':
-                                            return global_test_metrics['R2']
-                                        elif objective_metric == 'PE10':
-                                            return global_test_metrics['PE10']
-                                        elif objective_metric == 'RT20':
-                                            return -global_test_metrics['RT20']  # Minimize
-                                        elif objective_metric == 'FSD':
-                                            return -global_test_metrics['FSD']  # Minimize
-                                            
-                                    except Exception as e:
-                                        return -999
-                                
-                                # Run optimization
-                                study = optuna.create_study(direction='maximize')
-                                study.optimize(objective, n_trials=n_trials)
-                                
-                                # Store results
-                                optuna_results[model_name] = {
-                                    'best_params': study.best_params,
-                                    'best_value': study.best_value
-                                }
-                                
-                                progress_bar.progress((i + 1) / len(models_to_optimize))
-                            
-                            # Store in session state
-                            st.session_state.optuna_results = optuna_results
-                            
-                            status_text.text("Optimization completed!")
-                            progress_bar.progress(1.0)
-                            
-                            st.success("✅ Hyperparameter optimization completed!")
-                            
-                            # Show results
-                            for model_name, result in optuna_results.items():
-                                st.markdown(f"**{model_name} Best Parameters:**")
-                                st.json(result['best_params'])
-                                st.write(f"**Best {objective_metric}:** {result['best_value']:.4f}")
-                                st.markdown("---")
-
-            with tab2:
-                st.markdown("### 🚀 Model Training & Evaluation")
-                
-                if not ml_x_columns:
-                    st.warning("⚠️ Please configure model variables first")
-                else:
-                    # Manual Parameters for each model
-                    st.markdown("#### ⚙️ Model Parameters")
-                    
-                    # Random Forest Parameters
-                    with st.expander("🌳 Random Forest Parameters", expanded=True):
-                        col1, col2, col3 = st.columns(3)
-                        
-                        # Check if we have Optuna results
-                        rf_defaults = {}
-                        if 'optuna_results' in st.session_state and 'Random Forest' in st.session_state.optuna_results:
-                            rf_defaults = st.session_state.optuna_results['Random Forest']['best_params']
-                            st.info("💡 Using Optuna optimized parameters as defaults")
-                        
-                        with col1:
-                            rf_n_estimators = st.number_input(
-                                "n_estimators", 
-                                min_value=10, max_value=1000, 
-                                value=rf_defaults.get('n_estimators', 100),
-                                key="rf_n_est"
-                            )
-                            rf_max_depth = st.number_input(
-                                "max_depth", 
-                                min_value=1, max_value=50, 
-                                value=rf_defaults.get('max_depth', 10),
-                                key="rf_max_depth"
-                            )
-                        
-                        with col2:
-                            rf_min_samples_split = st.number_input(
-                                "min_samples_split", 
-                                min_value=2, max_value=20, 
-                                value=rf_defaults.get('min_samples_split', 2),
-                                key="rf_min_split"
-                            )
-                            rf_min_samples_leaf = st.number_input(
-                                "min_samples_leaf", 
-                                min_value=1, max_value=10, 
-                                value=rf_defaults.get('min_samples_leaf', 1),
-                                key="rf_min_leaf"
-                            )
-                        
-                        with col3:
-                            rf_max_features_default = rf_defaults.get('max_features', 'sqrt')
-                            rf_max_features_options = ['sqrt', 'log2', None]
-                            rf_max_features_index = rf_max_features_options.index(rf_max_features_default) if rf_max_features_default in rf_max_features_options else 0
-                            
-                            rf_max_features = st.selectbox(
-                                "max_features", 
-                                rf_max_features_options,
-                                index=rf_max_features_index,
-                                key="rf_max_feat"
-                            )
-                    
-                    # Gradient Boosting Parameters
-                    with st.expander("🚀 Gradient Boosting Parameters", expanded=True):
-                        col1, col2, col3 = st.columns(3)
-                        
-                        # Check if we have Optuna results
-                        gbdt_defaults = {}
-                        if 'optuna_results' in st.session_state and 'Gradient Boosting' in st.session_state.optuna_results:
-                            gbdt_defaults = st.session_state.optuna_results['Gradient Boosting']['best_params']
-                            st.info("💡 Using Optuna optimized parameters as defaults")
-                        
-                        with col1:
-                            gbdt_n_estimators = st.number_input(
-                                "n_estimators", 
-                                min_value=10, max_value=1000, 
-                                value=gbdt_defaults.get('n_estimators', 100),
-                                key="gbdt_n_est"
-                            )
-                            gbdt_learning_rate = st.number_input(
-                                "learning_rate", 
-                                min_value=0.01, max_value=0.5, 
-                                value=gbdt_defaults.get('learning_rate', 0.1),
-                                step=0.01,
-                                key="gbdt_lr"
-                            )
-                        
-                        with col2:
-                            gbdt_max_depth = st.number_input(
-                                "max_depth", 
-                                min_value=1, max_value=20, 
-                                value=gbdt_defaults.get('max_depth', 6),
-                                key="gbdt_max_depth"
-                            )
-                            gbdt_subsample = st.number_input(
-                                "subsample", 
-                                min_value=0.5, max_value=1.0, 
-                                value=gbdt_defaults.get('subsample', 1.0),
-                                step=0.1,
-                                key="gbdt_subsample"
-                            )
-                        
-                        with col3:
-                            gbdt_min_samples_split = st.number_input(
-                                "min_samples_split", 
-                                min_value=2, max_value=20, 
-                                value=gbdt_defaults.get('min_samples_split', 2),
-                                key="gbdt_min_split"
-                            )
-                            gbdt_min_samples_leaf = st.number_input(
-                                "min_samples_leaf", 
-                                min_value=1, max_value=10, 
-                                value=gbdt_defaults.get('min_samples_leaf', 1),
-                                key="gbdt_min_leaf"
-                            )
-                    
-                    # RERF Parameters
-                    with st.expander("🔗 RERF (Linear + Random Forest) Parameters", expanded=True):
-                        st.info("🔗 RERF combines Linear Regression + Random Forest on residuals")
-                        col1, col2, col3 = st.columns(3)
-                        
-                        # Check if we have Optuna results
-                        rerf_defaults = {}
-                        if 'optuna_results' in st.session_state and 'RERF' in st.session_state.optuna_results:
-                            rerf_defaults = st.session_state.optuna_results['RERF']['best_params']
-                            st.info("💡 Using Optuna optimized parameters as defaults")
-                        
-                        with col1:
-                            rerf_n_estimators = st.number_input(
-                                "RF n_estimators", 
-                                min_value=10, max_value=1000, 
-                                value=rerf_defaults.get('n_estimators', 100),
-                                key="rerf_n_est"
-                            )
-                            rerf_max_depth = st.number_input(
-                                "RF max_depth", 
-                                min_value=1, max_value=50, 
-                                value=rerf_defaults.get('max_depth', 10),
-                                key="rerf_max_depth"
-                            )
-                        
-                        with col2:
-                            rerf_min_samples_split = st.number_input(
-                                "RF min_samples_split", 
-                                min_value=2, max_value=20, 
-                                value=rerf_defaults.get('min_samples_split', 2),
-                                key="rerf_min_split"
-                            )
-                            rerf_min_samples_leaf = st.number_input(
-                                "RF min_samples_leaf", 
-                                min_value=1, max_value=10, 
-                                value=rerf_defaults.get('min_samples_leaf', 1),
-                                key="rerf_min_leaf"
-                            )
-                        
-                        with col3:
-                            rerf_max_features_default = rerf_defaults.get('max_features', 'sqrt')
-                            rerf_max_features_options = ['sqrt', 'log2', None]
-                            rerf_max_features_index = rerf_max_features_options.index(rerf_max_features_default) if rerf_max_features_default in rerf_max_features_options else 0
-                            
-                            rerf_max_features = st.selectbox(
-                                "RF max_features", 
-                                rerf_max_features_options,
-                                index=rerf_max_features_index,
-                                key="rerf_max_feat"
-                            )
-                            
-                            st.info("Linear Regression has no hyperparameters")
-                    
-                    # Train All Models Button
-                    st.markdown("#### 🚀 Model Training")
-                    
-                    if st.button("🤖 Train All Models", type="primary", use_container_width=True):
-                        with st.spinner("Training all models sequentially..."):
-                            
-                            all_results = {}
-                            overall_progress = st.progress(0)
-                            status_text = st.empty()
-                            
-                            # Model configurations
-                            models_config = [
-                                {
-                                    'name': 'Random Forest',
-                                    'model': RandomForestRegressor(
-                                        n_estimators=rf_n_estimators,
-                                        max_depth=rf_max_depth,
-                                        min_samples_split=rf_min_samples_split,
-                                        min_samples_leaf=rf_min_samples_leaf,
-                                        max_features=rf_max_features,
-                                        random_state=random_state
-                                    ),
-                                    'type': 'standard'
-                                },
-                                {
-                                    'name': 'Gradient Boosting',
-                                    'model': GradientBoostingRegressor(
-                                        n_estimators=gbdt_n_estimators,
-                                        learning_rate=gbdt_learning_rate,
-                                        max_depth=gbdt_max_depth,
-                                        subsample=gbdt_subsample,
-                                        min_samples_split=gbdt_min_samples_split,
-                                        min_samples_leaf=gbdt_min_samples_leaf,
-                                        random_state=random_state
-                                    ),
-                                    'type': 'standard'
-                                },
-                                {
-                                    'name': 'RERF',
-                                    'model': {
-                                        'linear': LinearRegression(),
-                                        'rf': RandomForestRegressor(
-                                            n_estimators=rerf_n_estimators,
-                                            max_depth=rerf_max_depth,
-                                            min_samples_split=rerf_min_samples_split,
-                                            min_samples_leaf=rerf_min_samples_leaf,
-                                            max_features=rerf_max_features,
-                                            random_state=random_state
-                                        )
-                                    },
-                                    'type': 'rerf'
-                                }
-                            ]
-                            
-                            # Train each model
-                            for i, model_config in enumerate(models_config):
-                                model_name = model_config['name']
-                                status_text.text(f"Training {model_name}...")
-                                overall_progress.progress(i / len(models_config))
-                                
-                                try:
-                                    if model_config['type'] == 'standard':
-                                        # Standard sklearn models
-                                        final_model, evaluation_df, train_results_df, global_train_metrics, global_test_metrics, y_test_last, y_pred_last, is_log_transformed = analyzer.goval_machine_learning(
-                                            ml_x_columns, ml_y_column, model_config['model'],
-                                            group_column if use_group else None,
-                                            n_splits, random_state, min_sample
-                                        )
-                                        
-                                    elif model_config['type'] == 'rerf':
-                                        # RERF implementation
-                                        final_model, evaluation_df, train_results_df, global_train_metrics, global_test_metrics, y_test_last, y_pred_last, is_log_transformed = train_rerf_model(
-                                            analyzer.current_data, ml_x_columns, ml_y_column,
-                                            model_config['model']['linear'], model_config['model']['rf'],
-                                            group_column if use_group else None,
-                                            n_splits, random_state, min_sample
-                                        )
-                                    
-                                    # Store results
-                                    all_results[model_name] = {
-                                        'model': final_model,
-                                        'evaluation_df': evaluation_df,
-                                        'train_results_df': train_results_df,
-                                        'global_train_metrics': global_train_metrics,
-                                        'global_test_metrics': global_test_metrics,
-                                        'y_test_last': y_test_last,
-                                        'y_pred_last': y_pred_last,
-                                        'is_log_transformed': is_log_transformed,
-                                        'feature_names': ml_x_columns,
-                                        'target_name': ml_y_column
-                                    }
-                                    
-                                except Exception as e:
-                                    st.error(f"❌ {model_name} training failed: {str(e)}")
-                                    continue
-                            
-                            overall_progress.progress(1.0)
-                            status_text.text("All models trained successfully!")
-                            
-                            # Store in session state for comparison
-                            if 'all_model_results' not in st.session_state:
-                                st.session_state.all_model_results = {}
-                            
-                            # Add timestamp to results
-                            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-                            st.session_state.all_model_results[timestamp] = all_results
-                            
-                            st.success(f"✅ All models trained successfully! Results saved with timestamp: {timestamp}")
-                            
-                            # Show quick metrics comparison
-                            st.markdown("### 📊 Quick Results Summary")
-                            
-                            metrics_df = pd.DataFrame({
-                                model_name: {
-                                    'Test R²': result['global_test_metrics']['R2'],
-                                    'Test PE10': result['global_test_metrics']['PE10'],
-                                    'Test RT20': result['global_test_metrics']['RT20'],
-                                    'Test FSD': result['global_test_metrics']['FSD']
-                                }
-                                for model_name, result in all_results.items()
-                            }).T
-                            
-                            st.dataframe(metrics_df.style.format({
-                                'Test R²': '{:.4f}',
-                                'Test PE10': '{:.4f}',
-                                'Test RT20': '{:.4f}',
-                                'Test FSD': '{:.4f}'
-                            }), use_container_width=True)
-                            
-                            # Model downloads - FIXED: No restart on download
-                            st.markdown("### 💾 Download Trained Models")
-                            
-                            download_cols = st.columns(len(all_results))
-                            
-                            for i, (model_name, result) in enumerate(all_results.items()):
-                                with download_cols[i]:
-                                    st.markdown(f"**{model_name}**")
-                                    
-                                    # Prepare model for download (Pickle format)
-                                    model_data = {
-                                        'model': result['model'],
-                                        'feature_names': result['feature_names'],
-                                        'target_name': result['target_name'],
-                                        'model_type': model_name,
-                                        'metrics': result['global_test_metrics'],
-                                        'timestamp': timestamp,
-                                        'usage_instructions': {
-                                            'load_model': 'import pickle; with open("model.pkl", "rb") as f: model_data = pickle.load(f)',
-                                            'access_model': 'model = model_data["model"]',
-                                            'feature_names': 'features = model_data["feature_names"]',
-                                            'make_prediction': 'predictions = model.predict(X_new)' if model_name != 'RERF' else 'lr_pred = model["linear"].predict(X_new); rf_pred = model["rf"].predict(X_new); final_pred = lr_pred + rf_pred'
-                                        }
-                                    }
-                                    
-                                    model_bytes = pickle.dumps(model_data)
-                                    
-                                    st.download_button(
-                                        label=f"📦 {model_name}.pkl",
-                                        data=model_bytes,
-                                        file_name=f"{model_name.lower().replace(' ', '_')}_model_{timestamp}.pkl",
-                                        mime="application/octet-stream",
-                                        key=f"download_{model_name}_{timestamp}",
-                                        use_container_width=True
-                                    )
-
-            with tab3:
-                st.markdown("### 📊 Model Comparison Dashboard")
-                
-                if 'all_model_results' not in st.session_state or not st.session_state.all_model_results:
-                    st.info("🎯 Train models first to see comparison results here")
-                else:
-                    # Show all training sessions
-                    st.markdown("#### 📈 Training History")
-                    
-                    session_options = list(st.session_state.all_model_results.keys())
-                    selected_session = st.selectbox(
-                        "Select Training Session",
-                        session_options,
-                        index=len(session_options)-1,  # Default to latest
-                        key="comparison_session"
-                    )
-                    
-                    if selected_session:
-                        results = st.session_state.all_model_results[selected_session]
-                        
-                        # Metrics Comparison
-                        st.markdown("#### 📊 Performance Metrics Comparison")
-                        
-                        # Create metrics comparison chart
-                        metrics_data = []
-                        for model_name, result in results.items():
-                            metrics = result['global_test_metrics']
-                            metrics_data.append({
-                                'Model': model_name,
-                                'R²': metrics['R2'],
-                                'PE10': metrics['PE10'],
-                                'RT20': metrics['RT20'],
-                                'FSD': metrics['FSD']
-                            })
-                        
-                        metrics_df = pd.DataFrame(metrics_data)
-                        
-                        # Display metrics table
-                        st.dataframe(metrics_df.style.format({
-                            'R²': '{:.4f}',
-                            'PE10': '{:.4f}',
-                            'RT20': '{:.4f}',
-                            'FSD': '{:.4f}'
-                        }), use_container_width=True)
-                        
-                        # Side-by-side bar charts for metrics comparison
-                        st.markdown("#### 📊 Metrics Comparison Charts")
-                        
-                        # Create side-by-side bar charts
-                        fig_metrics = make_subplots(
-                            rows=2, cols=2,
-                            subplot_titles=('R² (Higher is Better)', 'PE10 (Higher is Better)', 
-                                        'RT20 (Lower is Better)', 'FSD (Lower is Better)'),
-                            specs=[[{"secondary_y": False}, {"secondary_y": False}],
-                                [{"secondary_y": False}, {"secondary_y": False}]]
-                        )
-                        
-                        models = metrics_df['Model'].tolist()
-                        colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd']
-                        
-                        # R² chart
-                        fig_metrics.add_trace(
-                            go.Bar(x=models, y=metrics_df['R²'], name='R²', 
-                                marker_color=colors[0], showlegend=False),
-                            row=1, col=1
-                        )
-                        
-                        # PE10 chart
-                        fig_metrics.add_trace(
-                            go.Bar(x=models, y=metrics_df['PE10'], name='PE10', 
-                                marker_color=colors[1], showlegend=False),
-                            row=1, col=2
-                        )
-                        
-                        # RT20 chart
-                        fig_metrics.add_trace(
-                            go.Bar(x=models, y=metrics_df['RT20'], name='RT20', 
-                                marker_color=colors[2], showlegend=False),
-                            row=2, col=1
-                        )
-                        
-                        # FSD chart
-                        fig_metrics.add_trace(
-                            go.Bar(x=models, y=metrics_df['FSD'], name='FSD', 
-                                marker_color=colors[3], showlegend=False),
-                            row=2, col=2
-                        )
-                        
-                        fig_metrics.update_layout(
-                            height=600,
-                            title_text="Model Performance Comparison",
-                            showlegend=False
-                        )
-                        
-                        st.plotly_chart(fig_metrics, use_container_width=True)
-                        
-                        # Combined Actual vs Predicted Plot
-                        st.markdown("#### 🎯 Combined Actual vs Predicted Comparison")
-                        
-                        fig_pred = go.Figure()
-                        
-                        # Add scatter plot for each model
-                        for i, (model_name, result) in enumerate(results.items()):
-                            y_actual = result['y_test_last']
-                            y_pred = result['y_pred_last']
-                            
-                            # Apply log transformation if necessary
-                            if result['is_log_transformed']:
-                                y_actual_plot = np.exp(y_actual)
-                                y_pred_plot = np.exp(y_pred)
-                                axis_title = "Values (Original Scale)"
-                            else:
-                                y_actual_plot = y_actual
-                                y_pred_plot = y_pred
-                                axis_title = "Values"
-                            
-                            fig_pred.add_trace(go.Scatter(
-                                x=y_actual_plot,
-                                y=y_pred_plot,
-                                mode='markers',
-                                name=f'{model_name} (R²={result["global_test_metrics"]["R2"]:.3f})',
-                                marker=dict(
-                                    color=colors[i % len(colors)],
-                                    size=6,
-                                    opacity=0.7
-                                ),
-                                hovertemplate=f'<b>{model_name}</b><br>' +
-                                            'Actual: %{x:.0f}<br>' +
-                                            'Predicted: %{y:.0f}<br>' +
-                                            '<extra></extra>'
-                            ))
-                        
-                        # Add perfect prediction line
-                        if results:
-                            # Get overall min/max for the diagonal line
-                            all_actual = []
-                            all_pred = []
-                            for result in results.values():
-                                if result['is_log_transformed']:
-                                    all_actual.extend(np.exp(result['y_test_last']))
-                                    all_pred.extend(np.exp(result['y_pred_last']))
-                                else:
-                                    all_actual.extend(result['y_test_last'])
-                                    all_pred.extend(result['y_pred_last'])
-                            
-                            min_val = min(min(all_actual), min(all_pred))
-                            max_val = max(max(all_actual), max(all_pred))
-                            
-                            fig_pred.add_trace(go.Scatter(
-                                x=[min_val, max_val],
-                                y=[min_val, max_val],
-                                mode='lines',
-                                name='Perfect Prediction',
-                                line=dict(color='red', dash='dash', width=2),
-                                hovertemplate='Perfect Prediction Line<extra></extra>'
-                            ))
-                        
-                        fig_pred.update_layout(
-                            title='Actual vs Predicted Values - All Models',
-                            xaxis_title=f'Actual {axis_title}',
-                            yaxis_title=f'Predicted {axis_title}',
-                            height=600,
-                            hovermode='closest'
-                        )
-                        
-                        st.plotly_chart(fig_pred, use_container_width=True)
-                        
-                        # Model Rankings
-                        st.markdown("#### 🏆 Model Rankings")
-                        
-                        # Calculate rankings for each metric
-                        rankings_data = []
-                        for model_name in models:
-                            model_data = metrics_df[metrics_df['Model'] == model_name].iloc[0]
-                            rankings_data.append({
-                                'Model': model_name,
-                                'R² Rank': metrics_df['R²'].rank(ascending=False)[metrics_df['Model'] == model_name].iloc[0],
-                                'PE10 Rank': metrics_df['PE10'].rank(ascending=False)[metrics_df['Model'] == model_name].iloc[0],
-                                'RT20 Rank': metrics_df['RT20'].rank(ascending=True)[metrics_df['Model'] == model_name].iloc[0],  # Lower is better
-                                'FSD Rank': metrics_df['FSD'].rank(ascending=True)[metrics_df['Model'] == model_name].iloc[0],   # Lower is better
-                            })
-                        
-                        rankings_df = pd.DataFrame(rankings_data)
-                        
-                        # Calculate average rank
-                        rankings_df['Average Rank'] = rankings_df[['R² Rank', 'PE10 Rank', 'RT20 Rank', 'FSD Rank']].mean(axis=1)
-                        rankings_df = rankings_df.sort_values('Average Rank')
-                        
-                        # Add ranking indicators
-                        rankings_df['Overall Rank'] = range(1, len(rankings_df) + 1)
-                        
-                        # Display rankings
-                        col1, col2 = st.columns(2)
-                        
-                        with col1:
-                            st.markdown("**📊 Detailed Rankings by Metric:**")
-                            st.dataframe(rankings_df[['Model', 'R² Rank', 'PE10 Rank', 'RT20 Rank', 'FSD Rank', 'Average Rank']].style.format({
-                                'R² Rank': '{:.0f}',
-                                'PE10 Rank': '{:.0f}',
-                                'RT20 Rank': '{:.0f}',
-                                'FSD Rank': '{:.0f}',
-                                'Average Rank': '{:.1f}'
-                            }), use_container_width=True)
-                        
-                        with col2:
-                            st.markdown("**🏆 Overall Model Ranking:**")
-                            for i, row in rankings_df.iterrows():
-                                rank = row['Overall Rank']
-                                model = row['Model']
-                                avg_rank = row['Average Rank']
-                                
-                                if rank == 1:
-                                    st.success(f"🥇 **{rank}. {model}** (Avg Rank: {avg_rank:.1f})")
-                                elif rank == 2:
-                                    st.info(f"🥈 **{rank}. {model}** (Avg Rank: {avg_rank:.1f})")
-                                elif rank == 3:
-                                    st.warning(f"🥉 **{rank}. {model}** (Avg Rank: {avg_rank:.1f})")
-                                else:
-                                    st.write(f"**{rank}. {model}** (Avg Rank: {avg_rank:.1f})")
-                        
-                        # Download comparison results - FIXED: No restart on download
-                        st.markdown("#### 💾 Download Comparison Results")
-                        
-                        col1, col2, col3 = st.columns(3)
-                        
-                        with col1:
-                            # Download metrics comparison
-                            st.download_button(
-                                label="📊 Download Metrics (.csv)",
-                                data=metrics_df.to_csv(index=False),
-                                file_name=f"model_metrics_comparison_{selected_session}.csv",
-                                mime="text/csv",
-                                key=f"download_metrics_{selected_session}",
-                                use_container_width=True
-                            )
-                        
-                        with col2:
-                            # Download rankings
-                            st.download_button(
-                                label="🏆 Download Rankings (.csv)",
-                                data=rankings_df.to_csv(index=False),
-                                file_name=f"model_rankings_{selected_session}.csv",
-                                mime="text/csv",
-                                key=f"download_rankings_{selected_session}",
-                                use_container_width=True
-                            )
-                        
-                        with col3:
-                            # Download complete comparison report
-                            comparison_report = {
-                                'timestamp': selected_session,
-                                'session_info': {
-                                    'target_variable': results[list(results.keys())[0]]['target_name'],
-                                    'feature_count': len(results[list(results.keys())[0]]['feature_names']),
-                                    'models_trained': list(results.keys())
-                                },
-                                'metrics_comparison': metrics_df.to_dict('records'),
-                                'rankings': rankings_df.to_dict('records'),
-                                'best_model': {
-                                    'name': rankings_df.iloc[0]['Model'],
-                                    'average_rank': rankings_df.iloc[0]['Average Rank'],
-                                    'metrics': metrics_df[metrics_df['Model'] == rankings_df.iloc[0]['Model']].iloc[0].to_dict()
-                                }
+                        # Download complete comparison report
+                        comparison_report = {
+                            'timestamp': selected_session,
+                            'session_info': {
+                                'target_variable': results[list(results.keys())[0]]['target_name'],
+                                'feature_count': len(results[list(results.keys())[0]]['feature_names']),
+                                'models_trained': list(results.keys())
+                            },
+                            'metrics_comparison': metrics_df.to_dict('records'),
+                            'rankings': rankings_df.to_dict('records'),
+                            'best_model': {
+                                'name': rankings_df.iloc[0]['Model'],
+                                'average_rank': rankings_df.iloc[0]['Average Rank'],
+                                'metrics': metrics_df[metrics_df['Model'] == rankings_df.iloc[0]['Model']].iloc[0].to_dict()
                             }
-                            
-                            st.download_button(
-                                label="📋 Download Report (.json)",
-                                data=json.dumps(comparison_report, indent=2),
-                                file_name=f"model_comparison_report_{selected_session}.json",
-                                mime="application/json",
-                                key=f"download_report_{selected_session}",
-                                use_container_width=True
-                            )
+                        }
                         
-                        # Clear session option
-                        st.markdown("---")
-                        if st.button("🗑️ Clear This Training Session", help="Remove this training session from history"):
-                            if selected_session in st.session_state.all_model_results:
-                                del st.session_state.all_model_results[selected_session]
-                                st.success("Training session cleared!")
-                                st.rerun()
+                        st.download_button(
+                            label="📋 Download Report (.json)",
+                            data=json.dumps(comparison_report, indent=2),
+                            file_name=f"model_comparison_report_{selected_session}.json",
+                            mime="application/json",
+                            key=f"download_report_{selected_session}",
+                            use_container_width=True
+                        )
+                    
+                    # Clear session option
+                    st.markdown("---")
+                    if st.button("🗑️ Clear This Training Session", help="Remove this training session from history"):
+                        if selected_session in st.session_state.all_model_results:
+                            del st.session_state.all_model_results[selected_session]
+                            st.success("Training session cleared!")
+                            st.rerun()
 
-        else:
-            st.warning("⚠️ No data loaded. Please go back to Data Selection.")
-            if st.button("← Back to Data Selection"):
-                st.session_state.processing_step = 'selection'
-                st.rerun()
-        
-        # else:
-        #     st.warning("Please load and process data first")
-
+    else:
+        st.warning("⚠️ No data loaded. Please go back to Data Selection.")
+        if st.button("← Back to Data Selection"):
+            st.session_state.processing_step = 'selection'
+            st.rerun()
+            
 # Data preview section (always available at bottom)
 if analyzer.current_data is not None:
     st.markdown('<div class="section-divider"></div>', unsafe_allow_html=True)
