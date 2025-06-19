@@ -3542,104 +3542,115 @@ elif st.session_state.processing_step == 'advanced':
                             'Test FSD': '{:.4f}'
                         }), use_container_width=True)
                         
-                        # Model downloads - FIXED: Download all models at once
+                        # Model downloads - FIXED: Direct download all models
                         st.markdown("### 💾 Download All Trained Models")
                         
-                        if st.button("📦 Download All Models + Features JSON", type="secondary", use_container_width=True):
-                            try:
-                                # Prepare all model files
-                                model_files = {}
-                                
-                                for model_name, result in all_results.items():
-                                    # Prepare model data
-                                    model_data = {
-                                        'model': result['model'],
-                                        'feature_names': result['feature_names'],
-                                        'target_name': result['target_name'],
-                                        'model_type': model_name,
-                                        'metrics': result['global_test_metrics'],
-                                        'timestamp': timestamp,
-                                        'usage_instructions': {
-                                            'load_model': 'import pickle; with open("model.pkl", "rb") as f: model_data = pickle.load(f)',
-                                            'access_model': 'model = model_data["model"]',
-                                            'feature_names': 'features = model_data["feature_names"]',
-                                            'make_prediction': 'predictions = model.predict(X_new)' if model_name != 'RERF' else 'lr_pred = model["linear"].predict(X_new); rf_pred = model["rf"].predict(X_new); final_pred = lr_pred + rf_pred'
-                                        }
-                                    }
-                                    
-                                    # Store model bytes
-                                    model_files[f"{model_name.lower().replace(' ', '_')}_model_{timestamp}.pkl"] = pickle.dumps(model_data)
-                                
-                                # Create features JSON
-                                features_info = {
-                                    'training_session': timestamp,
-                                    'target_variable': ml_y_column,
-                                    'feature_names': ml_x_columns,
-                                    'feature_count': len(ml_x_columns),
-                                    'models_trained': list(all_results.keys()),
-                                    'cross_validation': {
-                                        'n_splits': n_splits,
-                                        'random_state': random_state,
-                                        'group_column': group_column if use_group else None
-                                    },
-                                    'performance_summary': {
-                                        model_name: {
-                                            'test_r2': result['global_test_metrics']['R2'],
-                                            'test_pe10': result['global_test_metrics']['PE10'],
-                                            'test_rt20': result['global_test_metrics']['RT20'],
-                                            'test_fsd': result['global_test_metrics']['FSD']
-                                        }
-                                        for model_name, result in all_results.items()
-                                    },
+                        # Prepare all downloads immediately
+                        try:
+                            # Prepare all model files
+                            model_files = {}
+                            
+                            for model_name, result in all_results.items():
+                                # Prepare model data
+                                model_data = {
+                                    'model': result['model'],
+                                    'feature_names': result['feature_names'],
+                                    'target_name': result['target_name'],
+                                    'model_type': model_name,
+                                    'metrics': result['global_test_metrics'],
+                                    'timestamp': timestamp,
                                     'usage_instructions': {
-                                        'load_any_model': 'import pickle; with open("random_forest_model.pkl", "rb") as f: model_data = pickle.load(f)',
+                                        'load_model': 'import pickle; with open("model.pkl", "rb") as f: model_data = pickle.load(f)',
                                         'access_model': 'model = model_data["model"]',
-                                        'get_features': 'features = model_data["feature_names"]',
-                                        'make_predictions': {
-                                            'RF_GBDT': 'predictions = model.predict(X_new)',
-                                            'RERF': 'lr_pred = model["linear"].predict(X_new); rf_pred = model["rf"].predict(X_new); final_pred = lr_pred + rf_pred'
-                                        }
+                                        'feature_names': 'features = model_data["feature_names"]',
+                                        'make_prediction': 'predictions = model.predict(X_new)' if model_name != 'RERF' else 'lr_pred = model["linear"].predict(X_new); rf_pred = model["rf"].predict(X_new); final_pred = lr_pred + rf_pred'
                                     }
                                 }
                                 
-                                # Store in session state for downloads
-                                st.session_state.model_downloads = model_files
-                                st.session_state.features_json = json.dumps(features_info, indent=2)
-                                st.session_state.download_timestamp = timestamp
-                                
-                                st.success("✅ All models prepared for download!")
-                                
-                            except Exception as e:
-                                st.error(f"❌ Failed to prepare models: {str(e)}")
-                        
-                        # Download buttons (only show if prepared)
-                        if 'model_downloads' in st.session_state and st.session_state.model_downloads:
-                            st.markdown("**📥 Download Files:**")
+                                # Store model bytes
+                                model_files[model_name] = pickle.dumps(model_data)
                             
+                            # Create features JSON
+                            features_info = {
+                                'training_session': timestamp,
+                                'target_variable': ml_y_column,
+                                'feature_names': ml_x_columns,
+                                'feature_count': len(ml_x_columns),
+                                'models_trained': list(all_results.keys()),
+                                'cross_validation': {
+                                    'n_splits': n_splits,
+                                    'random_state': random_state,
+                                    'group_column': group_column if use_group else None
+                                },
+                                'performance_summary': {
+                                    model_name: {
+                                        'test_r2': result['global_test_metrics']['R2'],
+                                        'test_pe10': result['global_test_metrics']['PE10'],
+                                        'test_rt20': result['global_test_metrics']['RT20'],
+                                        'test_fsd': result['global_test_metrics']['FSD']
+                                    }
+                                    for model_name, result in all_results.items()
+                                },
+                                'usage_instructions': {
+                                    'load_any_model': 'import pickle; with open("random_forest_model.pkl", "rb") as f: model_data = pickle.load(f)',
+                                    'access_model': 'model = model_data["model"]',
+                                    'get_features': 'features = model_data["feature_names"]',
+                                    'make_predictions': {
+                                        'RF_GBDT': 'predictions = model.predict(X_new)',
+                                        'RERF': 'lr_pred = model["linear"].predict(X_new); rf_pred = model["rf"].predict(X_new); final_pred = lr_pred + rf_pred'
+                                    }
+                                }
+                            }
+                            
+                            features_json = json.dumps(features_info, indent=2)
+                            
+                            # Direct download buttons
+                            st.markdown("**📥 Download Files:**")
                             download_cols = st.columns(4)
                             
                             # Download individual model files
-                            for i, (filename, model_bytes) in enumerate(st.session_state.model_downloads.items()):
-                                with download_cols[i % 4]:
-                                    st.download_button(
-                                        label=f"📦 {filename.split('_')[0].upper()}",
-                                        data=model_bytes,
-                                        file_name=filename,
-                                        mime="application/octet-stream",
-                                        key=f"download_model_{i}_{st.session_state.download_timestamp}",
-                                        use_container_width=True
-                                    )
+                            with download_cols[0]:
+                                st.download_button(
+                                    label="📦 Random Forest",
+                                    data=model_files['Random Forest'],
+                                    file_name=f"random_forest_model_{timestamp}.pkl",
+                                    mime="application/octet-stream",
+                                    key=f"download_rf_{timestamp}",
+                                    use_container_width=True
+                                )
                             
-                            # Download features JSON
+                            with download_cols[1]:
+                                st.download_button(
+                                    label="📦 Gradient Boosting",
+                                    data=model_files['Gradient Boosting'],
+                                    file_name=f"gradient_boosting_model_{timestamp}.pkl",
+                                    mime="application/octet-stream",
+                                    key=f"download_gbdt_{timestamp}",
+                                    use_container_width=True
+                                )
+                            
+                            with download_cols[2]:
+                                st.download_button(
+                                    label="📦 RERF",
+                                    data=model_files['RERF'],
+                                    file_name=f"rerf_model_{timestamp}.pkl",
+                                    mime="application/octet-stream",
+                                    key=f"download_rerf_{timestamp}",
+                                    use_container_width=True
+                                )
+                            
                             with download_cols[3]:
                                 st.download_button(
                                     label="📄 Features.json",
-                                    data=st.session_state.features_json,
-                                    file_name=f"features_info_{st.session_state.download_timestamp}.json",
+                                    data=features_json,
+                                    file_name=f"features_info_{timestamp}.json",
                                     mime="application/json",
-                                    key=f"download_features_{st.session_state.download_timestamp}",
+                                    key=f"download_features_{timestamp}",
                                     use_container_width=True
                                 )
+                                
+                        except Exception as e:
+                            st.error(f"❌ Failed to prepare downloads: {str(e)}")
 
         with tab3:
             st.markdown("### 📊 Model Comparison Dashboard")
