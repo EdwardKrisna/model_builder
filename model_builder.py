@@ -1345,22 +1345,6 @@ if st.session_state.processing_step == 'selection':
                     st.rerun()
                 else:
                     st.error(message)
-
-    st.markdown("---")
-    
-    # Load All Data Option
-    st.markdown("### 📊 Load Full Dataset")
-    st.warning("⚠️ **Not recommended for large datasets** - may be slow")
-    
-    if st.button("📥 Load All Data (Up to 100k records)", type="secondary", use_container_width=True):
-        with st.spinner("Loading full dataset..."):
-            success, message = analyzer.load_property_data()
-            if success:
-                st.success(message)
-                st.session_state.processing_step = 'overview'
-                st.rerun()
-            else:
-                st.error(message)
     
     st.markdown("---")
 
@@ -1547,6 +1531,22 @@ if st.session_state.processing_step == 'selection':
                 if key in st.session_state:
                     del st.session_state[key]
             st.rerun()
+    
+    st.markdown("---")
+    
+    # Load All Data Option
+    st.markdown("### 📊 Load Full Dataset")
+    st.warning("⚠️ **Not recommended for large datasets** - may be slow")
+    
+    if st.button("📥 Load All Data (Up to 100k records)", type="secondary", use_container_width=True):
+        with st.spinner("Loading full dataset..."):
+            success, message = analyzer.load_property_data()
+            if success:
+                st.success(message)
+                st.session_state.processing_step = 'overview'
+                st.rerun()
+            else:
+                st.error(message)
 
 elif st.session_state.processing_step == 'overview':
     if fun_mode:
