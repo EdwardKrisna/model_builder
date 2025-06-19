@@ -2769,6 +2769,9 @@ elif st.session_state.processing_step == 'advanced':
     # Complete ML Section Implementation
     # Replace the existing 'if st.session_state.advanced_step == 'ml':' section with this code
 
+    # Complete ML Section Implementation
+    # Replace the existing 'if st.session_state.advanced_step == 'ml':' section with this code
+
     if st.session_state.advanced_step == 'ml':
         if fun_mode:
             st.markdown('## <img src="https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExaWZoeTByeWI1YmdsMHU3dnJ3ejNnem04MmM4Zjh5eThvbG10ZjFiaCZlcD12MV9naWZzX3NlYXJjaCZjdD1n/Gf1RA1jNSpbbuDE40m/giphy.gif" alt="data gif" style="height:96px; vertical-align:middle;"> Machine Learning Models', unsafe_allow_html=True)
@@ -2860,7 +2863,7 @@ elif st.session_state.processing_step == 'advanced':
                         # Final RERF prediction
                         rerf_pred_test = lr_pred_test + rf_pred_residuals_test
                         
-                        # Evaluate with same function as other models
+                        # Evaluate with same function as other models - FIXED
                         test_metrics = evaluate(y_test, rerf_pred_test, squared=True)
                         fold_metrics.append(test_metrics)
                     
@@ -2872,7 +2875,7 @@ elif st.session_state.processing_step == 'advanced':
                     return -999
 
             def train_rerf_model(data, X_columns, y_column, linear_model, rf_model, group_column, n_splits, random_state, min_sample):
-                """Train RERF model with same structure as goval_machine_learning"""
+                """Train RERF model with same structure as goval_machine_learning - FIXED EVALUATION"""
                 try:
                     # Prepare data
                     model_vars = [y_column] + X_columns
@@ -2924,7 +2927,7 @@ elif st.session_state.processing_step == 'advanced':
                             rerf_pred_train = lr_pred_train + rf_pred_residuals_train
                             rerf_pred_test = lr_pred_test + rf_pred_residuals_test
                             
-                            # Evaluate with same function as other models
+                            # FIXED: Evaluate with same function as other models
                             train_metrics = evaluate(y_train, rerf_pred_train, squared=True)
                             test_metrics = evaluate(y_test, rerf_pred_test, squared=True)
                             
@@ -3004,7 +3007,7 @@ elif st.session_state.processing_step == 'advanced':
                             rerf_pred_train = lr_pred_train + rf_pred_residuals_train
                             rerf_pred_test = lr_pred_test + rf_pred_residuals_test
                             
-                            # Evaluate
+                            # FIXED: Evaluate with same function as other models
                             train_metrics = evaluate(y_train_all, rerf_pred_train, squared=True)
                             test_metrics = evaluate(y_test_all, rerf_pred_test, squared=True)
                             
@@ -3046,8 +3049,8 @@ elif st.session_state.processing_step == 'advanced':
                     evaluation_df = pd.DataFrame(evaluation_results)
                     train_results_df = pd.DataFrame(train_results)
                     
-                    # Check if log transformed (same logic as original)
-                    is_log_transformed = 'ln_' in y_column
+                    # Check if log transformed
+                    is_log_transformed = ('ln_' in y_column) or ('log_' in y_column.lower())
                     
                     return (
                         final_model, evaluation_df, train_results_df,
@@ -3100,11 +3103,10 @@ elif st.session_state.processing_step == 'advanced':
                 group_column = None
                 
                 if use_group:
-                    # Find geographic columns (case insensitive)
+                    # Find geographic columns
                     geo_candidates = []
                     for col in analyzer.current_data.columns:
-                        col_upper = col
-                        if any(geo in col_upper for geo in ['wadmpr', 'wadmkk', 'wadmkc', 'wadmkd']):
+                        if any(geo in col for geo in ['wadmpr', 'wadmkk', 'wadmkc', 'wadmkd']):
                             geo_candidates.append(col)
                     
                     # Also include encoded columns
@@ -3222,7 +3224,7 @@ elif st.session_state.processing_step == 'advanced':
                                             min_samples_leaf = trial.suggest_int('min_samples_leaf', 1, 5)
                                             max_features = trial.suggest_categorical('max_features', ['sqrt', 'log2', None])
                                             
-                                            # Create a custom RERF evaluator
+                                            # Use RERF evaluator
                                             return evaluate_rerf_optuna(
                                                 ml_x_columns, ml_y_column, analyzer.current_data,
                                                 n_estimators, max_depth, min_samples_split, min_samples_leaf, max_features,
@@ -3571,7 +3573,7 @@ elif st.session_state.processing_step == 'advanced':
                                 'Test FSD': '{:.4f}'
                             }), use_container_width=True)
                             
-                            # Model downloads
+                            # Model downloads - FIXED: No restart on download
                             st.markdown("### 💾 Download Trained Models")
                             
                             download_cols = st.columns(len(all_results))
@@ -3580,14 +3582,20 @@ elif st.session_state.processing_step == 'advanced':
                                 with download_cols[i]:
                                     st.markdown(f"**{model_name}**")
                                     
-                                    # Prepare model for download
+                                    # Prepare model for download (Pickle format)
                                     model_data = {
                                         'model': result['model'],
                                         'feature_names': result['feature_names'],
                                         'target_name': result['target_name'],
                                         'model_type': model_name,
                                         'metrics': result['global_test_metrics'],
-                                        'timestamp': timestamp
+                                        'timestamp': timestamp,
+                                        'usage_instructions': {
+                                            'load_model': 'import pickle; with open("model.pkl", "rb") as f: model_data = pickle.load(f)',
+                                            'access_model': 'model = model_data["model"]',
+                                            'feature_names': 'features = model_data["feature_names"]',
+                                            'make_prediction': 'predictions = model.predict(X_new)' if model_name != 'RERF' else 'lr_pred = model["linear"].predict(X_new); rf_pred = model["rf"].predict(X_new); final_pred = lr_pred + rf_pred'
+                                        }
                                     }
                                     
                                     model_bytes = pickle.dumps(model_data)
@@ -3646,7 +3654,7 @@ elif st.session_state.processing_step == 'advanced':
                             'FSD': '{:.4f}'
                         }), use_container_width=True)
                         
-                        # Bar charts for metrics comparison
+                        # Side-by-side bar charts for metrics comparison
                         st.markdown("#### 📊 Metrics Comparison Charts")
                         
                         # Create side-by-side bar charts
@@ -3698,7 +3706,7 @@ elif st.session_state.processing_step == 'advanced':
                         st.plotly_chart(fig_metrics, use_container_width=True)
                         
                         # Combined Actual vs Predicted Plot
-                        st.markdown("#### 🎯 Actual vs Predicted Comparison")
+                        st.markdown("#### 🎯 Combined Actual vs Predicted Comparison")
                         
                         fig_pred = go.Figure()
                         
@@ -3821,7 +3829,7 @@ elif st.session_state.processing_step == 'advanced':
                                 else:
                                     st.write(f"**{rank}. {model}** (Avg Rank: {avg_rank:.1f})")
                         
-                        # Download comparison results
+                        # Download comparison results - FIXED: No restart on download
                         st.markdown("#### 💾 Download Comparison Results")
                         
                         col1, col2, col3 = st.columns(3)
@@ -3882,9 +3890,15 @@ elif st.session_state.processing_step == 'advanced':
                                 del st.session_state.all_model_results[selected_session]
                                 st.success("Training session cleared!")
                                 st.rerun()
-        
+
         else:
-            st.warning("Please load and process data first")
+            st.warning("⚠️ No data loaded. Please go back to Data Selection.")
+            if st.button("← Back to Data Selection"):
+                st.session_state.processing_step = 'selection'
+                st.rerun()
+        
+        # else:
+        #     st.warning("Please load and process data first")
 
 # Data preview section (always available at bottom)
 if analyzer.current_data is not None:
