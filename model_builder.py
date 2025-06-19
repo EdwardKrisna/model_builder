@@ -714,14 +714,21 @@ class RealEstateAnalyzer:
 
     
     def load_custom_filtered_data(self, provinces=None, regencies=None, districts=None, 
-                            hpm_min=50000, hpm_max=200000000, limit=50000):
+                              hpm_min=50000, hpm_max=200000000,
+                              luas_tanah_min=0, luas_tanah_max=10000,
+                              lebar_jalan_min=0, lebar_jalan_max=50,
+                              limit=50000):
         """Load data with custom database-level filtering"""
         try:
             query_parts = ["SELECT * FROM engineered_property_data WHERE 1=1"]
             
             # HPM filter
             query_parts.append(f"AND hpm BETWEEN {hpm_min} AND {hpm_max}")
-            
+            # Luas Tanah filter
+            query_parts.append(f"AND luas_tanah BETWEEN {luas_tanah_min} AND {luas_tanah_max}")
+            # Lebar Jalan filter
+            query_parts.append(f"AND lebar_jalan_di_depan BETWEEN {lebar_jalan_min} AND {lebar_jalan_max}")
+ 
             # Geographic filters with proper SQL escaping
             if provinces:
                 # Escape single quotes in province names
@@ -1277,7 +1284,7 @@ if st.session_state.processing_step == 'selection':
         'jabodetabek': '🌆 JABODETABEK (Jakarta + surrounding areas)',
         'jabodetabek_no_kepulauan_seribu': '🌆 JABODETABEK (No Kepulauan Seribu)',
         'bandung': '🏔️ Bandung Metropolitan Area',
-        'bali': '🏝️ Bali Metropolitan Area',
+        'bali': '🏝️ Bali Metropolitan Area (SarBaGiTa)',
         'surabaya': '🏢 Surabaya Metropolitan Area'
     }
 
@@ -1468,9 +1475,69 @@ if st.session_state.processing_step == 'selection':
         else:
             custom_filters_valid = True
         
+        # Luas tanah Range Section
+        st.markdown("#### 📐 Luas Tanah (Land Area)")
+
+        col1, col2 = st.columns(2)
+        with col1:
+            luas_tanah_min = st.number_input(
+                "Minimum Luas Tanah (m²)",
+                min_value=0,
+                max_value=10000,
+                value=0,
+                step=10,
+                key="custom_luas_tanah_min"
+            )
+        with col2:
+            luas_tanah_max = st.number_input(
+                "Maximum Luas Tanah (m²)",
+                min_value=0,
+                max_value=10000,
+                value=1000,
+                step=10,
+                key="custom_luas_tanah_max"
+            )
+        
+        # Validation
+        if luas_tanah_min >= luas_tanah_max:
+            st.error("❌ Minimum Luas Tanah must be less than Maximum Luas Tanah")
+            custom_filters_valid = False
+        else:
+            custom_filters_valid = True
+
+        # Lebar Jalan Range Section
+        st.markdown("#### 🛣️ Lebar Jalan di Depan (Road Width)")
+
+        col1, col2 = st.columns(2)
+        with col1:
+            lebar_jalan_min = st.number_input(
+                "Minimum Lebar Jalan (m)",
+                min_value=0,
+                max_value=100,
+                value=0,
+                step=1,
+                key="custom_lebar_jalan_min"
+            )
+        with col2:
+            lebar_jalan_max = st.number_input(
+                "Maximum Lebar Jalan (m)",
+                min_value=0,
+                max_value=100,
+                value=50,
+                step=1,
+                key="custom_lebar_jalan_max"
+            )
+
+        # Validation
+        if lebar_jalan_min >= lebar_jalan_max:
+            st.error("❌ Minimum Lebar Jalan must be less than Maximum Lebar Jalan")
+            custom_filters_valid = False
+        else:
+            custom_filters_valid = True
+        
         # Preview Section
         st.markdown("#### 👀 Filter Preview")
-        
+
         filter_summary = []
         if selected_provinces:
             filter_summary.append(f"**Provinces:** {len(selected_provinces)} selected")
@@ -1478,10 +1545,13 @@ if st.session_state.processing_step == 'selection':
             filter_summary.append(f"**Regencies:** {len(selected_regencies)} selected")
         if selected_districts:
             filter_summary.append(f"**Districts:** {len(selected_districts)} selected")
-        
+
         filter_summary.append(f"**HPM Range:** {hpm_min:,} - {hpm_max:,}")
+        filter_summary.append(f"**Luas Tanah Range (m²):** {luas_tanah_min:,} - {luas_tanah_max:,}")
+        filter_summary.append(f"**Lebar Jalan Range (m):** {lebar_jalan_min} - {lebar_jalan_max}")
+
         filter_summary.append(f"**Result Limit:** {result_limit:,}")
-        
+
         if filter_summary:
             for item in filter_summary:
                 st.write(f"• {item}")
@@ -1508,6 +1578,10 @@ if st.session_state.processing_step == 'selection':
                         districts=selected_districts if selected_districts else None,
                         hpm_min=hpm_min,
                         hpm_max=hpm_max,
+                        luas_tanah_min=luas_tanah_min,
+                        luas_tanah_max=luas_tanah_max,
+                        lebar_jalan_min=lebar_jalan_min,
+                        lebar_jalan_max=lebar_jalan_max,
                         limit=result_limit
                     )
                     
