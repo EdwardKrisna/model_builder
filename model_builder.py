@@ -3542,43 +3542,102 @@ elif st.session_state.processing_step == 'advanced':
                             'Test FSD': '{:.4f}'
                         }), use_container_width=True)
                         
-                        # Model downloads - FIXED: No restart on download
-                        st.markdown("### 💾 Download Trained Models")
+                        # Model downloads - FIXED: Download all models at once
+                        st.markdown("### 💾 Download All Trained Models")
                         
-                        # Store current results to prevent restart issues
-                        if 'current_training_results' not in st.session_state:
-                            st.session_state.current_training_results = all_results
-                        
-                        download_cols = st.columns(len(all_results))
-                        
-                        for i, (model_name, result) in enumerate(all_results.items()):
-                            with download_cols[i]:
-                                st.markdown(f"**{model_name}**")
+                        if st.button("📦 Download All Models + Features JSON", type="secondary", use_container_width=True):
+                            try:
+                                # Prepare all model files
+                                model_files = {}
                                 
-                                # Prepare model for download (Pickle format)
-                                model_data = {
-                                    'model': result['model'],
-                                    'feature_names': result['feature_names'],
-                                    'target_name': result['target_name'],
-                                    'model_type': model_name,
-                                    'metrics': result['global_test_metrics'],
-                                    'timestamp': timestamp,
+                                for model_name, result in all_results.items():
+                                    # Prepare model data
+                                    model_data = {
+                                        'model': result['model'],
+                                        'feature_names': result['feature_names'],
+                                        'target_name': result['target_name'],
+                                        'model_type': model_name,
+                                        'metrics': result['global_test_metrics'],
+                                        'timestamp': timestamp,
+                                        'usage_instructions': {
+                                            'load_model': 'import pickle; with open("model.pkl", "rb") as f: model_data = pickle.load(f)',
+                                            'access_model': 'model = model_data["model"]',
+                                            'feature_names': 'features = model_data["feature_names"]',
+                                            'make_prediction': 'predictions = model.predict(X_new)' if model_name != 'RERF' else 'lr_pred = model["linear"].predict(X_new); rf_pred = model["rf"].predict(X_new); final_pred = lr_pred + rf_pred'
+                                        }
+                                    }
+                                    
+                                    # Store model bytes
+                                    model_files[f"{model_name.lower().replace(' ', '_')}_model_{timestamp}.pkl"] = pickle.dumps(model_data)
+                                
+                                # Create features JSON
+                                features_info = {
+                                    'training_session': timestamp,
+                                    'target_variable': ml_y_column,
+                                    'feature_names': ml_x_columns,
+                                    'feature_count': len(ml_x_columns),
+                                    'models_trained': list(all_results.keys()),
+                                    'cross_validation': {
+                                        'n_splits': n_splits,
+                                        'random_state': random_state,
+                                        'group_column': group_column if use_group else None
+                                    },
+                                    'performance_summary': {
+                                        model_name: {
+                                            'test_r2': result['global_test_metrics']['R2'],
+                                            'test_pe10': result['global_test_metrics']['PE10'],
+                                            'test_rt20': result['global_test_metrics']['RT20'],
+                                            'test_fsd': result['global_test_metrics']['FSD']
+                                        }
+                                        for model_name, result in all_results.items()
+                                    },
                                     'usage_instructions': {
-                                        'load_model': 'import pickle; with open("model.pkl", "rb") as f: model_data = pickle.load(f)',
+                                        'load_any_model': 'import pickle; with open("random_forest_model.pkl", "rb") as f: model_data = pickle.load(f)',
                                         'access_model': 'model = model_data["model"]',
-                                        'feature_names': 'features = model_data["feature_names"]',
-                                        'make_prediction': 'predictions = model.predict(X_new)' if model_name != 'RERF' else 'lr_pred = model["linear"].predict(X_new); rf_pred = model["rf"].predict(X_new); final_pred = lr_pred + rf_pred'
+                                        'get_features': 'features = model_data["feature_names"]',
+                                        'make_predictions': {
+                                            'RF_GBDT': 'predictions = model.predict(X_new)',
+                                            'RERF': 'lr_pred = model["linear"].predict(X_new); rf_pred = model["rf"].predict(X_new); final_pred = lr_pred + rf_pred'
+                                        }
                                     }
                                 }
                                 
-                                model_bytes = pickle.dumps(model_data)
+                                # Store in session state for downloads
+                                st.session_state.model_downloads = model_files
+                                st.session_state.features_json = json.dumps(features_info, indent=2)
+                                st.session_state.download_timestamp = timestamp
                                 
+                                st.success("✅ All models prepared for download!")
+                                
+                            except Exception as e:
+                                st.error(f"❌ Failed to prepare models: {str(e)}")
+                        
+                        # Download buttons (only show if prepared)
+                        if 'model_downloads' in st.session_state and st.session_state.model_downloads:
+                            st.markdown("**📥 Download Files:**")
+                            
+                            download_cols = st.columns(4)
+                            
+                            # Download individual model files
+                            for i, (filename, model_bytes) in enumerate(st.session_state.model_downloads.items()):
+                                with download_cols[i % 4]:
+                                    st.download_button(
+                                        label=f"📦 {filename.split('_')[0].upper()}",
+                                        data=model_bytes,
+                                        file_name=filename,
+                                        mime="application/octet-stream",
+                                        key=f"download_model_{i}_{st.session_state.download_timestamp}",
+                                        use_container_width=True
+                                    )
+                            
+                            # Download features JSON
+                            with download_cols[3]:
                                 st.download_button(
-                                    label=f"📦 {model_name}.pkl",
-                                    data=model_bytes,
-                                    file_name=f"{model_name.lower().replace(' ', '_')}_model_{timestamp}.pkl",
-                                    mime="application/octet-stream",
-                                    key=f"download_{model_name}_{timestamp}",
+                                    label="📄 Features.json",
+                                    data=st.session_state.features_json,
+                                    file_name=f"features_info_{st.session_state.download_timestamp}.json",
+                                    mime="application/json",
+                                    key=f"download_features_{st.session_state.download_timestamp}",
                                     use_container_width=True
                                 )
 
@@ -3756,6 +3815,40 @@ elif st.session_state.processing_step == 'advanced':
                         height=600,
                         hovermode='closest'
                     )
+                    
+                    # Auto-adjust axis ranges for better visualization
+                    if results:
+                        # Get the actual plot data ranges
+                        all_x_vals = []
+                        all_y_vals = []
+                        
+                        for result in results.values():
+                            y_actual = result['y_test_last']
+                            y_pred = result['y_pred_last']
+                            
+                            if show_ln_scale and (result['is_log_transformed'] or ('ln_' in result['target_name'])):
+                                all_x_vals.extend(y_actual)
+                                all_y_vals.extend(y_pred)
+                            elif not show_ln_scale and (result['is_log_transformed'] or ('ln_' in result['target_name'])):
+                                all_x_vals.extend(np.exp(y_actual))
+                                all_y_vals.extend(np.exp(y_pred))
+                            else:
+                                all_x_vals.extend(y_actual)
+                                all_y_vals.extend(y_pred)
+                        
+                        if all_x_vals and all_y_vals:
+                            # Calculate ranges with padding
+                            x_min, x_max = min(all_x_vals), max(all_x_vals)
+                            y_min, y_max = min(all_y_vals), max(all_y_vals)
+                            
+                            # Add 5% padding on each side
+                            x_range = x_max - x_min
+                            y_range = y_max - y_min
+                            x_padding = x_range * 0.05
+                            y_padding = y_range * 0.05
+                            
+                            fig_pred.update_xaxes(range=[x_min - x_padding, x_max + x_padding])
+                            fig_pred.update_yaxes(range=[y_min - y_padding, y_max + y_padding])
                     
                     st.plotly_chart(fig_pred, use_container_width=True)
                     
