@@ -3545,6 +3545,10 @@ elif st.session_state.processing_step == 'advanced':
                         # Model downloads - FIXED: No restart on download
                         st.markdown("### 💾 Download Trained Models")
                         
+                        # Store current results to prevent restart issues
+                        if 'current_training_results' not in st.session_state:
+                            st.session_state.current_training_results = all_results
+                        
                         download_cols = st.columns(len(all_results))
                         
                         for i, (model_name, result) in enumerate(all_results.items()):
@@ -3677,6 +3681,9 @@ elif st.session_state.processing_step == 'advanced':
                     # Combined Actual vs Predicted Plot
                     st.markdown("#### 🎯 Combined Actual vs Predicted Comparison")
                     
+                    # ADD THIS TOGGLE OPTION
+                    show_ln_scale = st.toggle("Show ln (log) scale", value=True, help="Toggle between ln scale and actual values")
+                    
                     fig_pred = go.Figure()
                     
                     # Add scatter plot for each model
@@ -3684,15 +3691,22 @@ elif st.session_state.processing_step == 'advanced':
                         y_actual = result['y_test_last']
                         y_pred = result['y_pred_last']
                         
-                        # Apply log transformation if necessary
-                        if result['is_log_transformed']:
+                        # FIXED: Apply consistent transformation based on toggle
+                        if show_ln_scale and (result['is_log_transformed'] or ('ln_' in result['target_name'])):
+                            # Keep in ln scale
+                            y_actual_plot = y_actual
+                            y_pred_plot = y_pred
+                            axis_title = "Values (ln scale)"
+                        elif not show_ln_scale and (result['is_log_transformed'] or ('ln_' in result['target_name'])):
+                            # Convert to actual scale
                             y_actual_plot = np.exp(y_actual)
                             y_pred_plot = np.exp(y_pred)
                             axis_title = "Values (Original Scale)"
                         else:
+                            # Already in actual scale
                             y_actual_plot = y_actual
                             y_pred_plot = y_pred
-                            axis_title = "Values"
+                            axis_title = "Values" if show_ln_scale else "Values (Original Scale)"
                         
                         fig_pred.add_trace(go.Scatter(
                             x=y_actual_plot,
@@ -3865,7 +3879,7 @@ elif st.session_state.processing_step == 'advanced':
         if st.button("← Back to Data Selection"):
             st.session_state.processing_step = 'selection'
             st.rerun()
-            
+
 # Data preview section (always available at bottom)
 if analyzer.current_data is not None:
     st.markdown('<div class="section-divider"></div>', unsafe_allow_html=True)
