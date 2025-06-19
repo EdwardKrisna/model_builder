@@ -1432,6 +1432,9 @@ if st.session_state.processing_step == 'selection':
                 else:
                     st.info("Click 'Load Districts' to see options")
         
+        # INFO
+        st.markdown("### NOTES ‼️: The min max value that shown below is not min max of the actual data, it's only a recommendation preset.")
+
         # Price Range Section
         st.markdown("#### 💰 Price Range (HPM)")
         
@@ -1484,7 +1487,7 @@ if st.session_state.processing_step == 'selection':
                 "Minimum Luas Tanah (m²)",
                 min_value=0,
                 max_value=10000,
-                value=0,
+                value=50,
                 step=10,
                 key="custom_luas_tanah_min"
             )
@@ -1514,7 +1517,7 @@ if st.session_state.processing_step == 'selection':
                 "Minimum Lebar Jalan (m)",
                 min_value=0,
                 max_value=100,
-                value=0,
+                value=2,
                 step=1,
                 key="custom_lebar_jalan_min"
             )
@@ -1523,7 +1526,7 @@ if st.session_state.processing_step == 'selection':
                 "Maximum Lebar Jalan (m)",
                 min_value=0,
                 max_value=100,
-                value=50,
+                value=20,
                 step=1,
                 key="custom_lebar_jalan_max"
             )
