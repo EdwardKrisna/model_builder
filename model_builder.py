@@ -3542,115 +3542,130 @@ elif st.session_state.processing_step == 'advanced':
                             'Test FSD': '{:.4f}'
                         }), use_container_width=True)
                         
-                        # Model downloads - FIXED: Direct download all models
+                        # Model downloads - FIXED: True one-click download all
                         st.markdown("### 💾 Download All Trained Models")
                         
-                        # Prepare all downloads immediately
+                        # Prepare ZIP file with all models
                         try:
-                            # Prepare all model files
-                            model_files = {}
+                            import zipfile
+                            import io
                             
-                            for model_name, result in all_results.items():
-                                # Prepare model data
-                                model_data = {
-                                    'model': result['model'],
-                                    'feature_names': result['feature_names'],
-                                    'target_name': result['target_name'],
-                                    'model_type': model_name,
-                                    'metrics': result['global_test_metrics'],
-                                    'timestamp': timestamp,
+                            # Create in-memory ZIP file
+                            zip_buffer = io.BytesIO()
+                            
+                            with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+                                # Add each model to ZIP
+                                for model_name, result in all_results.items():
+                                    # Prepare model data
+                                    model_data = {
+                                        'model': result['model'],
+                                        'feature_names': result['feature_names'],
+                                        'target_name': result['target_name'],
+                                        'model_type': model_name,
+                                        'metrics': result['global_test_metrics'],
+                                        'timestamp': timestamp,
+                                        'usage_instructions': {
+                                            'load_model': 'import pickle; with open("model.pkl", "rb") as f: model_data = pickle.load(f)',
+                                            'access_model': 'model = model_data["model"]',
+                                            'feature_names': 'features = model_data["feature_names"]',
+                                            'make_prediction': 'predictions = model.predict(X_new)' if model_name != 'RERF' else 'lr_pred = model["linear"].predict(X_new); rf_pred = model["rf"].predict(X_new); final_pred = lr_pred + rf_pred'
+                                        }
+                                    }
+                                    
+                                    # Add model file to ZIP
+                                    model_filename = f"{model_name.lower().replace(' ', '_')}_model_{timestamp}.pkl"
+                                    model_bytes = pickle.dumps(model_data)
+                                    zip_file.writestr(model_filename, model_bytes)
+                                
+                                # Create and add features JSON
+                                features_info = {
+                                    'training_session': timestamp,
+                                    'target_variable': ml_y_column,
+                                    'feature_names': ml_x_columns,
+                                    'feature_count': len(ml_x_columns),
+                                    'models_trained': list(all_results.keys()),
+                                    'cross_validation': {
+                                        'n_splits': n_splits,
+                                        'random_state': random_state,
+                                        'group_column': group_column if use_group else None
+                                    },
+                                    'performance_summary': {
+                                        model_name: {
+                                            'test_r2': result['global_test_metrics']['R2'],
+                                            'test_pe10': result['global_test_metrics']['PE10'],
+                                            'test_rt20': result['global_test_metrics']['RT20'],
+                                            'test_fsd': result['global_test_metrics']['FSD']
+                                        }
+                                        for model_name, result in all_results.items()
+                                    },
                                     'usage_instructions': {
-                                        'load_model': 'import pickle; with open("model.pkl", "rb") as f: model_data = pickle.load(f)',
+                                        'load_any_model': 'import pickle; with open("random_forest_model.pkl", "rb") as f: model_data = pickle.load(f)',
                                         'access_model': 'model = model_data["model"]',
-                                        'feature_names': 'features = model_data["feature_names"]',
-                                        'make_prediction': 'predictions = model.predict(X_new)' if model_name != 'RERF' else 'lr_pred = model["linear"].predict(X_new); rf_pred = model["rf"].predict(X_new); final_pred = lr_pred + rf_pred'
+                                        'get_features': 'features = model_data["feature_names"]',
+                                        'make_predictions': {
+                                            'RF_GBDT': 'predictions = model.predict(X_new)',
+                                            'RERF': 'lr_pred = model["linear"].predict(X_new); rf_pred = model["rf"].predict(X_new); final_pred = lr_pred + rf_pred'
+                                        }
                                     }
                                 }
                                 
-                                # Store model bytes
-                                model_files[model_name] = pickle.dumps(model_data)
+                                # Add features JSON to ZIP
+                                features_json = json.dumps(features_info, indent=2)
+                                zip_file.writestr(f"features_info_{timestamp}.json", features_json)
+                                
+                                # Add README file with instructions
+                                readme_content = f"""# ML Models Package - {timestamp}
+
+## Contents:
+- random_forest_model_{timestamp}.pkl
+- gradient_boosting_model_{timestamp}.pkl  
+- rerf_model_{timestamp}.pkl
+- features_info_{timestamp}.json
+
+## Quick Start:
+```python
+import pickle
+
+# Load any model
+with open('random_forest_model_{timestamp}.pkl', 'rb') as f:
+    model_data = pickle.load(f)
+
+model = model_data['model']
+features = model_data['feature_names'] 
+target = model_data['target_name']
+
+# Make predictions
+predictions = model.predict(X_new)  # For RF/GBDT
+
+# For RERF model:
+# lr_pred = model['linear'].predict(X_new)
+# rf_pred = model['rf'].predict(X_new) 
+# final_pred = lr_pred + rf_pred
+```
+
+## Performance Summary:
+{chr(10).join([f"- {name}: R²={result['global_test_metrics']['R2']:.4f}" for name, result in all_results.items()])}
+"""
+                                zip_file.writestr("README.md", readme_content)
                             
-                            # Create features JSON
-                            features_info = {
-                                'training_session': timestamp,
-                                'target_variable': ml_y_column,
-                                'feature_names': ml_x_columns,
-                                'feature_count': len(ml_x_columns),
-                                'models_trained': list(all_results.keys()),
-                                'cross_validation': {
-                                    'n_splits': n_splits,
-                                    'random_state': random_state,
-                                    'group_column': group_column if use_group else None
-                                },
-                                'performance_summary': {
-                                    model_name: {
-                                        'test_r2': result['global_test_metrics']['R2'],
-                                        'test_pe10': result['global_test_metrics']['PE10'],
-                                        'test_rt20': result['global_test_metrics']['RT20'],
-                                        'test_fsd': result['global_test_metrics']['FSD']
-                                    }
-                                    for model_name, result in all_results.items()
-                                },
-                                'usage_instructions': {
-                                    'load_any_model': 'import pickle; with open("random_forest_model.pkl", "rb") as f: model_data = pickle.load(f)',
-                                    'access_model': 'model = model_data["model"]',
-                                    'get_features': 'features = model_data["feature_names"]',
-                                    'make_predictions': {
-                                        'RF_GBDT': 'predictions = model.predict(X_new)',
-                                        'RERF': 'lr_pred = model["linear"].predict(X_new); rf_pred = model["rf"].predict(X_new); final_pred = lr_pred + rf_pred'
-                                    }
-                                }
-                            }
+                            zip_buffer.seek(0)
                             
-                            features_json = json.dumps(features_info, indent=2)
+                            # One-click download button
+                            st.download_button(
+                                label="📦 Download All Models + Features (ZIP)",
+                                data=zip_buffer.getvalue(),
+                                file_name=f"ml_models_package_{timestamp}.zip",
+                                mime="application/zip",
+                                key=f"download_all_{timestamp}",
+                                type="primary",
+                                use_container_width=True
+                            )
                             
-                            # Direct download buttons
-                            st.markdown("**📥 Download Files:**")
-                            download_cols = st.columns(4)
-                            
-                            # Download individual model files
-                            with download_cols[0]:
-                                st.download_button(
-                                    label="📦 Random Forest",
-                                    data=model_files['Random Forest'],
-                                    file_name=f"random_forest_model_{timestamp}.pkl",
-                                    mime="application/octet-stream",
-                                    key=f"download_rf_{timestamp}",
-                                    use_container_width=True
-                                )
-                            
-                            with download_cols[1]:
-                                st.download_button(
-                                    label="📦 Gradient Boosting",
-                                    data=model_files['Gradient Boosting'],
-                                    file_name=f"gradient_boosting_model_{timestamp}.pkl",
-                                    mime="application/octet-stream",
-                                    key=f"download_gbdt_{timestamp}",
-                                    use_container_width=True
-                                )
-                            
-                            with download_cols[2]:
-                                st.download_button(
-                                    label="📦 RERF",
-                                    data=model_files['RERF'],
-                                    file_name=f"rerf_model_{timestamp}.pkl",
-                                    mime="application/octet-stream",
-                                    key=f"download_rerf_{timestamp}",
-                                    use_container_width=True
-                                )
-                            
-                            with download_cols[3]:
-                                st.download_button(
-                                    label="📄 Features.json",
-                                    data=features_json,
-                                    file_name=f"features_info_{timestamp}.json",
-                                    mime="application/json",
-                                    key=f"download_features_{timestamp}",
-                                    use_container_width=True
-                                )
+                            st.success("✅ Click above to download all models in one ZIP file!")
+                            st.info("📋 ZIP contains: 3 model files (.pkl) + features info (.json) + README (.md)")
                                 
                         except Exception as e:
-                            st.error(f"❌ Failed to prepare downloads: {str(e)}")
+                            st.error(f"❌ Failed to prepare ZIP download: {str(e)}")
 
         with tab3:
             st.markdown("### 📊 Model Comparison Dashboard")
