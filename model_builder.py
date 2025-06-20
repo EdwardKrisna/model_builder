@@ -33,6 +33,8 @@ from sklearn.preprocessing import LabelEncoder
 import optuna
 from sklearn.ensemble import GradientBoostingRegressor
 from sklearn.linear_model import LinearRegression
+from datetime import timezone, timedelta
+
 from skl2onnx import convert_sklearn
 from skl2onnx.common.data_types import FloatTensorType
 import onnx
@@ -3517,7 +3519,8 @@ elif st.session_state.processing_step == 'advanced':
                             st.session_state.all_model_results = {}
                         
                         # Add timestamp to results
-                        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                        wib_timezone = timezone(timedelta(hours=7))  # WIB is UTC+7
+                        timestamp = datetime.now(wib_timezone).strftime('%Y%m%d_%H%M%S_WIB')
                         st.session_state.all_model_results[timestamp] = all_results
                         
                         st.success(f"✅ All models trained successfully! Results saved with timestamp: {timestamp}")
@@ -3545,6 +3548,34 @@ elif st.session_state.processing_step == 'advanced':
                         # Model downloads - FIXED: True one-click download all
                         st.markdown("### 💾 Download All Trained Models")
                         
+                        # User input for individual PKL filenames
+                        st.markdown("**📝 Customize Model Filenames:**")
+                        col1, col2, col3 = st.columns(3)
+                        
+                        with col1:
+                            rf_filename = st.text_input(
+                                "Random Forest filename", 
+                                value=f"random_forest_model_{timestamp}",
+                                placeholder="Enter filename (without .pkl)",
+                                key=f"rf_filename_{timestamp}"
+                            )
+                        
+                        with col2:
+                            gbdt_filename = st.text_input(
+                                "Gradient Boosting filename", 
+                                value=f"gradient_boosting_model_{timestamp}",
+                                placeholder="Enter filename (without .pkl)",
+                                key=f"gbdt_filename_{timestamp}"
+                            )
+                        
+                        with col3:
+                            rerf_filename = st.text_input(
+                                "RERF filename", 
+                                value=f"rerf_model_{timestamp}",
+                                placeholder="Enter filename (without .pkl)",
+                                key=f"rerf_filename_{timestamp}"
+                            )
+                                
                         # Prepare ZIP file with all models
                         try:
                             import zipfile
@@ -3564,16 +3595,15 @@ elif st.session_state.processing_step == 'advanced':
                                         'model_type': model_name,
                                         'metrics': result['global_test_metrics'],
                                         'timestamp': timestamp,
-                                        'usage_instructions': {
-                                            'load_model': 'import pickle; with open("model.pkl", "rb") as f: model_data = pickle.load(f)',
-                                            'access_model': 'model = model_data["model"]',
-                                            'feature_names': 'features = model_data["feature_names"]',
-                                            'make_prediction': 'predictions = model.predict(X_new)' if model_name != 'RERF' else 'lr_pred = model["linear"].predict(X_new); rf_pred = model["rf"].predict(X_new); final_pred = lr_pred + rf_pred'
-                                        }
                                     }
                                     
-                                    # Add model file to ZIP
-                                    model_filename = f"{model_name.lower().replace(' ', '_')}_model_{timestamp}.pkl"
+                                    # Add model file to ZIP with user-defined names
+                                    if model_name == 'Random Forest':
+                                        model_filename = f"{rf_filename}.pkl"
+                                    elif model_name == 'Gradient Boosting':
+                                        model_filename = f"{gbdt_filename}.pkl"
+                                    elif model_name == 'RERF':
+                                        model_filename = f"{rerf_filename}.pkl"
                                     model_bytes = pickle.dumps(model_data)
                                     zip_file.writestr(model_filename, model_bytes)
                                 
@@ -3597,56 +3627,12 @@ elif st.session_state.processing_step == 'advanced':
                                             'test_fsd': result['global_test_metrics']['FSD']
                                         }
                                         for model_name, result in all_results.items()
-                                    },
-                                    'usage_instructions': {
-                                        'load_any_model': 'import pickle; with open("random_forest_model.pkl", "rb") as f: model_data = pickle.load(f)',
-                                        'access_model': 'model = model_data["model"]',
-                                        'get_features': 'features = model_data["feature_names"]',
-                                        'make_predictions': {
-                                            'RF_GBDT': 'predictions = model.predict(X_new)',
-                                            'RERF': 'lr_pred = model["linear"].predict(X_new); rf_pred = model["rf"].predict(X_new); final_pred = lr_pred + rf_pred'
-                                        }
                                     }
                                 }
                                 
                                 # Add features JSON to ZIP
                                 features_json = json.dumps(features_info, indent=2)
                                 zip_file.writestr(f"features_info_{timestamp}.json", features_json)
-                                
-                                # Add README file with instructions
-                                readme_content = f"""# ML Models Package - {timestamp}
-
-## Contents:
-- random_forest_model_{timestamp}.pkl
-- gradient_boosting_model_{timestamp}.pkl  
-- rerf_model_{timestamp}.pkl
-- features_info_{timestamp}.json
-
-## Quick Start:
-```python
-import pickle
-
-# Load any model
-with open('random_forest_model_{timestamp}.pkl', 'rb') as f:
-    model_data = pickle.load(f)
-
-model = model_data['model']
-features = model_data['feature_names'] 
-target = model_data['target_name']
-
-# Make predictions
-predictions = model.predict(X_new)  # For RF/GBDT
-
-# For RERF model:
-# lr_pred = model['linear'].predict(X_new)
-# rf_pred = model['rf'].predict(X_new) 
-# final_pred = lr_pred + rf_pred
-```
-
-## Performance Summary:
-{chr(10).join([f"- {name}: R²={result['global_test_metrics']['R2']:.4f}" for name, result in all_results.items()])}
-"""
-                                zip_file.writestr("README.md", readme_content)
                             
                             zip_buffer.seek(0)
                             
