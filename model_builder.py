@@ -2049,7 +2049,7 @@ elif st.session_state.processing_step == 'filter':
                             
                             # Add points for each quantile
                             for quantile in ['Q1', 'Q2', 'Q3', 'Q4', 'Q5']:
-                                quantile_data = map_data[map_data['hmp_quantile'] == quantile]
+                                quantile_data = map_data[map_data['hpm_quantile'] == quantile]
                                 if not quantile_data.empty:
                                     # Create tooltip text for THIS quantile's data only
                                     tooltip_text = []
