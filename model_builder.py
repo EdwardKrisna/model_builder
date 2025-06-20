@@ -250,36 +250,36 @@ def cached_clean_data(df, cleaning_options):
                 modes = cleaned_df[categorical_cols].mode().iloc[0] if not cleaned_df[categorical_cols].empty else 'Unknown'
                 cleaned_df[categorical_cols] = cleaned_df[categorical_cols].fillna(modes)
         
-        # Remove outliers (optimized)
-        if cleaning_options.get('remove_outliers', False) and cleaning_options.get('outlier_column'):
-            group_col = cleaning_options['outlier_column']
-            # flag outliers in the cleaned_df
-            flagged = self.detect_outliers(
-                cleaned_df,
-                id_col='id',
-                group_column=group_col,
-                value_column='hpm',
-                p10_quantile=cleaning_options.get('p10_quantile', 0.1),
-                p90_quantile=cleaning_options.get('p90_quantile', 0.9),
-                skew_threshold=cleaning_options.get('skew_threshold', 0.5)
-            )
-            # drop the outliers completely
-            cleaned_df = (
-                flagged
-                .loc[flagged['is_outlier'] == 0]
-                .drop(columns=['upper_border','lower_border','is_outlier'])
-                .copy()
-            )
+        # # Remove outliers (optimized)
+        # if cleaning_options.get('remove_outliers', False) and cleaning_options.get('outlier_column'):
+        #     group_col = cleaning_options['outlier_column']
+        #     # flag outliers in the cleaned_df
+        #     flagged = self.detect_outliers(
+        #         cleaned_df,
+        #         id_col='id',
+        #         group_column=group_col,
+        #         value_column='hpm',
+        #         p10_quantile=cleaning_options.get('p10_quantile', 0.1),
+        #         p90_quantile=cleaning_options.get('p90_quantile', 0.9),
+        #         skew_threshold=cleaning_options.get('skew_threshold', 0.5)
+        #     )
+        #     # drop the outliers completely
+        #     cleaned_df = (
+        #         flagged
+        #         .loc[flagged['is_outlier'] == 0]
+        #         .drop(columns=['upper_border','lower_border','is_outlier'])
+        #         .copy()
+        #     )
 
             
-            if success:
-                cleaned_df = analyzer.current_data
-                print(message)
-            else:
-                print(f"Outlier removal failed: {message}")
+            # if success:
+            #     cleaned_df = analyzer.current_data
+            #     print(message)
+            # else:
+            #     print(f"Outlier removal failed: {message}")
             
-            # Restore original data reference
-            analyzer.current_data = temp_data
+            # # Restore original data reference
+            # analyzer.current_data = temp_data
         
         return cleaned_df
         
@@ -505,16 +505,48 @@ class RealEstateAnalyzer:
             return False, f"Filtering failed: {str(e)}"
     
     def clean_data(self, cleaning_options):
+        """
+        Perform basic cleaning (duplicates, missing) and then
+        remove outliers via the detect_outliers method.
+        """
         if self.current_data is None:
             return False, "No data to clean"
+
         try:
+            # Step 1: do cached duplicate removal & missing‐value handling
             cleaned_df = cached_clean_data(self.current_data, cleaning_options)
+
+            # Step 2: if requested, detect & drop outliers
+            if cleaning_options.get('remove_outliers', False) and cleaning_options.get('outlier_column'):
+                group_col = cleaning_options['outlier_column']
+                # flag outliers
+                flagged = self.detect_outliers(
+                    cleaned_df,
+                    id_col='id',
+                    group_column=group_col,
+                    value_column='hpm',
+                    p10_quantile=cleaning_options.get('p10_quantile', 0.1),
+                    p90_quantile=cleaning_options.get('p90_quantile', 0.9),
+                    skew_threshold=cleaning_options.get('skew_threshold', 0.5)
+                )
+                # keep only non-outliers
+                cleaned_df = (
+                    flagged
+                    .loc[flagged['is_outlier'] == 0]
+                    .drop(columns=['upper_border', 'lower_border', 'is_outlier'])
+                    .copy()
+                )
+
+            # Step 3: commit cleaned data
             self.current_data = cleaned_df
             if 'st' in globals():
                 st.session_state.data_changed = True
+
             return True, f"Cleaned data: {len(self.current_data)} properties remaining"
+
         except Exception as e:
-            return False, str(e)
+            return False, f"Data cleaning failed: {str(e)}"
+
 
     
     def apply_transformations(self, transformations):
