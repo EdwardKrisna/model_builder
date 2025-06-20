@@ -509,7 +509,7 @@ class RealEstateAnalyzer:
         Applies basic cleaning (dedupe, missing‐value fill) and then, optionally,
         group‐wise outlier removal via detect_outliers.
         """
-        # 1) Ensure there’s data to work on
+        # 1) Ensure there's data to work on
         if self.current_data is None:
             return False, "No data to clean"
 
@@ -521,34 +521,73 @@ class RealEstateAnalyzer:
             if cleaning_options.get('remove_outliers', False) and cleaning_options.get('outlier_column'):
                 group_col = cleaning_options['outlier_column']
 
-                # flag outliers
-                flagged = self.detect_outliers(
-                    cleaned_df.copy(),
-                    id_col='id',
-                    group_column=group_col,
-                    value_column='hpm',
-                    p10_quantile=cleaning_options.get('p10_quantile', 0.1),
-                    p90_quantile=cleaning_options.get('p90_quantile', 0.9),
-                    skew_threshold=cleaning_options.get('skew_threshold', 0.5)
-                )
+                # **FIX 1: Check for required columns**
+                required_cols = ['hpm', 'id']
+                missing_cols = [col for col in required_cols if col not in cleaned_df.columns]
+                
+                if missing_cols:
+                    return False, f"Cannot remove outliers: Missing required columns: {missing_cols}"
+                
+                # **FIX 2: Ensure group column exists**
+                if group_col not in cleaned_df.columns:
+                    return False, f"Cannot remove outliers: Group column '{group_col}' not found"
 
-                # drop them and the helper cols
-                cleaned_df = (
-                    flagged
-                    .loc[flagged['is_outlier'] == 0]
-                    .drop(columns=['upper_border', 'lower_border', 'is_outlier'])
-                    .copy()
-                )
+                # **FIX 3: Check if we have enough data**
+                if len(cleaned_df) < 10:
+                    return False, "Cannot remove outliers: Not enough data (minimum 10 rows required)"
+
+                try:
+                    # Flag outliers
+                    flagged = self.detect_outliers(
+                        cleaned_df.copy(),
+                        id_col='id',
+                        group_column=group_col,
+                        value_column='hpm',
+                        p10_quantile=cleaning_options.get('p10_quantile', 0.1),
+                        p90_quantile=cleaning_options.get('p90_quantile', 0.9),
+                        skew_threshold=cleaning_options.get('skew_threshold', 0.5)
+                    )
+
+                    # **FIX 4: Check if flagged DataFrame has the expected columns**
+                    if 'is_outlier' not in flagged.columns:
+                        return False, "Outlier detection failed: 'is_outlier' column not created"
+
+                    # Count outliers before removal
+                    outliers_count = flagged['is_outlier'].sum()
+                    total_count = len(flagged)
+                    
+                    # **FIX 5: Safety check - don't remove too many records**
+                    if outliers_count / total_count > 0.5:  # If more than 50% would be removed
+                        return False, f"Outlier removal would remove {outliers_count}/{total_count} records ({outliers_count/total_count*100:.1f}%). This seems excessive. Please check your parameters."
+
+                    # Drop outliers and helper columns
+                    outlier_cols_to_drop = ['upper_border', 'lower_border', 'is_outlier']
+                    existing_cols_to_drop = [col for col in outlier_cols_to_drop if col in flagged.columns]
+                    
+                    cleaned_df = (
+                        flagged
+                        .loc[flagged['is_outlier'] == 0]  # Keep non-outliers
+                        .drop(columns=existing_cols_to_drop)  # Only drop columns that exist
+                        .copy()
+                    )
+                    
+                    # **FIX 6: Reset index to avoid issues**
+                    cleaned_df = cleaned_df.reset_index(drop=True)
+                    
+                    print(f"Outlier removal: Removed {outliers_count} outliers from {total_count} records")
+                    
+                except Exception as outlier_error:
+                    return False, f"Outlier removal failed: {str(outlier_error)}"
 
             # 4) Commit the cleaned DataFrame back to the analyzer
             self.current_data = cleaned_df
             if 'st' in globals():
                 st.session_state.data_changed = True
 
-            return True, f"Cleaned data: {len(self.current_data)} properties remaining"
+            return True, f"Cleaned data: {len(self.current_data):,} properties remaining"
 
         except Exception as e:
-            # Return False so Streamlit’s st.error is used
+            # Return False so Streamlit's st.error is used
             return False, f"Data cleaning failed: {str(e)}"
 
     
@@ -864,7 +903,7 @@ class RealEstateAnalyzer:
         from scipy.stats import skew
         
         df = df.copy()
-        
+
         top_border = {'group': [], 'upper_value': []}
         lower_border = {'group': [], 'lower_value': []}
         outlier_ids = []
@@ -2440,12 +2479,13 @@ elif st.session_state.processing_step == 'clean':
             if remove_outliers:
                 st.info("🎯 Outlier detection on 'hpm' column")
                 
-                # Validate required columns
+                # **ENHANCED VALIDATION**: Check for all required columns
                 required_cols = ['hpm', 'id']
                 missing_cols = [col for col in required_cols if col not in analyzer.current_data.columns]
                 
                 if missing_cols:
-                    st.error(f"❌ Missing required columns: {missing_cols}")
+                    st.error(f"❌ Missing required columns for outlier detection: {missing_cols}")
+                    st.info("💡 Required columns: 'hpm' (target values) and 'id' (unique identifier)")
                     remove_outliers = False
                 else:
                     # Group column selection (only wadmkc and wadmkd)
@@ -2456,6 +2496,7 @@ elif st.session_state.processing_step == 'clean':
                     
                     if not available_group_cols:
                         st.error("❌ No valid group columns found. Need 'wadmkc' or 'wadmkd'")
+                        st.info("💡 Outlier detection works best with geographic grouping columns")
                         remove_outliers = False
                     else:
                         group_column = st.selectbox(
@@ -2463,25 +2504,120 @@ elif st.session_state.processing_step == 'clean':
                             available_group_cols,
                             help="Choose geographic level for group-wise outlier detection"
                         )
+                        
+                        # **NEW**: Show outlier detection parameters
+                        show_advanced = st.checkbox("⚙️ Show Advanced Parameters", value=False)
+                        
+                        if show_advanced:
+                            col1_param, col2_param, col3_param = st.columns(3)
+                            
+                            with col1_param:
+                                p10_quantile = st.slider(
+                                    "Lower quantile (P10)", 
+                                    min_value=0.05, max_value=0.2, value=0.1, step=0.01,
+                                    help="Lower boundary for outlier detection"
+                                )
+                            
+                            with col2_param:
+                                p90_quantile = st.slider(
+                                    "Upper quantile (P90)", 
+                                    min_value=0.8, max_value=0.95, value=0.9, step=0.01,
+                                    help="Upper boundary for outlier detection"
+                                )
+                            
+                            with col3_param:
+                                skew_threshold = st.slider(
+                                    "Skew threshold", 
+                                    min_value=0.1, max_value=1.0, value=0.5, step=0.1,
+                                    help="Threshold for choosing mean vs median"
+                                )
+                        else:
+                            p10_quantile = 0.1
+                            p90_quantile = 0.9
+                            skew_threshold = 0.5
+                        
+                        # **NEW**: Preview outlier detection
+                        if st.button("🔍 Preview Outlier Detection", help="See how many outliers would be detected"):
+                            with st.spinner("Analyzing outliers..."):
+                                try:
+                                    preview_df = analyzer.current_data.copy()
+                                    flagged_preview = analyzer.detect_outliers(
+                                        preview_df,
+                                        id_col='id',
+                                        group_column=group_column,
+                                        value_column='hpm',
+                                        p10_quantile=p10_quantile,
+                                        p90_quantile=p90_quantile,
+                                        skew_threshold=skew_threshold
+                                    )
+                                    
+                                    outliers_count = flagged_preview['is_outlier'].sum()
+                                    total_count = len(flagged_preview)
+                                    outlier_pct = (outliers_count / total_count) * 100
+                                    
+                                    if outlier_pct > 50:
+                                        st.error(f"⚠️ High outlier rate: {outliers_count:,} outliers ({outlier_pct:.1f}%) detected")
+                                        st.warning("Consider adjusting parameters - this seems excessive")
+                                    elif outlier_pct > 20:
+                                        st.warning(f"⚠️ Moderate outlier rate: {outliers_count:,} outliers ({outlier_pct:.1f}%) detected")
+                                    else:
+                                        st.success(f"✅ Normal outlier rate: {outliers_count:,} outliers ({outlier_pct:.1f}%) detected")
+                                    
+                                    # Show sample outliers
+                                    if outliers_count > 0:
+                                        st.markdown("**Sample outliers:**")
+                                        sample_outliers = flagged_preview[flagged_preview['is_outlier'] == 1][['id', group_column, 'hpm']].head(5)
+                                        st.dataframe(sample_outliers, use_container_width=True)
+                                    
+                                except Exception as e:
+                                    st.error(f"Preview failed: {str(e)}")
 
-        # Cleaning options dictionary
+        # **ENHANCED**: Cleaning options dictionary with all parameters
         cleaning_options = {
             'remove_duplicates': remove_duplicates,
             'handle_missing': handle_missing,
             'remove_outliers': remove_outliers,
-            'outlier_column': group_column
+            'outlier_column': group_column,
+            'p10_quantile': p10_quantile if remove_outliers else 0.1,
+            'p90_quantile': p90_quantile if remove_outliers else 0.9,
+            'skew_threshold': skew_threshold if remove_outliers else 0.5
         }
         
-        # Apply cleaning button
-        if st.button("🧹 Apply Data Cleaning", type="primary"):
+        # **ENHANCED**: Apply cleaning button with better validation
+        cleaning_enabled = (
+            remove_duplicates or handle_missing or 
+            (remove_outliers and group_column is not None)
+        )
+        
+        if not cleaning_enabled:
+            st.info("💡 Select at least one cleaning option above")
+        
+        if st.button("🧹 Apply Data Cleaning", type="primary", disabled=not cleaning_enabled):
             with st.spinner("Cleaning data..."):
                 success, message = analyzer.clean_data(cleaning_options)
                 if success:
                     st.success(message)
+                    
+                    # **NEW**: Show cleaning summary
+                    if remove_outliers and group_column:
+                        st.info(f"✅ Outlier removal completed using {group_column} grouping")
+                    if remove_duplicates:
+                        st.info("✅ Duplicate removal completed")
+                    if handle_missing:
+                        st.info("✅ Missing value handling completed")
+                    
                     st.rerun()
                 else:
                     st.error(message)
-
+                    
+                    # **NEW**: Provide helpful suggestions
+                    if "Missing required columns" in message:
+                        st.info("💡 **Suggestion**: Make sure your data has 'id' and 'hpm' columns")
+                    elif "excessive" in message.lower():
+                        st.info("💡 **Suggestion**: Try adjusting the quantile parameters (P10/P90) to be less restrictive")
+                    elif "Group column" in message:
+                        st.info("💡 **Suggestion**: Check if your data has geographic columns like 'wadmkc' or 'wadmkd'")
+                        
 elif st.session_state.processing_step == 'transform':
     if fun_mode:
         st.markdown('## <img src="https://media.giphy.com/media/v1.Y2lkPWVjZjA1ZTQ3Y25yOXB5MDFqNGlmdmJnenFqandjMzl6YnJscnRseDlzN2poZG1wMiZlcD12MV9naWZzX3NlYXJjaCZjdD1n/EjLTU9HAnnskywtJ9j/giphy.gif" alt="data gif" style="height:96px; vertical-align:middle;"> Variable Transformations', unsafe_allow_html=True)
