@@ -3791,33 +3791,34 @@ elif st.session_state.processing_step == 'advanced':
                                     )
                                 
                                 elif model_config['type'] == 'ols':
-                                    # OLS implementation - use statsmodels to match OLS section exactly
-                                    model_vars = [ml_y_column] + ml_x_columns
-                                    df_model = analyzer.current_data[model_vars].dropna()
-                                    X = df_model[ml_x_columns]
-                                    y = df_model[ml_y_column]
-                                    
-                                    # Add constant and use statsmodels OLS (same as OLS section)
-                                    X_with_const = sm.add_constant(X)
-                                    ols_model = sm.OLS(y, X_with_const).fit(cov_type='HC3')
-                                    y_pred_full = ols_model.fittedvalues
-                                    
-                                    # Calculate metrics on full dataset
-                                    full_metrics = evaluate(y, y_pred_full, squared=True)
-                                    
-                                    # Create dummy evaluation results for consistency
-                                    evaluation_results = {'Fold': ['Full-Dataset'], 'R2': [full_metrics['R2']], 
-                                                         'FSD': [full_metrics['FSD']], 'PE10': [full_metrics['PE10']], 'RT20': [full_metrics['RT20']]}
-                                    evaluation_df = pd.DataFrame(evaluation_results)
-                                    train_results_df = pd.DataFrame({'R2': [full_metrics['R2']], 'FSD': [full_metrics['FSD']], 
-                                                                   'PE10': [full_metrics['PE10']], 'RT20': [full_metrics['RT20']]})
-                                    
-                                    final_model = ols_model
-                                    global_train_metrics = full_metrics
-                                    global_test_metrics = full_metrics
-                                    y_test_last = y
-                                    y_pred_last = y_pred_full
-                                    is_log_transformed = ('ln_' in ml_y_column) or ('log_' in ml_y_column.lower())
+                                    # Use existing OLS results from 'OLS Model' section
+                                    if analyzer.model is not None:
+                                        # Get results from existing OLS model
+                                        ols_results = analyzer.get_model_results()
+                                        
+                                        ols_model = analyzer.model
+                                        y_pred_full = ols_results['fitted_values']
+                                        y = ols_results['actual_values']
+                                        
+                                        # Calculate metrics using existing predictions
+                                        full_metrics = evaluate(y, y_pred_full, squared=True)
+                                        
+                                        # Create dummy evaluation results for consistency
+                                        evaluation_results = {'Fold': ['Full-Dataset'], 'R2': [full_metrics['R2']], 
+                                                            'FSD': [full_metrics['FSD']], 'PE10': [full_metrics['PE10']], 'RT20': [full_metrics['RT20']]}
+                                        evaluation_df = pd.DataFrame(evaluation_results)
+                                        train_results_df = pd.DataFrame({'R2': [full_metrics['R2']], 'FSD': [full_metrics['FSD']], 
+                                                                    'PE10': [full_metrics['PE10']], 'RT20': [full_metrics['RT20']]})
+                                        
+                                        final_model = ols_model
+                                        global_train_metrics = full_metrics
+                                        global_test_metrics = full_metrics
+                                        y_test_last = y
+                                        y_pred_last = y_pred_full  # Use existing OLS predictions for comparison graph
+                                        is_log_transformed = ('ln_' in ml_y_column) or ('log_' in ml_y_column.lower())
+                                    else:
+                                        st.error("❌ No OLS model found. Please run OLS model first in 'OLS Model' section.")
+                                        continue
                                 
                                 # Store results
                                 all_results[model_name] = {
