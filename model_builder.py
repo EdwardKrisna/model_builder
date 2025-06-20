@@ -2002,8 +2002,19 @@ elif st.session_state.processing_step == 'filter':
             if lat_col and lon_col and 'hpm' in analyzer.current_data.columns:
                 if st.button("🗺️ Show Property Map", type="secondary"):
                     try:
-                        # Prepare map data
-                        map_data = analyzer.current_data[[lat_col, lon_col, 'hpm']].copy()
+                        # Prepare map data - include all geographic columns if available
+                        map_columns = [lat_col, lon_col, 'hpm']
+                        geo_cols = {}
+                        
+                        # Find all geographic columns
+                        for geo_type in ['wadmpr', 'wadmkk', 'wadmkc', 'wadmkd']:
+                            for col in analyzer.current_data.columns:
+                                if geo_type in col:
+                                    geo_cols[geo_type] = col
+                                    map_columns.append(col)
+                                    break
+                        
+                        map_data = analyzer.current_data[map_columns].copy()
                         map_data = map_data.dropna()
                         
                         # Convert to numeric
@@ -2038,8 +2049,32 @@ elif st.session_state.processing_step == 'filter':
                             
                             # Add points for each quantile
                             for quantile in ['Q1', 'Q2', 'Q3', 'Q4', 'Q5']:
-                                quantile_data = map_data[map_data['hpm_quantile'] == quantile]
+                                quantile_data = map_data[map_data['hmp_quantile'] == quantile]
                                 if not quantile_data.empty:
+                                    # Create tooltip text for THIS quantile's data only
+                                    tooltip_text = []
+                                    for idx, row in quantile_data.iterrows():
+                                        tooltip = f"HPM: {row['hpm']:,.0f}<br>Quantile: {quantile}"
+                                        
+                                        # Add geographic info if available
+                                        if 'wadmpr' in geo_cols:
+                                            prov = row[geo_cols['wadmpr']] if geo_cols['wadmpr'] in row else 'N/A'
+                                            tooltip += f"<br>Province: {prov}"
+                                        
+                                        if 'wadmkk' in geo_cols:
+                                            regency = row[geo_cols['wadmkk']] if geo_cols['wadmkk'] in row else 'N/A'
+                                            tooltip += f"<br>Regency: {regency}"
+                                        
+                                        if 'wadmkc' in geo_cols:
+                                            district = row[geo_cols['wadmkc']] if geo_cols['wadmkc'] in row else 'N/A'
+                                            tooltip += f"<br>District: {district}"
+                                        
+                                        if 'wadmkd' in geo_cols:
+                                            village = row[geo_cols['wadmkd']] if geo_cols['wadmkd'] in row else 'N/A'
+                                            tooltip += f"<br>Village: {village}"
+                                        
+                                        tooltip_text.append(tooltip)
+                                    
                                     fig.add_trace(go.Scattermapbox(
                                         lat=quantile_data[lat_col],
                                         lon=quantile_data[lon_col],
@@ -2049,9 +2084,8 @@ elif st.session_state.processing_step == 'filter':
                                             color=color_map[quantile],
                                             opacity=0.8
                                         ),
-                                        text=[f"HPM: {val:,.0f}<br>Quantile: {quantile}" 
-                                             for val in quantile_data['hpm']],
-                                        hovertemplate='<b>%{text}</b><br>Lat: %{lat:.4f}<br>Lon: %{lon:.4f}<extra></extra>',
+                                        text=tooltip_text,
+                                        hovertemplate='<b>%{text}</b><extra></extra>',
                                         name=f'{quantile} (HPM: {quantile_data["hpm"].min():,.0f} - {quantile_data["hpm"].max():,.0f})'
                                     ))
                             
