@@ -2397,11 +2397,11 @@ elif st.session_state.processing_step == 'clean':
         
         with col2:
             st.markdown("**Outlier Removal:**")
-            remove_outliers = st.checkbox("Remove outliers (IQR method)", value=False)
+            remove_outliers = st.checkbox("Remove outliers", value=False)
             group_column = None
 
             if remove_outliers:
-                st.info("🎯 Outlier detection on 'hpm' column using IQR method")
+                st.info("🎯 Outlier detection on 'hpm' column")
                 
                 # Validate required columns
                 required_cols = ['hpm', 'id']
