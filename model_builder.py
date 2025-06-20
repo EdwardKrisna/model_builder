@@ -973,6 +973,7 @@ class RealEstateAnalyzer:
     def goval_machine_learning(self, X, y, algorithm, group=None, n_splits=10, random_state=101, min_sample=3):
         """
         Group-based machine learning with evaluation. Falls back to standard CV if group=None.
+        FIXED: Final model trained on full dataset, not just last fold.
         """
         data = self.current_data
 
@@ -986,15 +987,25 @@ class RealEstateAnalyzer:
             global_train_metrics = {'R2': 0, 'FSD': 0, 'PE10': 0, 'RT20': 0}
             global_test_metrics = {'R2': 0, 'FSD': 0, 'PE10': 0, 'RT20': 0}
 
+            # Store last fold test data for comparison graph
+            last_test_idx = None
+
             kf = KFold(n_splits=n_splits, shuffle=True, random_state=random_state)
 
             for fold, (train_idx, test_idx) in enumerate(kf.split(data[X])):
                 X_train, X_test = data.iloc[train_idx][X], data.iloc[test_idx][X]
                 y_train, y_test = data.iloc[train_idx][y], data.iloc[test_idx][y]
 
-                model = algorithm.fit(X_train, y_train)
-                y_train_pred = model.predict(X_train)
-                y_test_pred = model.predict(X_test)
+                # Create a copy of the algorithm for this fold
+                if hasattr(algorithm, 'get_params'):
+                    fold_model = algorithm.__class__(**algorithm.get_params())
+                else:
+                    fold_model = algorithm
+
+                # Train fold model
+                fold_model = fold_model.fit(X_train, y_train)
+                y_train_pred = fold_model.predict(X_train)
+                y_test_pred = fold_model.predict(X_test)
 
                 train_metrics = evaluate(y_train, y_train_pred, squared=True)
                 test_metrics = evaluate(y_test, y_test_pred, squared=True)
@@ -1014,6 +1025,32 @@ class RealEstateAnalyzer:
                 evaluation_results['PE10'].append(test_metrics['PE10'])
                 evaluation_results['RT20'].append(test_metrics['RT20'])
 
+                # Store last fold test indices for comparison graph
+                if fold == n_splits - 1:
+                    last_test_idx = test_idx
+
+            # FIXED: Train final model on FULL dataset (not just last fold)
+            model_vars = [y] + X
+            df_model = data[model_vars].dropna()
+            X_full = df_model[X]
+            y_full = df_model[y]
+            
+            # Train final model on complete dataset
+            final_model = algorithm.fit(X_full, y_full)
+
+            # For comparison graph, use last fold test data with full-trained model
+            if last_test_idx is not None:
+                X_test_last = df_model.iloc[last_test_idx][X]
+                y_test_last = df_model.iloc[last_test_idx][y]
+                y_pred_last = final_model.predict(X_test_last)
+            else:
+                # Fallback: use sample of full dataset
+                sample_size = min(1000, len(y_full))
+                sample_idx = np.random.choice(len(y_full), sample_size, replace=False)
+                X_test_last = X_full.iloc[sample_idx]
+                y_test_last = y_full.iloc[sample_idx]
+                y_pred_last = final_model.predict(X_test_last)
+
             for metric in global_train_metrics.keys():
                 global_train_metrics[metric] /= n_splits
                 global_test_metrics[metric] /= n_splits
@@ -1021,19 +1058,25 @@ class RealEstateAnalyzer:
             evaluation_df = pd.DataFrame(evaluation_results)
             train_results_df = pd.DataFrame(train_results)
 
+            # Check if log transformed
+            is_log_transformed = ('ln_' in y) or ('log_' in y.lower())
+
             return (
-                model, evaluation_df, train_results_df,
+                final_model, evaluation_df, train_results_df,
                 global_train_metrics, global_test_metrics,
-                y_test, y_test_pred, False
+                y_test_last, y_pred_last, is_log_transformed
             )
 
-        # --- If group is provided: use your original group-based logic ---
+        # --- If group is provided: use group-based logic ---
         else:
             evaluation_results = {'Fold': [], 'R2': [], 'FSD': [], 'PE10': [], 'RT20': []}
             train_results = {'R2': [], 'FSD': [], 'PE10': [], 'RT20': []}
 
             global_train_metrics = {'R2': 0, 'FSD': 0, 'PE10': 0, 'RT20': 0}
             global_test_metrics = {'R2': 0, 'FSD': 0, 'PE10': 0, 'RT20': 0}
+
+            # Store last fold test data for comparison graph
+            last_group_test_data = None
 
             for fold in range(n_splits):
                 X_train_, X_test_ = [], []
@@ -1061,12 +1104,16 @@ class RealEstateAnalyzer:
                 y_train_all = pd.concat(y_train_)
                 y_test_all = pd.concat(y_test_)
 
-                # Train the model
-                model = algorithm.fit(X_train_all, y_train_all)
+                # Create a copy of the algorithm for this fold
+                if hasattr(algorithm, 'get_params'):
+                    fold_model = algorithm.__class__(**algorithm.get_params())
+                else:
+                    fold_model = algorithm
 
-                # Predict on train and test sets
-                y_train_pred = model.predict(X_train_all)
-                y_test_pred = model.predict(X_test_all)
+                # Train fold model
+                fold_model = fold_model.fit(X_train_all, y_train_all)
+                y_train_pred = fold_model.predict(X_train_all)
+                y_test_pred = fold_model.predict(X_test_all)
 
                 # Evaluate train and test scores
                 train_metrics = evaluate(y_train_all, y_train_pred, squared=True)
@@ -1087,6 +1134,35 @@ class RealEstateAnalyzer:
                 evaluation_results['PE10'].append(test_metrics['PE10'])
                 evaluation_results['RT20'].append(test_metrics['RT20'])
 
+                # Store last fold test data for comparison graph
+                if fold == n_splits - 1:
+                    last_group_test_data = {
+                        'X_test': X_test_all,
+                        'y_test': y_test_all
+                    }
+
+            # FIXED: Train final model on FULL dataset (not just last fold)
+            model_vars = [y] + X
+            df_model = data[model_vars].dropna()
+            X_full = df_model[X]
+            y_full = df_model[y]
+            
+            # Train final model on complete dataset
+            final_model = algorithm.fit(X_full, y_full)
+
+            # For comparison graph, use last fold test data with full-trained model
+            if last_group_test_data is not None:
+                X_test_last = last_group_test_data['X_test']
+                y_test_last = last_group_test_data['y_test']
+                y_pred_last = final_model.predict(X_test_last)
+            else:
+                # Fallback: use sample of full dataset
+                sample_size = min(1000, len(y_full))
+                sample_idx = np.random.choice(len(y_full), sample_size, replace=False)
+                X_test_last = X_full.iloc[sample_idx]
+                y_test_last = y_full.iloc[sample_idx]
+                y_pred_last = final_model.predict(X_test_last)
+
             for metric in global_train_metrics.keys():
                 global_train_metrics[metric] /= n_splits
                 global_test_metrics[metric] /= n_splits
@@ -1094,10 +1170,13 @@ class RealEstateAnalyzer:
             evaluation_df = pd.DataFrame(evaluation_results)
             train_results_df = pd.DataFrame(train_results)
 
+            # Check if log transformed
+            is_log_transformed = ('ln_' in y) or ('log_' in y.lower())
+
             return (
-                model, evaluation_df, train_results_df,
+                final_model, evaluation_df, train_results_df,
                 global_train_metrics, global_test_metrics,
-                y_test_all, y_test_pred, False
+                y_test_last, y_pred_last, is_log_transformed
             )
     
     def export_model_onnx(self, model, feature_names, model_name):
@@ -2301,7 +2380,7 @@ elif st.session_state.processing_step == 'clean':
             'remove_duplicates': remove_duplicates,
             'handle_missing': handle_missing,
             'remove_outliers': remove_outliers,
-            'outlier_column': outlier_column
+            'outlier_column': group_column
         }
         
         # Apply cleaning button
@@ -3030,8 +3109,9 @@ elif st.session_state.processing_step == 'advanced':
                 global_train_metrics = {'R2': 0, 'FSD': 0, 'PE10': 0, 'RT20': 0}
                 global_test_metrics = {'R2': 0, 'FSD': 0, 'PE10': 0, 'RT20': 0}
                 
-                final_linear_model = None
-                final_rf_model = None
+                # Store test indices for final comparison graph
+                last_test_idx = None
+                last_group_test_data = None
                 
                 # Cross-validation
                 if group_column is None:
@@ -3088,12 +3168,9 @@ elif st.session_state.processing_step == 'advanced':
                         evaluation_results['PE10'].append(test_metrics['PE10'])
                         evaluation_results['RT20'].append(test_metrics['RT20'])
                         
-                        # Store final models from last fold
+                        # Store last fold test indices for comparison graph
                         if fold == n_splits - 1:
-                            final_linear_model = lr_model
-                            final_rf_model = rf_model_fold
-                            y_test_last = y_test
-                            rerf_pred_last = rerf_pred_test
+                            last_test_idx = test_idx
                 
                 else:
                     # Group-based cross-validation
@@ -3168,12 +3245,66 @@ elif st.session_state.processing_step == 'advanced':
                         evaluation_results['PE10'].append(test_metrics['PE10'])
                         evaluation_results['RT20'].append(test_metrics['RT20'])
                         
-                        # Store final models from last fold
+                        # Store last fold test data for comparison graph
                         if fold == n_splits - 1:
-                            final_linear_model = lr_model
-                            final_rf_model = rf_model_fold
-                            y_test_last = y_test_all
-                            rerf_pred_last = rerf_pred_test
+                            last_group_test_data = {
+                                'X_test': X_test_all,
+                                'y_test': y_test_all
+                            }
+                
+                # FIXED: Train final models on FULL dataset (not just last fold)
+                # This ensures deployed models are trained on all available data
+                final_linear_model = LinearRegression()
+                final_linear_model.fit(X, y)
+                
+                # Get linear predictions on full dataset
+                linear_pred_full = final_linear_model.predict(X)
+                
+                # Calculate residuals on full dataset
+                residuals_full = y - linear_pred_full
+                
+                # Train RF on full dataset residuals
+                final_rf_model = RandomForestRegressor(
+                    n_estimators=rf_model.n_estimators,
+                    max_depth=rf_model.max_depth,
+                    min_samples_split=rf_model.min_samples_split,
+                    min_samples_leaf=rf_model.min_samples_leaf,
+                    max_features=rf_model.max_features,
+                    random_state=rf_model.random_state
+                )
+                final_rf_model.fit(X, residuals_full)
+                
+                # For comparison graph, use last fold's test data
+                if group_column is None and last_test_idx is not None:
+                    # Use last fold from standard CV
+                    y_test_last = y.iloc[last_test_idx]
+                    
+                    # Make predictions for comparison graph using full-trained models
+                    X_test_last = X.iloc[last_test_idx]
+                    lr_pred_test_last = final_linear_model.predict(X_test_last)
+                    rf_pred_residuals_test_last = final_rf_model.predict(X_test_last)
+                    rerf_pred_last = lr_pred_test_last + rf_pred_residuals_test_last
+                    
+                elif group_column is not None and last_group_test_data is not None:
+                    # Use last fold from group-based CV  
+                    y_test_last = last_group_test_data['y_test']
+                    
+                    # Make predictions for comparison graph using full-trained models
+                    X_test_last = last_group_test_data['X_test']
+                    lr_pred_test_last = final_linear_model.predict(X_test_last)
+                    rf_pred_residuals_test_last = final_rf_model.predict(X_test_last)
+                    rerf_pred_last = lr_pred_test_last + rf_pred_residuals_test_last
+                    
+                else:
+                    # Fallback: use a sample of full dataset for comparison
+                    sample_size = min(1000, len(y))
+                    sample_idx = np.random.choice(len(y), sample_size, replace=False)
+                    y_test_last = y.iloc[sample_idx]
+                    X_test_sample = X.iloc[sample_idx]
+                    
+                    lr_pred_sample = final_linear_model.predict(X_test_sample)
+                    rf_pred_residuals_sample = final_rf_model.predict(X_test_sample)
+                    rerf_pred_last = lr_pred_sample + rf_pred_residuals_sample
                 
                 # Average metrics
                 for metric in global_train_metrics.keys():
