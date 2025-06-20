@@ -51,7 +51,8 @@ def initialize_session_state():
         'data_changed': False,
         'show_overview_stats': False,
         'show_dtype_table': False,
-        'show_saved_vars': False
+        'show_saved_vars': False,
+        'categorical_encodings': {}  
     }
     
     for key, value in defaults.items():
@@ -250,63 +251,27 @@ def cached_clean_data(df, cleaning_options):
                 cleaned_df[categorical_cols] = cleaned_df[categorical_cols].fillna(modes)
         
         # Remove outliers (optimized)
-        if cleaning_options.get('remove_outliers', False) and cleaning_options.get('outlier_column') and cleaning_options.get('group_column'):
-            outlier_col = cleaning_options['outlier_column']
-            group_col = cleaning_options['group_column']
-
-            if outlier_col in cleaned_df.columns and group_col in cleaned_df.columns:
-                # Prepare lists to store valid indexes (non-outliers)
-                valid_idx = []
-
-                # Parameters for trimming and skew threshold
-                p10_quantile = 0.1
-                p90_quantile = 0.9
-                skew_threshold = 0.5
-
-                # Process group-wise
-                for group in cleaned_df[group_col].unique():
-                    group_df = cleaned_df[cleaned_df[group_col] == group]
-                    values = group_df[outlier_col]
-
-                    # Calculate 10th and 90th quantiles
-                    p10 = np.quantile(values, p10_quantile)
-                    p90 = np.quantile(values, p90_quantile)
-
-                    # Trim data
-                    trimmed_vals = values[(values > p10) & (values < p90)]
-
-                    if len(trimmed_vals) == 0:
-                        # If no trimmed data, keep all by default
-                        valid_idx.extend(group_df.index.tolist())
-                        continue
-
-                    std = np.std(trimmed_vals)
-                    mean = np.mean(trimmed_vals)
-                    median = np.median(trimmed_vals)
-                    skew_score = skew(trimmed_vals, axis=0, bias=True)
-
-                    if std == 0:
-                        # No variation, keep all
-                        valid_idx.extend(group_df.index.tolist())
-                        continue
-
-                    center = median if abs(skew_score) > skew_threshold else mean
-
-                    bottom = (center - p10) / std
-                    lower_border = center - math.ceil(bottom) * std
-
-                    upper = (p90 - center) / std
-                    upper_border = center + math.ceil(upper) * std
-
-                    # Select non-outliers for this group
-                    group_valid_idx = group_df[
-                        (group_df[outlier_col] >= lower_border) & (group_df[outlier_col] <= upper_border)
-                    ].index.tolist()
-
-                    valid_idx.extend(group_valid_idx)
-
-                # Filter cleaned_df to keep only non-outliers
-                cleaned_df = cleaned_df.loc[valid_idx]
+        if cleaning_options.get('remove_outliers', False):
+            hpm_threshold = cleaning_options.get('hpm_threshold')
+            group_column = cleaning_options.get('group_column')
+            zscore_threshold = cleaning_options.get('zscore_threshold')
+            
+            if hpm_threshold and group_column and zscore_threshold:
+                if 'hpm' in cleaned_df.columns and 'id' in cleaned_df.columns and group_column in cleaned_df.columns:
+                    initial_count = len(cleaned_df)
+                    
+                    # Use the analyzer's outlier removal method
+                    from types import SimpleNamespace
+                    temp_analyzer = SimpleNamespace()
+                    temp_analyzer.analyze_high_hpm_values = lambda df, threshold, group_col, hpm_col: analyzer.analyze_high_hpm_values(df, threshold, group_col, hpm_col)
+                    temp_analyzer.remove_high_hpm_outliers = lambda df, threshold, group_col, hpm_col, zscore: analyzer.remove_high_hpm_outliers(df, threshold, group_col, hpm_col, zscore)
+                    
+                    cleaned_df = analyzer.remove_high_hpm_outliers(
+                        cleaned_df, hpm_threshold, group_column, 'hpm', zscore_threshold
+                    )
+                    
+                    removed_count = initial_count - len(cleaned_df)
+                    print(f"Removed {removed_count} HPM outliers (threshold: {hpm_threshold:,}, z-score: {zscore_threshold})")
         
         return cleaned_df
         
@@ -350,6 +315,9 @@ class RealEstateAnalyzer:
         try:
             self.original_data = cached_load_property_data(self.engine)
             self.current_data = self.original_data.copy()
+            # Reset categorical encodings for new data
+            if 'st' in globals() and hasattr(st, 'session_state'):
+                st.session_state.categorical_encodings = {}
             return True, f"Loaded {len(self.original_data)} properties successfully!"
         except Exception as e:
             return False, f"Failed to load data: {str(e)}"
@@ -427,9 +395,11 @@ class RealEstateAnalyzer:
             
             self.original_data = df
             self.current_data = df.copy()
-            
+            # Reset categorical encodings for new data
+            if 'st' in globals() and hasattr(st, 'session_state'):
+                st.session_state.categorical_encodings = {}
             return True, f"Loaded {len(df):,} properties for {filter_type or 'all data'}"
-            
+        
         except Exception as e:
             return False, f"Failed to load filtered data: {str(e)}"
     
@@ -537,6 +507,111 @@ class RealEstateAnalyzer:
             return True, f"Cleaned data: {len(self.current_data)} properties remaining"
         except Exception as e:
             return False, str(e)
+    
+    def analyze_high_hpm_values(self, df, threshold, group_column='wadmkc', hpm_column='hpm'):
+        """
+        Analyze HPM values above a specified threshold within the context of their group,
+        excluding the high values and NaN values from group statistics calculations.
+        """
+        # Check if the DataFrame is empty or if all relevant values are NaN
+        if df.empty or df[[group_column, hpm_column]].isna().all().all():
+            return pd.DataFrame()
+        
+        # Remove rows with NaN values in the hpm column
+        df_clean = df.dropna(subset=[hpm_column])
+        if df_clean.empty:
+            return pd.DataFrame()
+        
+        # Filter high HPM values
+        high_hpm = df_clean[df_clean[hpm_column] > threshold].copy()
+        if high_hpm.empty:
+            return pd.DataFrame()
+        
+        # Create a DataFrame for calculating group statistics, excluding high values
+        df_for_stats = df_clean[df_clean[hpm_column] <= threshold].copy()
+        
+        # Group statistics (excluding high values)
+        group_stats = df_for_stats.groupby(group_column)[hpm_column].agg([
+            ('mean', 'mean'),
+            ('median', 'median'),
+            ('std', 'std'),
+            ('min', 'min'),
+            ('max', 'max'),
+            ('count', 'count')
+        ]).reset_index()
+        
+        # Add total count including high values
+        total_counts = df_clean.groupby(group_column)[hpm_column].count().reset_index(name='total_count')
+        group_stats = pd.merge(group_stats, total_counts, on=group_column, how='outer')
+        
+        # Handle NaN values in group statistics
+        group_stats.fillna({
+            'mean': 0,
+            'median': 0,
+            'std': 0,
+            'min': 0,
+            'max': 0,
+            'count': 0,
+            'total_count': 0
+        }, inplace=True)
+        
+        # Merge high HPM values with group statistics
+        result = pd.merge(high_hpm, group_stats, on=group_column, how='left')
+        
+        # Calculate z-score and percentile
+        result['z_score'] = (result[hpm_column] - result['mean']) / result['std'].replace(0, float('nan'))
+        result['percentile'] = result.groupby(group_column)[hpm_column].rank(pct=True)
+        
+        # Calculate how many times higher the HPM is compared to the group mean
+        result['times_higher_than_mean'] = result[hpm_column] / result['mean'].replace(0, float('nan'))
+        
+        # Sort by HPM value descending
+        result = result.sort_values(by=hpm_column, ascending=False)
+        
+        # Select and rename columns for clarity
+        columns = [
+            group_column, hpm_column, 'z_score', 'percentile', 'times_higher_than_mean',
+            'mean', 'median', 'std', 'min', 'max', 'count', 'total_count', 'id'
+        ]
+        column_names = {
+            hpm_column: 'HPM',
+            'mean': 'Group_Mean_Excl_High',
+            'median': 'Group_Median_Excl_High',
+            'std': 'Group_Std_Excl_High',
+            'min': 'Group_Min_Excl_High',
+            'max': 'Group_Max_Excl_High',
+            'count': 'Group_Count_Excl_High',
+            'total_count': 'Group_Total_Count',
+            'id': 'id'
+        }
+        result = result[columns].rename(columns=column_names)
+        
+        # Drop rows with NaN values in the final result
+        result.dropna(inplace=True)
+        
+        return result
+
+    def remove_high_hpm_outliers(self, df, threshold, group_column='wadmkc', hpm_column='hpm', zscore_threshold=2):
+        """
+        Remove rows where HPM is above threshold and z-score exceeds zscore_threshold.
+        """
+        # Step 1: Analyze high HPM values and get z-scores
+        outliers_info = self.analyze_high_hpm_values(df, threshold, group_column, hpm_column)
+        if outliers_info.empty:
+            return df.copy()
+        
+        # Step 2: Filter out rows with z_score > threshold
+        outliers_to_remove = outliers_info[outliers_info['z_score'] > zscore_threshold]
+        if outliers_to_remove.empty:
+            return df.copy()
+        
+        # Step 3: Get IDs of outlier rows
+        outlier_ids = outliers_to_remove['id'].tolist()
+        
+        # Step 4: Remove outlier rows from original df
+        df_clean = df[~df['id'].isin(outlier_ids)].copy()
+        
+        return df_clean
 
     
     def apply_transformations(self, transformations):
@@ -776,9 +851,11 @@ class RealEstateAnalyzer:
             
             self.original_data = df
             self.current_data = df.copy()
-            
+            # Reset categorical encodings for new data
+            if 'st' in globals() and hasattr(st, 'session_state'):
+                st.session_state.categorical_encodings = {}
             return True, f"Loaded {len(df):,} properties with custom filters"
-            
+        
         except Exception as e:
             return False, f"Custom filtering failed: {str(e)}"
 
@@ -2212,28 +2289,67 @@ elif st.session_state.processing_step == 'clean':
         
         with col2:
             st.markdown("**Outlier Removal:**")
-            remove_outliers = st.checkbox("Remove outliers", value=False)
-            outlier_column = None
-            group_column = None
-
+            remove_outliers = st.checkbox("Remove HPM outliers", value=False)
+            
             if remove_outliers:
-                numeric_cols = analyzer.current_data.select_dtypes(include=[np.number]).columns.tolist()
-                outlier_column = st.selectbox("Column for outlier detection", numeric_cols)
+                # Check if required columns exist
+                has_hpm = 'hpm' in analyzer.current_data.columns
+                has_id = 'id' in analyzer.current_data.columns
                 
-                # Select group column (categorical or numeric with low cardinality)
-                candidate_groups = analyzer.current_data.select_dtypes(include=['object', 'category']).columns.tolist()
-                numeric_low_card = [col for col in analyzer.current_data.select_dtypes(include=[np.number]).columns
-                                if analyzer.current_data[col].nunique() <= 20]
-                candidate_groups.extend(numeric_low_card)
-                
-                group_column = st.selectbox("Group column (for group-wise outlier detection)", candidate_groups)
+                if not has_hpm:
+                    st.error("❌ 'hpm' column not found in dataset")
+                    remove_outliers = False
+                elif not has_id:
+                    st.error("❌ 'id' column not found in dataset")
+                    remove_outliers = False
+                else:
+                    # Auto-detect available group columns
+                    group_options = []
+                    if 'wadmkc' in analyzer.current_data.columns:
+                        group_options.append('wadmkc')
+                    if 'wadmkd' in analyzer.current_data.columns:
+                        group_options.append('wadmkd')
+                    
+                    if not group_options:
+                        st.error("❌ No 'wadmkc' or 'wadmkd' columns found")
+                        remove_outliers = False
+                    else:
+                        col2a, col2b, col2c = st.columns(3)
+                        
+                        with col2a:
+                            hpm_threshold = st.number_input(
+                                "HPM Threshold",
+                                min_value=1000000,
+                                max_value=100000000,
+                                value=10000000,
+                                step=1000000,
+                                help="HPM values above this will be checked for outliers"
+                            )
+                        
+                        with col2b:
+                            group_column = st.selectbox(
+                                "Group by",
+                                group_options,
+                                index=0,
+                                help="Geographic level for outlier detection"
+                            )
+                        
+                        with col2c:
+                            zscore_threshold = st.selectbox(
+                                "Z-score threshold",
+                                [1, 1.5, 2, 2.5, 3],
+                                index=2,  # Default to 2
+                                help="Higher values = more lenient outlier detection"
+                            )
 
         # Cleaning options dictionary
         cleaning_options = {
             'remove_duplicates': remove_duplicates,
             'handle_missing': handle_missing,
             'remove_outliers': remove_outliers,
-            'outlier_column': outlier_column
+            'hpm_threshold': hpm_threshold if remove_outliers else None,
+            'group_column': group_column if remove_outliers else None,
+            'zscore_threshold': zscore_threshold if remove_outliers else None
         }
         
         # Apply cleaning button
@@ -2528,6 +2644,10 @@ elif st.session_state.processing_step == 'transform':
                                 encoded_df = analyzer.current_data.copy()
                                 encoding_results = []
                                 
+                                # Initialize encoding tracking
+                                if 'categorical_encodings' not in st.session_state:
+                                    st.session_state.categorical_encodings = {}
+                                
                                 for col, config in encoding_configs.items():
                                     if config['method'] == "Ordinal (ordered score)":
                                         # Apply ordinal encoding
@@ -2543,6 +2663,13 @@ elif st.session_state.processing_step == 'transform':
                                         new_col_name = f"{col}_ordinal"
                                         encoded_df[new_col_name] = encoded_df[col].map(ordinal_mapping)
                                         
+                                        # Track encoding info
+                                        st.session_state.categorical_encodings[col] = {
+                                            'type': 'ordinal',
+                                            'mapping': ordinal_mapping,
+                                            'new_column': new_col_name
+                                        }
+                                        
                                         encoding_results.append(f"✅ {col} → {new_col_name} (ordinal)")
                                         
                                         # Track in transformed columns
@@ -2553,6 +2680,7 @@ elif st.session_state.processing_step == 'transform':
                                         reference_cat = config['reference_category']
                                         categories_to_encode = [val for val in config['unique_values'] if val != reference_cat]
                                         
+                                        columns_created = []
                                         for val in categories_to_encode:
                                             # Create column name (clean the value name)
                                             clean_val = str(val).lower().replace(' ', '_').replace('-', '_')
@@ -2561,6 +2689,15 @@ elif st.session_state.processing_step == 'transform':
                                             
                                             # Create binary column
                                             encoded_df[new_col_name] = (encoded_df[col] == val).astype(int)
+                                            columns_created.append(new_col_name)
+                                        
+                                        # Track encoding info
+                                        st.session_state.categorical_encodings[col] = {
+                                            'type': 'one_hot',
+                                            'columns_created': columns_created,
+                                            'reference_category': reference_cat,
+                                            'original_categories': config['unique_values']
+                                        }
                                         
                                         encoding_results.append(f"✅ {col} → {len(categories_to_encode)} one-hot columns (ref: {reference_cat})")
                                 
@@ -3547,6 +3684,11 @@ elif st.session_state.processing_step == 'advanced':
                                     )
                                 },
                                 'type': 'rerf'
+                            },
+                            {
+                                'name': 'OLS',
+                                'model': LinearRegression(),
+                                'type': 'ols'
                             }
                         ]
                         
@@ -3573,6 +3715,35 @@ elif st.session_state.processing_step == 'advanced':
                                         group_column if use_group else None,
                                         n_splits, random_state, min_sample
                                     )
+                                
+                                elif model_config['type'] == 'ols':
+                                    # OLS implementation - train on full dataset
+                                    model_vars = [ml_y_column] + ml_x_columns
+                                    df_model = analyzer.current_data[model_vars].dropna()
+                                    X = df_model[ml_x_columns]
+                                    y = df_model[ml_y_column]
+                                    
+                                    # Train on full dataset
+                                    ols_model = model_config['model']
+                                    ols_model.fit(X, y)
+                                    y_pred_full = ols_model.predict(X)
+                                    
+                                    # Calculate metrics on full dataset
+                                    full_metrics = evaluate(y, y_pred_full, squared=True)
+                                    
+                                    # Create dummy evaluation results for consistency
+                                    evaluation_results = {'Fold': ['Full-Dataset'], 'R2': [full_metrics['R2']], 
+                                                         'FSD': [full_metrics['FSD']], 'PE10': [full_metrics['PE10']], 'RT20': [full_metrics['RT20']]}
+                                    evaluation_df = pd.DataFrame(evaluation_results)
+                                    train_results_df = pd.DataFrame({'R2': [full_metrics['R2']], 'FSD': [full_metrics['FSD']], 
+                                                                   'PE10': [full_metrics['PE10']], 'RT20': [full_metrics['RT20']]})
+                                    
+                                    final_model = ols_model
+                                    global_train_metrics = full_metrics
+                                    global_test_metrics = full_metrics
+                                    y_test_last = y
+                                    y_pred_last = y_pred_full
+                                    is_log_transformed = ('ln_' in ml_y_column) or ('log_' in ml_y_column.lower())
                                 
                                 # Store results
                                 all_results[model_name] = {
@@ -3628,34 +3799,39 @@ elif st.session_state.processing_step == 'advanced':
                         
                         # Model downloads - FIXED: True one-click download all
                         st.markdown("### 💾 Download All Trained Models")
+                        st.info("📋 Note: OLS model is for comparison only and not included in downloads")
                         
-                        # User input for individual PKL filenames
-                        st.markdown("**📝 Customize Model Filenames:**")
-                        col1, col2, col3 = st.columns(3)
+                        # Filter out OLS from downloads
+                        downloadable_results = {k: v for k, v in all_results.items() if k != 'OLS'}
                         
-                        with col1:
-                            rf_filename = st.text_input(
-                                "Random Forest filename", 
-                                value=f"random_forest_model_{timestamp}",
-                                placeholder="Enter filename (without .pkl)",
-                                key=f"rf_filename_{timestamp}"
-                            )
-                        
-                        with col2:
-                            gbdt_filename = st.text_input(
-                                "Gradient Boosting filename", 
-                                value=f"gradient_boosting_model_{timestamp}",
-                                placeholder="Enter filename (without .pkl)",
-                                key=f"gbdt_filename_{timestamp}"
-                            )
-                        
-                        with col3:
-                            rerf_filename = st.text_input(
-                                "RERF filename", 
-                                value=f"rerf_model_{timestamp}",
-                                placeholder="Enter filename (without .pkl)",
-                                key=f"rerf_filename_{timestamp}"
-                            )
+                        # User input for individual PKL filenames (exclude OLS)
+                        if downloadable_results:
+                            st.markdown("**📝 Customize Model Filenames:**")
+                            col1, col2, col3 = st.columns(3)
+                            
+                            with col1:
+                                rf_filename = st.text_input(
+                                    "Random Forest filename", 
+                                    value=f"random_forest_model_{timestamp}",
+                                    placeholder="Enter filename (without .pkl)",
+                                    key=f"rf_filename_{timestamp}"
+                                )
+                            
+                            with col2:
+                                gbdt_filename = st.text_input(
+                                    "Gradient Boosting filename", 
+                                    value=f"gradient_boosting_model_{timestamp}",
+                                    placeholder="Enter filename (without .pkl)",
+                                    key=f"gbdt_filename_{timestamp}"
+                                )
+                            
+                            with col3:
+                                rerf_filename = st.text_input(
+                                    "RERF filename", 
+                                    value=f"rerf_model_{timestamp}",
+                                    placeholder="Enter filename (without .pkl)",
+                                    key=f"rerf_filename_{timestamp}"
+                                )
                                 
                         # Prepare ZIP file with all models
                         try:
@@ -3667,7 +3843,7 @@ elif st.session_state.processing_step == 'advanced':
                             
                             with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
                                 # Add each model to ZIP
-                                for model_name, result in all_results.items():
+                                for model_name, result in downloadable_results.items():
                                     # Prepare model data
                                     model_data = {
                                         'model': result['model'],
@@ -3694,12 +3870,13 @@ elif st.session_state.processing_step == 'advanced':
                                     'target_variable': ml_y_column,
                                     'feature_names': ml_x_columns,
                                     'feature_count': len(ml_x_columns),
-                                    'models_trained': list(all_results.keys()),
+                                    'models_trained': list(downloadable_results.keys()),  # Use downloadable_results instead of all_results
                                     'cross_validation': {
                                         'n_splits': n_splits,
                                         'random_state': random_state,
                                         'group_column': group_column if use_group else None
                                     },
+                                    'categorical_encodings': st.session_state.get('categorical_encodings', None),  # Add this line
                                     'performance_summary': {
                                         model_name: {
                                             'test_r2': result['global_test_metrics']['R2'],
@@ -3707,7 +3884,7 @@ elif st.session_state.processing_step == 'advanced':
                                             'test_rt20': result['global_test_metrics']['RT20'],
                                             'test_fsd': result['global_test_metrics']['FSD']
                                         }
-                                        for model_name, result in all_results.items()
+                                        for model_name, result in downloadable_results.items()  # Use downloadable_results
                                     }
                                 }
                                 
