@@ -1039,17 +1039,8 @@ class RealEstateAnalyzer:
             final_model = algorithm.fit(X_full, y_full)
 
             # For comparison graph, use last fold test data with full-trained model
-            if last_test_idx is not None:
-                X_test_last = df_model.iloc[last_test_idx][X]
-                y_test_last = df_model.iloc[last_test_idx][y]
-                y_pred_last = final_model.predict(X_test_last)
-            else:
-                # Fallback: use sample of full dataset
-                sample_size = min(1000, len(y_full))
-                sample_idx = np.random.choice(len(y_full), sample_size, replace=False)
-                X_test_last = X_full.iloc[sample_idx]
-                y_test_last = y_full.iloc[sample_idx]
-                y_pred_last = final_model.predict(X_test_last)
+            y_test_last = y_full
+            y_pred_last = final_model.predict(X_full)
 
             for metric in global_train_metrics.keys():
                 global_train_metrics[metric] /= n_splits
@@ -3254,11 +3245,13 @@ elif st.session_state.processing_step == 'advanced':
                 
                 # FIXED: Train final models on FULL dataset (not just last fold)
                 # This ensures deployed models are trained on all available data
+                # Train Linear Regression with constant
+                X_with_const = sm.add_constant(X)
                 final_linear_model = LinearRegression()
-                final_linear_model.fit(X, y)
-                
+                final_linear_model.fit(X_with_const, y)
+
                 # Get linear predictions on full dataset
-                linear_pred_full = final_linear_model.predict(X)
+                linear_pred_full = final_linear_model.predict(X_with_const)
                 
                 # Calculate residuals on full dataset
                 residuals_full = y - linear_pred_full
@@ -3277,13 +3270,11 @@ elif st.session_state.processing_step == 'advanced':
                 # For comparison graph, use last fold's test data
                 if group_column is None and last_test_idx is not None:
                     # Use last fold from standard CV
-                    y_test_last = y.iloc[last_test_idx]
-                    
-                    # Make predictions for comparison graph using full-trained models
-                    X_test_last = X.iloc[last_test_idx]
-                    lr_pred_test_last = final_linear_model.predict(X_test_last)
-                    rf_pred_residuals_test_last = final_rf_model.predict(X_test_last)
-                    rerf_pred_last = lr_pred_test_last + rf_pred_residuals_test_last
+                    y_test_last = y
+                    X_with_const = sm.add_constant(X)
+                    lr_pred_full = final_linear_model.predict(X_with_const)
+                    rf_pred_residuals_full = final_rf_model.predict(X)
+                    rerf_pred_last = lr_pred_full + rf_pred_residuals_full
                     
                 elif group_column is not None and last_group_test_data is not None:
                     # Use last fold from group-based CV  
@@ -3800,16 +3791,17 @@ elif st.session_state.processing_step == 'advanced':
                                     )
                                 
                                 elif model_config['type'] == 'ols':
-                                    # OLS implementation - train on full dataset
+                                    # OLS implementation - train on full dataset with constant (match OLS section)
                                     model_vars = [ml_y_column] + ml_x_columns
                                     df_model = analyzer.current_data[model_vars].dropna()
                                     X = df_model[ml_x_columns]
                                     y = df_model[ml_y_column]
                                     
-                                    # Train on full dataset
-                                    ols_model = model_config['model']
-                                    ols_model.fit(X, y)
-                                    y_pred_full = ols_model.predict(X)
+                                    # Add constant and train on full dataset
+                                    X_with_const = sm.add_constant(X)
+                                    ols_model = LinearRegression()
+                                    ols_model.fit(X_with_const, y)
+                                    y_pred_full = ols_model.predict(X_with_const)
                                     
                                     # Calculate metrics on full dataset
                                     full_metrics = evaluate(y, y_pred_full, squared=True)
