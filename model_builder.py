@@ -506,20 +506,21 @@ class RealEstateAnalyzer:
     
     def clean_data(self, cleaning_options):
         """
-        Perform basic cleaning (duplicates, missing) and then
-        remove outliers via the detect_outliers method.
+        Applies basic cleaning (dedupe, missing‐value fill) and then, optionally,
+        group‐wise outlier removal via detect_outliers.
         """
         if self.current_data is None:
             return False, "No data to clean"
 
         try:
-            # Step 1: do cached duplicate removal & missing‐value handling
+            # 1) Basic cleaning (cached, no self reference)
             cleaned_df = cached_clean_data(self.current_data, cleaning_options)
 
-            # Step 2: if requested, detect & drop outliers
+            # 2) Outlier removal (only if requested)
             if cleaning_options.get('remove_outliers', False) and cleaning_options.get('outlier_column'):
                 group_col = cleaning_options['outlier_column']
-                # flag outliers
+
+                # run your detect_outliers (self is defined here)
                 flagged = self.detect_outliers(
                     cleaned_df,
                     id_col='id',
@@ -529,7 +530,8 @@ class RealEstateAnalyzer:
                     p90_quantile=cleaning_options.get('p90_quantile', 0.9),
                     skew_threshold=cleaning_options.get('skew_threshold', 0.5)
                 )
-                # keep only non-outliers
+
+                # drop the outliers and the helper columns
                 cleaned_df = (
                     flagged
                     .loc[flagged['is_outlier'] == 0]
@@ -537,7 +539,7 @@ class RealEstateAnalyzer:
                     .copy()
                 )
 
-            # Step 3: commit cleaned data
+            # 3) Commit back to session state
             self.current_data = cleaned_df
             if 'st' in globals():
                 st.session_state.data_changed = True
@@ -545,7 +547,9 @@ class RealEstateAnalyzer:
             return True, f"Cleaned data: {len(self.current_data)} properties remaining"
 
         except Exception as e:
+            # Return False so Streamlit shows st.error(message)
             return False, f"Data cleaning failed: {str(e)}"
+
 
 
     
