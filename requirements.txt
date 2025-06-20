@@ -16,3 +16,4 @@ xlsxwriter
 skl2onnx
 onnx
 onnxruntime
+pygwalker
