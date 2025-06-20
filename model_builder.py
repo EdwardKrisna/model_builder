@@ -3791,17 +3791,16 @@ elif st.session_state.processing_step == 'advanced':
                                     )
                                 
                                 elif model_config['type'] == 'ols':
-                                    # OLS implementation - train on full dataset with constant (match OLS section)
+                                    # OLS implementation - use statsmodels to match OLS section exactly
                                     model_vars = [ml_y_column] + ml_x_columns
                                     df_model = analyzer.current_data[model_vars].dropna()
                                     X = df_model[ml_x_columns]
                                     y = df_model[ml_y_column]
                                     
-                                    # Add constant and train on full dataset
+                                    # Add constant and use statsmodels OLS (same as OLS section)
                                     X_with_const = sm.add_constant(X)
-                                    ols_model = LinearRegression()
-                                    ols_model.fit(X_with_const, y)
-                                    y_pred_full = ols_model.predict(X_with_const)
+                                    ols_model = sm.OLS(y, X_with_const).fit(cov_type='HC3')
+                                    y_pred_full = ols_model.fittedvalues
                                     
                                     # Calculate metrics on full dataset
                                     full_metrics = evaluate(y, y_pred_full, squared=True)
