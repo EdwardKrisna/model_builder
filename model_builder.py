@@ -251,27 +251,28 @@ def cached_clean_data(df, cleaning_options):
                 cleaned_df[categorical_cols] = cleaned_df[categorical_cols].fillna(modes)
         
         # Remove outliers (optimized)
-        if cleaning_options.get('remove_outliers', False):
-            hpm_threshold = cleaning_options.get('hpm_threshold')
-            group_column = cleaning_options.get('group_column')
-            zscore_threshold = cleaning_options.get('zscore_threshold')
+        if cleaning_options.get('remove_outliers', False) and cleaning_options.get('group_column'):
+            group_col = cleaning_options['group_column']
             
-            if hpm_threshold and group_column and zscore_threshold:
-                if 'hpm' in cleaned_df.columns and 'id' in cleaned_df.columns and group_column in cleaned_df.columns:
-                    initial_count = len(cleaned_df)
-                    
-                    # Use the analyzer's outlier removal method
-                    from types import SimpleNamespace
-                    temp_analyzer = SimpleNamespace()
-                    temp_analyzer.analyze_high_hpm_values = lambda df, threshold, group_col, hpm_col: analyzer.analyze_high_hpm_values(df, threshold, group_col, hpm_col)
-                    temp_analyzer.remove_high_hpm_outliers = lambda df, threshold, group_col, hpm_col, zscore: analyzer.remove_high_hpm_outliers(df, threshold, group_col, hpm_col, zscore)
-                    
-                    cleaned_df = analyzer.remove_high_hpm_outliers(
-                        cleaned_df, hpm_threshold, group_column, 'hpm', zscore_threshold
-                    )
-                    
-                    removed_count = initial_count - len(cleaned_df)
-                    print(f"Removed {removed_count} HPM outliers (threshold: {hpm_threshold:,}, z-score: {zscore_threshold})")
+            # Use analyzer method instead of standalone function
+            # Note: We need to temporarily set the data for the method
+            temp_data = analyzer.current_data
+            analyzer.current_data = cleaned_df
+            
+            success, message = analyzer.detect_outliers_iqr_per_group(
+                group_column=group_col, 
+                value_column='hpm', 
+                id_col='id'
+            )
+            
+            if success:
+                cleaned_df = analyzer.current_data
+                print(message)
+            else:
+                print(f"Outlier removal failed: {message}")
+            
+            # Restore original data reference
+            analyzer.current_data = temp_data
         
         return cleaned_df
         
@@ -507,111 +508,6 @@ class RealEstateAnalyzer:
             return True, f"Cleaned data: {len(self.current_data)} properties remaining"
         except Exception as e:
             return False, str(e)
-    
-    def analyze_high_hpm_values(self, df, threshold, group_column='wadmkc', hpm_column='hpm'):
-        """
-        Analyze HPM values above a specified threshold within the context of their group,
-        excluding the high values and NaN values from group statistics calculations.
-        """
-        # Check if the DataFrame is empty or if all relevant values are NaN
-        if df.empty or df[[group_column, hpm_column]].isna().all().all():
-            return pd.DataFrame()
-        
-        # Remove rows with NaN values in the hpm column
-        df_clean = df.dropna(subset=[hpm_column])
-        if df_clean.empty:
-            return pd.DataFrame()
-        
-        # Filter high HPM values
-        high_hpm = df_clean[df_clean[hpm_column] > threshold].copy()
-        if high_hpm.empty:
-            return pd.DataFrame()
-        
-        # Create a DataFrame for calculating group statistics, excluding high values
-        df_for_stats = df_clean[df_clean[hpm_column] <= threshold].copy()
-        
-        # Group statistics (excluding high values)
-        group_stats = df_for_stats.groupby(group_column)[hpm_column].agg([
-            ('mean', 'mean'),
-            ('median', 'median'),
-            ('std', 'std'),
-            ('min', 'min'),
-            ('max', 'max'),
-            ('count', 'count')
-        ]).reset_index()
-        
-        # Add total count including high values
-        total_counts = df_clean.groupby(group_column)[hpm_column].count().reset_index(name='total_count')
-        group_stats = pd.merge(group_stats, total_counts, on=group_column, how='outer')
-        
-        # Handle NaN values in group statistics
-        group_stats.fillna({
-            'mean': 0,
-            'median': 0,
-            'std': 0,
-            'min': 0,
-            'max': 0,
-            'count': 0,
-            'total_count': 0
-        }, inplace=True)
-        
-        # Merge high HPM values with group statistics
-        result = pd.merge(high_hpm, group_stats, on=group_column, how='left')
-        
-        # Calculate z-score and percentile
-        result['z_score'] = (result[hpm_column] - result['mean']) / result['std'].replace(0, float('nan'))
-        result['percentile'] = result.groupby(group_column)[hpm_column].rank(pct=True)
-        
-        # Calculate how many times higher the HPM is compared to the group mean
-        result['times_higher_than_mean'] = result[hpm_column] / result['mean'].replace(0, float('nan'))
-        
-        # Sort by HPM value descending
-        result = result.sort_values(by=hpm_column, ascending=False)
-        
-        # Select and rename columns for clarity
-        columns = [
-            group_column, hpm_column, 'z_score', 'percentile', 'times_higher_than_mean',
-            'mean', 'median', 'std', 'min', 'max', 'count', 'total_count', 'id'
-        ]
-        column_names = {
-            hpm_column: 'HPM',
-            'mean': 'Group_Mean_Excl_High',
-            'median': 'Group_Median_Excl_High',
-            'std': 'Group_Std_Excl_High',
-            'min': 'Group_Min_Excl_High',
-            'max': 'Group_Max_Excl_High',
-            'count': 'Group_Count_Excl_High',
-            'total_count': 'Group_Total_Count',
-            'id': 'id'
-        }
-        result = result[columns].rename(columns=column_names)
-        
-        # Drop rows with NaN values in the final result
-        result.dropna(inplace=True)
-        
-        return result
-
-    def remove_high_hpm_outliers(self, df, threshold, group_column='wadmkc', hpm_column='hpm', zscore_threshold=2):
-        """
-        Remove rows where HPM is above threshold and z-score exceeds zscore_threshold.
-        """
-        # Step 1: Analyze high HPM values and get z-scores
-        outliers_info = self.analyze_high_hpm_values(df, threshold, group_column, hpm_column)
-        if outliers_info.empty:
-            return df.copy()
-        
-        # Step 2: Filter out rows with z_score > threshold
-        outliers_to_remove = outliers_info[outliers_info['z_score'] > zscore_threshold]
-        if outliers_to_remove.empty:
-            return df.copy()
-        
-        # Step 3: Get IDs of outlier rows
-        outlier_ids = outliers_to_remove['id'].tolist()
-        
-        # Step 4: Remove outlier rows from original df
-        df_clean = df[~df['id'].isin(outlier_ids)].copy()
-        
-        return df_clean
 
     
     def apply_transformations(self, transformations):
@@ -887,6 +783,87 @@ class RealEstateAnalyzer:
         except Exception as e:
             st.error(f"Failed to load {column} options: {str(e)}")
             return []
+    
+    def detect_outliers_iqr_per_group(self, group_column='wadmkc', value_column='hpm', id_col='id',
+                                     lower_multiplier=1.5, upper_multiplier=1.5):
+        """
+        Detect outliers using IQR method per group
+        """
+        if self.current_data is None:
+            return False, "No data available"
+        
+        # Validate required columns
+        required_cols = [value_column, id_col, group_column]
+        missing_cols = [col for col in required_cols if col not in self.current_data.columns]
+        if missing_cols:
+            return False, f"Missing required columns: {missing_cols}"
+        
+        try:
+            import numpy as np
+            
+            df = self.current_data.copy()
+            lower_bounds = {}
+            upper_bounds = {}
+            outlier_ids = []
+            total_groups = 0
+            
+            # Loop per group
+            for group, group_df in df.groupby(group_column):
+                total_groups += 1
+                q1 = np.percentile(group_df[value_column], 25)
+                q3 = np.percentile(group_df[value_column], 75)
+                iqr = q3 - q1
+                
+                # Calculate fences
+                lower_fence = q1 - lower_multiplier * iqr
+                upper_fence = q3 + upper_multiplier * iqr
+                
+                # Detect lower outliers
+                lower_outliers = group_df[group_df[value_column] < lower_fence]
+                if lower_outliers.empty:
+                    lower_fence = None  # No lower outliers in this group
+                
+                # Detect upper outliers
+                upper_outliers = group_df[group_df[value_column] > upper_fence]
+                if upper_outliers.empty:
+                    upper_fence = None  # No upper outliers in this group
+                
+                # Save fences per group for reference
+                lower_bounds[group] = lower_fence
+                upper_bounds[group] = upper_fence
+                
+                # Collect outlier ids
+                if not lower_outliers.empty:
+                    outlier_ids.extend(lower_outliers[id_col].tolist())
+                if not upper_outliers.empty:
+                    outlier_ids.extend(upper_outliers[id_col].tolist())
+            
+            # Map fences back to dataframe rows by group
+            df['lower_border'] = df[group_column].map(lower_bounds)
+            df['upper_border'] = df[group_column].map(upper_bounds)
+            
+            # Flag outliers using calculated fences
+            def is_outlier(row):
+                if row['lower_border'] is not None and row[value_column] < row['lower_border']:
+                    return 1
+                if row['upper_border'] is not None and row[value_column] > row['upper_border']:
+                    return 1
+                return 0
+            
+            df['is_outlier'] = df.apply(is_outlier, axis=1)
+            
+            # Remove outliers and clean up temporary columns
+            cleaned_df = df[df['is_outlier'] == 0].copy()
+            cleaned_df = cleaned_df.drop(columns=['lower_border', 'upper_border', 'is_outlier'])
+            
+            # Update current data
+            self.current_data = cleaned_df
+            outlier_count = len(outlier_ids)
+            
+            return True, f"Removed {outlier_count} outliers across {total_groups} groups using IQR method"
+            
+        except Exception as e:
+            return False, f"Outlier removal failed: {str(e)}"
 
     def apply_label_encoding(self, column):    
         """Apply label encoding to a column"""
@@ -2289,67 +2266,42 @@ elif st.session_state.processing_step == 'clean':
         
         with col2:
             st.markdown("**Outlier Removal:**")
-            remove_outliers = st.checkbox("Remove HPM outliers", value=False)
-            
+            remove_outliers = st.checkbox("Remove outliers (IQR method)", value=False)
+            group_column = None
+
             if remove_outliers:
-                # Check if required columns exist
-                has_hpm = 'hpm' in analyzer.current_data.columns
-                has_id = 'id' in analyzer.current_data.columns
+                st.info("🎯 Outlier detection on 'hpm' column using IQR method")
                 
-                if not has_hpm:
-                    st.error("❌ 'hpm' column not found in dataset")
-                    remove_outliers = False
-                elif not has_id:
-                    st.error("❌ 'id' column not found in dataset")
+                # Validate required columns
+                required_cols = ['hpm', 'id']
+                missing_cols = [col for col in required_cols if col not in analyzer.current_data.columns]
+                
+                if missing_cols:
+                    st.error(f"❌ Missing required columns: {missing_cols}")
                     remove_outliers = False
                 else:
-                    # Auto-detect available group columns
-                    group_options = []
-                    if 'wadmkc' in analyzer.current_data.columns:
-                        group_options.append('wadmkc')
-                    if 'wadmkd' in analyzer.current_data.columns:
-                        group_options.append('wadmkd')
+                    # Group column selection (only wadmkc and wadmkd)
+                    available_group_cols = []
+                    for col in ['wadmkc', 'wadmkd']:
+                        if col in analyzer.current_data.columns:
+                            available_group_cols.append(col)
                     
-                    if not group_options:
-                        st.error("❌ No 'wadmkc' or 'wadmkd' columns found")
+                    if not available_group_cols:
+                        st.error("❌ No valid group columns found. Need 'wadmkc' or 'wadmkd'")
                         remove_outliers = False
                     else:
-                        col2a, col2b, col2c = st.columns(3)
-                        
-                        with col2a:
-                            hpm_threshold = st.number_input(
-                                "HPM Threshold",
-                                min_value=1000000,
-                                max_value=100000000,
-                                value=10000000,
-                                step=1000000,
-                                help="HPM values above this will be checked for outliers"
-                            )
-                        
-                        with col2b:
-                            group_column = st.selectbox(
-                                "Group by",
-                                group_options,
-                                index=0,
-                                help="Geographic level for outlier detection"
-                            )
-                        
-                        with col2c:
-                            zscore_threshold = st.selectbox(
-                                "Z-score threshold",
-                                [1, 1.5, 2, 2.5, 3],
-                                index=2,  # Default to 2
-                                help="Higher values = more lenient outlier detection"
-                            )
+                        group_column = st.selectbox(
+                            "Group column for outlier detection", 
+                            available_group_cols,
+                            help="Choose geographic level for group-wise outlier detection"
+                        )
 
         # Cleaning options dictionary
         cleaning_options = {
             'remove_duplicates': remove_duplicates,
             'handle_missing': handle_missing,
             'remove_outliers': remove_outliers,
-            'hpm_threshold': hpm_threshold if remove_outliers else None,
-            'group_column': group_column if remove_outliers else None,
-            'zscore_threshold': zscore_threshold if remove_outliers else None
+            'outlier_column': outlier_column
         }
         
         # Apply cleaning button
