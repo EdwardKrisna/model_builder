@@ -3967,7 +3967,7 @@ elif st.session_state.processing_step == 'advanced':
                                     y_actual = y
                                     
                                     # Calculate metrics using the same evaluate function
-                                    full_metrics = evaluate(y_actual, y_pred_full, squared=True)
+                                    full_metrics = evaluate(y_actual, y_pred_full, squared=False)
                                     
                                     # Create evaluation results for consistency with other models
                                     # OLS doesn't use cross-validation, so we only have full dataset results
