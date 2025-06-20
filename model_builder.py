@@ -523,7 +523,7 @@ class RealEstateAnalyzer:
 
                 # flag outliers
                 flagged = self.detect_outliers(
-                    cleaned_df,
+                    cleaned_df.copy(),
                     id_col='id',
                     group_column=group_col,
                     value_column='hpm',
@@ -862,7 +862,9 @@ class RealEstateAnalyzer:
         import numpy as np
         import math
         from scipy.stats import skew
-
+        
+        df = df.copy()
+        
         top_border = {'group': [], 'upper_value': []}
         lower_border = {'group': [], 'lower_value': []}
         outlier_ids = []
