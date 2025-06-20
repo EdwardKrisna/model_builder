@@ -1983,157 +1983,157 @@ elif st.session_state.processing_step == 'filter':
             st.info("No manual filters applied - use quick filters above or add manual filters below")
 
         
-        # Map Visualization (Only after filtering)
-        if st.session_state.get('filter_applied', False) or len(analyzer.current_data) < len(analyzer.original_data):
-            st.markdown("---")
-            st.markdown("### 🗺️ Property Location Map")
-            
-            # Check for latitude and longitude columns
-            lat_col = None
-            lon_col = None
-            
-            for col in analyzer.current_data.columns:
-                col_lower = col.lower()
-                if 'lat' in col_lower and not lat_col:
-                    lat_col = col
-                elif any(term in col_lower for term in ['lon', 'lng']) and not lon_col:
-                    lon_col = col
-            
-            if lat_col and lon_col and 'hpm' in analyzer.current_data.columns:
-                if st.button("🗺️ Show Property Map", type="secondary"):
-                    try:
-                        # Prepare map data - include all geographic columns if available
-                        map_columns = [lat_col, lon_col, 'hpm']
-                        geo_cols = {}
+        # # Map Visualization (Only after filtering)
+        # if st.session_state.get('filter_applied', False) or len(analyzer.current_data) < len(analyzer.original_data):
+        st.markdown("---")
+        st.markdown("### 🗺️ Property Location Map")
+        
+        # Check for latitude and longitude columns
+        lat_col = None
+        lon_col = None
+        
+        for col in analyzer.current_data.columns:
+            col_lower = col.lower()
+            if 'lat' in col_lower and not lat_col:
+                lat_col = col
+            elif any(term in col_lower for term in ['lon', 'lng']) and not lon_col:
+                lon_col = col
+        
+        if lat_col and lon_col and 'hpm' in analyzer.current_data.columns:
+            if st.button("🗺️ Show Property Map", type="secondary"):
+                try:
+                    # Prepare map data - include all geographic columns if available
+                    map_columns = [lat_col, lon_col, 'hpm']
+                    geo_cols = {}
+                    
+                    # Find all geographic columns
+                    for geo_type in ['wadmpr', 'wadmkk', 'wadmkc', 'wadmkd']:
+                        for col in analyzer.current_data.columns:
+                            if geo_type in col:
+                                geo_cols[geo_type] = col
+                                map_columns.append(col)
+                                break
+                    
+                    map_data = analyzer.current_data[map_columns].copy()
+                    map_data = map_data.dropna()
+                    
+                    # Convert to numeric
+                    map_data[lat_col] = pd.to_numeric(map_data[lat_col], errors='coerce')
+                    map_data[lon_col] = pd.to_numeric(map_data[lon_col], errors='coerce')
+                    map_data['hpm'] = pd.to_numeric(map_data['hpm'], errors='coerce')
+                    
+                    # Remove invalid coordinates
+                    map_data = map_data.dropna()
+                    map_data = map_data[
+                        (map_data[lat_col] >= -90) & (map_data[lat_col] <= 90) &
+                        (map_data[lon_col] >= -180) & (map_data[lon_col] <= 180)
+                    ]
+                    
+                    if not map_data.empty:
+                        # Create quantiles for HPM
+                        map_data['hpm_quantile'] = pd.qcut(map_data['hpm'], q=5, labels=['Q1', 'Q2', 'Q3', 'Q4', 'Q5'])
                         
-                        # Find all geographic columns
-                        for geo_type in ['wadmpr', 'wadmkk', 'wadmkc', 'wadmkd']:
-                            for col in analyzer.current_data.columns:
-                                if geo_type in col:
-                                    geo_cols[geo_type] = col
-                                    map_columns.append(col)
-                                    break
+                        # Color mapping (Viridis)
+                        color_map = {
+                            'Q1': '#440154',  # Dark purple
+                            'Q2': '#31688e',  # Dark blue
+                            'Q3': '#35b779',  # Green
+                            'Q4': '#fde725',  # Yellow
+                            'Q5': '#dcf44c'   # Light yellow
+                        }
                         
-                        map_data = analyzer.current_data[map_columns].copy()
-                        map_data = map_data.dropna()
+                        map_data['color'] = map_data['hpm_quantile'].map(color_map)
                         
-                        # Convert to numeric
-                        map_data[lat_col] = pd.to_numeric(map_data[lat_col], errors='coerce')
-                        map_data[lon_col] = pd.to_numeric(map_data[lon_col], errors='coerce')
-                        map_data['hpm'] = pd.to_numeric(map_data['hpm'], errors='coerce')
+                        # Create the map
+                        fig = go.Figure()
                         
-                        # Remove invalid coordinates
-                        map_data = map_data.dropna()
-                        map_data = map_data[
-                            (map_data[lat_col] >= -90) & (map_data[lat_col] <= 90) &
-                            (map_data[lon_col] >= -180) & (map_data[lon_col] <= 180)
-                        ]
-                        
-                        if not map_data.empty:
-                            # Create quantiles for HPM
-                            map_data['hpm_quantile'] = pd.qcut(map_data['hpm'], q=5, labels=['Q1', 'Q2', 'Q3', 'Q4', 'Q5'])
-                            
-                            # Color mapping (Viridis)
-                            color_map = {
-                                'Q1': '#440154',  # Dark purple
-                                'Q2': '#31688e',  # Dark blue
-                                'Q3': '#35b779',  # Green
-                                'Q4': '#fde725',  # Yellow
-                                'Q5': '#dcf44c'   # Light yellow
-                            }
-                            
-                            map_data['color'] = map_data['hpm_quantile'].map(color_map)
-                            
-                            # Create the map
-                            fig = go.Figure()
-                            
-                            # Add points for each quantile
-                            for quantile in ['Q1', 'Q2', 'Q3', 'Q4', 'Q5']:
-                                quantile_data = map_data[map_data['hpm_quantile'] == quantile]
-                                if not quantile_data.empty:
-                                    # Create tooltip text for THIS quantile's data only
-                                    tooltip_text = []
-                                    for idx, row in quantile_data.iterrows():
-                                        tooltip = f"HPM: {row['hpm']:,.0f}<br>Quantile: {quantile}"
-                                        
-                                        # Add geographic info if available
-                                        if 'wadmpr' in geo_cols:
-                                            prov = row[geo_cols['wadmpr']] if geo_cols['wadmpr'] in row else 'N/A'
-                                            tooltip += f"<br>Province: {prov}"
-                                        
-                                        if 'wadmkk' in geo_cols:
-                                            regency = row[geo_cols['wadmkk']] if geo_cols['wadmkk'] in row else 'N/A'
-                                            tooltip += f"<br>Regency: {regency}"
-                                        
-                                        if 'wadmkc' in geo_cols:
-                                            district = row[geo_cols['wadmkc']] if geo_cols['wadmkc'] in row else 'N/A'
-                                            tooltip += f"<br>District: {district}"
-                                        
-                                        if 'wadmkd' in geo_cols:
-                                            village = row[geo_cols['wadmkd']] if geo_cols['wadmkd'] in row else 'N/A'
-                                            tooltip += f"<br>Village: {village}"
-                                        
-                                        tooltip_text.append(tooltip)
+                        # Add points for each quantile
+                        for quantile in ['Q1', 'Q2', 'Q3', 'Q4', 'Q5']:
+                            quantile_data = map_data[map_data['hpm_quantile'] == quantile]
+                            if not quantile_data.empty:
+                                # Create tooltip text for THIS quantile's data only
+                                tooltip_text = []
+                                for idx, row in quantile_data.iterrows():
+                                    tooltip = f"HPM: {row['hpm']:,.0f}<br>Quantile: {quantile}"
                                     
-                                    fig.add_trace(go.Scattermapbox(
-                                        lat=quantile_data[lat_col],
-                                        lon=quantile_data[lon_col],
-                                        mode='markers',
-                                        marker=dict(
-                                            size=8,
-                                            color=color_map[quantile],
-                                            opacity=0.8
-                                        ),
-                                        text=tooltip_text,
-                                        hovertemplate='<b>%{text}</b><extra></extra>',
-                                        name=f'{quantile} (HPM: {quantile_data["hpm"].min():,.0f} - {quantile_data["hpm"].max():,.0f})'
-                                    ))
-                            
-                            # Map layout
-                            center_lat = map_data[lat_col].mean()
-                            center_lon = map_data[lon_col].mean()
-                            
-                            fig.update_layout(
-                                mapbox=dict(
-                                    style="open-street-map",
-                                    center=dict(lat=center_lat, lon=center_lon),
-                                    zoom=10
-                                ),
-                                height=600,
-                                margin=dict(l=0, r=0, t=30, b=0),
-                                title=f"Property HPM Distribution - {len(map_data):,} properties (Quantiles, Viridis Colormap)",
-                                legend=dict(
-                                    yanchor="top",
-                                    y=0.99,
-                                    xanchor="left",
-                                    x=0.01
-                                )
-                            )
-                            
-                            st.plotly_chart(fig, use_container_width=True)
-                            
-                            # Map statistics
-                            col1, col2, col3, col4 = st.columns(4)
-                            with col1:
-                                st.metric("Properties Mapped", f"{len(map_data):,}")
-                            with col2:
-                                st.metric("HPM Range", f"{map_data['hpm'].min():,.0f} - {map_data['hpm'].max():,.0f}")
-                            with col3:
-                                st.metric("Median HPM", f"{map_data['hpm'].median():,.0f}")
-                            with col4:
-                                st.metric("Map Center", f"{center_lat:.3f}, {center_lon:.3f}")
-                            
-                            # Quantile statistics
-                            st.markdown("**HPM Quantile Statistics:**")
-                            quantile_stats = map_data.groupby('hpm_quantile')['hpm'].agg(['count', 'min', 'max', 'mean']).round(0)
-                            quantile_stats.columns = ['Count', 'Min HPM', 'Max HPM', 'Mean HPM']
-                            st.dataframe(quantile_stats, use_container_width=True)
-                            
-                        else:
-                            st.warning("No valid coordinate data available for mapping")
+                                    # Add geographic info if available
+                                    if 'wadmpr' in geo_cols:
+                                        prov = row[geo_cols['wadmpr']] if geo_cols['wadmpr'] in row else 'N/A'
+                                        tooltip += f"<br>Province: {prov}"
+                                    
+                                    if 'wadmkk' in geo_cols:
+                                        regency = row[geo_cols['wadmkk']] if geo_cols['wadmkk'] in row else 'N/A'
+                                        tooltip += f"<br>Regency: {regency}"
+                                    
+                                    if 'wadmkc' in geo_cols:
+                                        district = row[geo_cols['wadmkc']] if geo_cols['wadmkc'] in row else 'N/A'
+                                        tooltip += f"<br>District: {district}"
+                                    
+                                    if 'wadmkd' in geo_cols:
+                                        village = row[geo_cols['wadmkd']] if geo_cols['wadmkd'] in row else 'N/A'
+                                        tooltip += f"<br>Village: {village}"
+                                    
+                                    tooltip_text.append(tooltip)
+                                
+                                fig.add_trace(go.Scattermapbox(
+                                    lat=quantile_data[lat_col],
+                                    lon=quantile_data[lon_col],
+                                    mode='markers',
+                                    marker=dict(
+                                        size=8,
+                                        color=color_map[quantile],
+                                        opacity=0.8
+                                    ),
+                                    text=tooltip_text,
+                                    hovertemplate='<b>%{text}</b><extra></extra>',
+                                    name=f'{quantile} (HPM: {quantile_data["hpm"].min():,.0f} - {quantile_data["hpm"].max():,.0f})'
+                                ))
                         
-                    except Exception as e:
-                        st.error(f"Map generation failed: {str(e)}")
+                        # Map layout
+                        center_lat = map_data[lat_col].mean()
+                        center_lon = map_data[lon_col].mean()
+                        
+                        fig.update_layout(
+                            mapbox=dict(
+                                style="open-street-map",
+                                center=dict(lat=center_lat, lon=center_lon),
+                                zoom=10
+                            ),
+                            height=600,
+                            margin=dict(l=0, r=0, t=30, b=0),
+                            title=f"Property HPM Distribution - {len(map_data):,} properties (Quantiles, Viridis Colormap)",
+                            legend=dict(
+                                yanchor="top",
+                                y=0.99,
+                                xanchor="left",
+                                x=0.01
+                            )
+                        )
+                        
+                        st.plotly_chart(fig, use_container_width=True)
+                        
+                        # Map statistics
+                        col1, col2, col3, col4 = st.columns(4)
+                        with col1:
+                            st.metric("Properties Mapped", f"{len(map_data):,}")
+                        with col2:
+                            st.metric("HPM Range", f"{map_data['hpm'].min():,.0f} - {map_data['hpm'].max():,.0f}")
+                        with col3:
+                            st.metric("Median HPM", f"{map_data['hpm'].median():,.0f}")
+                        with col4:
+                            st.metric("Map Center", f"{center_lat:.3f}, {center_lon:.3f}")
+                        
+                        # Quantile statistics
+                        st.markdown("**HPM Quantile Statistics:**")
+                        quantile_stats = map_data.groupby('hpm_quantile')['hpm'].agg(['count', 'min', 'max', 'mean']).round(0)
+                        quantile_stats.columns = ['Count', 'Min HPM', 'Max HPM', 'Mean HPM']
+                        st.dataframe(quantile_stats, use_container_width=True)
+                        
+                    else:
+                        st.warning("No valid coordinate data available for mapping")
+                    
+                except Exception as e:
+                    st.error(f"Map generation failed: {str(e)}")
         
         else:
             st.info("Apply a filter first to enable map visualization")
