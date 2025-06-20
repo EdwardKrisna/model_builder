@@ -866,13 +866,13 @@ class RealEstateAnalyzer:
             return []
     
     def detect_outliers(self,
-                    df: pd.DataFrame,
-                    id_col: str,
-                    group_column: str,
-                    value_column: str,
-                    p10_quantile: float = 0.1,
-                    p90_quantile: float = 0.9,
-                    skew_threshold: float = 0.5) -> pd.DataFrame:
+                df: pd.DataFrame,
+                id_col: str,
+                group_column: str,
+                value_column: str,
+                p10_quantile: float = 0.1,
+                p90_quantile: float = 0.9,
+                skew_threshold: float = 0.5) -> pd.DataFrame:
         """
         Detects outliers in value data for each group in a given DataFrame.
 
@@ -903,56 +903,153 @@ class RealEstateAnalyzer:
         from scipy.stats import skew
         
         df = df.copy()
-
+        
+        # **FIX 1: Handle missing values upfront**
+        # Remove rows where key columns have NaN values
+        required_cols = [id_col, group_column, value_column]
+        original_count = len(df)
+        
+        # Check for missing values in required columns
+        missing_mask = df[required_cols].isnull().any(axis=1)
+        missing_count = missing_mask.sum()
+        
+        if missing_count > 0:
+            print(f"Warning: Removing {missing_count} rows with missing values in required columns")
+            df = df[~missing_mask].copy()
+        
+        if len(df) == 0:
+            print("Error: No valid data remaining after removing missing values")
+            # Return original DataFrame with outlier columns filled with 0
+            original_df = df.copy() if len(df) > 0 else pd.DataFrame()
+            if len(original_df) == 0:
+                return pd.DataFrame()
+            original_df['upper_border'] = np.nan
+            original_df['lower_border'] = np.nan
+            original_df['is_outlier'] = 0
+            return original_df
+        
+        # **FIX 2: Ensure numeric types**
+        try:
+            df[value_column] = pd.to_numeric(df[value_column], errors='coerce')
+            # Remove any rows that couldn't be converted to numeric
+            numeric_mask = df[value_column].notna()
+            df = df[numeric_mask].copy()
+            
+            if len(df) == 0:
+                print("Error: No valid numeric data in value column")
+                return pd.DataFrame()
+                
+        except Exception as e:
+            print(f"Error converting {value_column} to numeric: {e}")
+            return df
+        
         top_border = {'group': [], 'upper_value': []}
         lower_border = {'group': [], 'lower_value': []}
         outlier_ids = []
 
         # Loop through each unique group
-        for group in df[group_column].unique():
-            temp_df = df[df[group_column] == group]
-            values = temp_df[value_column].dropna()
+        unique_groups = df[group_column].dropna().unique()
+        
+        for group in unique_groups:
+            try:
+                temp_df = df[df[group_column] == group].copy()
+                values = temp_df[value_column].dropna()
 
-            if values.empty:
+                if len(values) < 5:  # **FIX 3: Minimum sample size check**
+                    print(f"Warning: Group '{group}' has only {len(values)} samples, skipping outlier detection")
+                    # Mark all as non-outliers for this group
+                    top_border['group'].append(group)
+                    top_border['upper_value'].append(np.inf)
+                    lower_border['group'].append(group)
+                    lower_border['lower_value'].append(-np.inf)
+                    continue
+
+                # **FIX 4: Handle edge cases in quantile calculation**
+                try:
+                    p10 = np.quantile(values, p10_quantile)
+                    p90 = np.quantile(values, p90_quantile)
+                    
+                    # Handle case where p10 == p90 (all values the same)
+                    if p10 == p90:
+                        print(f"Warning: Group '{group}' has no variance, skipping outlier detection")
+                        top_border['group'].append(group)
+                        top_border['upper_value'].append(np.inf)
+                        lower_border['group'].append(group)
+                        lower_border['lower_value'].append(-np.inf)
+                        continue
+                        
+                except Exception as e:
+                    print(f"Error calculating quantiles for group '{group}': {e}")
+                    continue
+
+                # Trim to between p10 and p90
+                trimmed = values[(values > p10) & (values < p90)]
+                if len(trimmed) == 0:
+                    print(f"Warning: No data between quantiles for group '{group}'")
+                    top_border['group'].append(group)
+                    top_border['upper_value'].append(np.inf)
+                    lower_border['group'].append(group)
+                    lower_border['lower_value'].append(-np.inf)
+                    continue
+
+                std = trimmed.std()
+                if std == 0 or np.isnan(std):
+                    print(f"Warning: No variance in trimmed data for group '{group}'")
+                    top_border['group'].append(group)
+                    top_border['upper_value'].append(np.inf)
+                    lower_border['group'].append(group)
+                    lower_border['lower_value'].append(-np.inf)
+                    continue
+
+                mean = trimmed.mean()
+                med = trimmed.median()
+                
+                # **FIX 5: Handle skewness calculation errors**
+                try:
+                    skewness = skew(trimmed, bias=True)
+                    if np.isnan(skewness):
+                        skewness = 0
+                except Exception:
+                    skewness = 0
+
+                # choose center
+                center = med if abs(skewness) > skew_threshold else mean
+
+                # **FIX 6: Safe ceiling operation**
+                try:
+                    lower_n = max(1, math.ceil((center - p10) / std))  # Ensure at least 1
+                    upper_n = max(1, math.ceil((p90 - center) / std))  # Ensure at least 1
+                except (ValueError, OverflowError):
+                    print(f"Warning: Error in ceiling calculation for group '{group}', using default values")
+                    lower_n = 2
+                    upper_n = 2
+
+                lower_val = center - lower_n * std
+                upper_val = center + upper_n * std
+
+                top_border['group'].append(group)
+                top_border['upper_value'].append(upper_val)
+                lower_border['group'].append(group)
+                lower_border['lower_value'].append(lower_val)
+
+                # collect outlier ids
+                group_outliers = temp_df[
+                    (temp_df[value_column] < lower_val) |
+                    (temp_df[value_column] > upper_val)
+                ][id_col].tolist()
+                outlier_ids.extend(group_outliers)
+
+            except Exception as e:
+                print(f"Error processing group '{group}': {e}")
                 continue
 
-            # 10th and 90th percentiles
-            p10 = np.quantile(values, p10_quantile)
-            p90 = np.quantile(values, p90_quantile)
-
-            # Trim to between p10 and p90
-            trimmed = values[(values > p10) & (values < p90)]
-            if trimmed.empty:
-                continue
-
-            std = trimmed.std()
-            if std == 0:
-                continue
-
-            mean = trimmed.mean()
-            med = trimmed.median()
-            skewness = skew(trimmed, bias=True)
-
-            # choose center
-            center = med if abs(skewness) > skew_threshold else mean
-
-            # compute borders (in units of std)
-            lower_n = math.ceil((center - p10) / std)
-            upper_n = math.ceil((p90 - center) / std)
-            lower_val = center - lower_n * std
-            upper_val = center + upper_n * std
-
-            top_border['group'].append(group)
-            top_border['upper_value'].append(upper_val)
-            lower_border['group'].append(group)
-            lower_border['lower_value'].append(lower_val)
-
-            # collect outlier ids
-            group_outliers = temp_df[
-                (temp_df[value_column] < lower_val) |
-                (temp_df[value_column] > upper_val)
-            ][id_col].tolist()
-            outlier_ids.extend(group_outliers)
+        # **FIX 7: Handle empty results**
+        if not top_border['group']:
+            print("Warning: No groups could be processed for outlier detection")
+            df['upper_border'] = np.inf
+            df['lower_border'] = -np.inf
+            df['is_outlier'] = 0
+            return df
 
         # build lookup dicts
         up_map = dict(zip(top_border['group'], top_border['upper_value']))
@@ -961,11 +1058,22 @@ class RealEstateAnalyzer:
         # annotate dataframe
         df['upper_border'] = df[group_column].map(up_map)
         df['lower_border'] = df[group_column].map(low_map)
-        df['is_outlier'] = df[id_col].apply(lambda x: 1 if x in outlier_ids else 0)
+        
+        # **FIX 8: Safe outlier marking**
+        df['is_outlier'] = 0  # Initialize all as non-outliers
+        if outlier_ids:
+            outlier_mask = df[id_col].isin(outlier_ids)
+            df.loc[outlier_mask, 'is_outlier'] = 1
+
+        # **FIX 9: Fill NaN values in border columns**
+        df['upper_border'] = df['upper_border'].fillna(np.inf)
+        df['lower_border'] = df['lower_border'].fillna(-np.inf)
 
         # summary
-        ratio = df['is_outlier'].mean()
-        print(f"Outliers flagged: {len(outlier_ids)} (ratio: {ratio:.2%})")
+        outlier_count = df['is_outlier'].sum()
+        total_count = len(df)
+        ratio = outlier_count / total_count if total_count > 0 else 0
+        print(f"Outliers flagged: {outlier_count} out of {total_count} (ratio: {ratio:.2%})")
 
         return df
 
@@ -2540,7 +2648,28 @@ elif st.session_state.processing_step == 'clean':
                         if st.button("🔍 Preview Outlier Detection", help="See how many outliers would be detected"):
                             with st.spinner("Analyzing outliers..."):
                                 try:
+                                    # **ENHANCED**: Better data validation before preview
                                     preview_df = analyzer.current_data.copy()
+                                    
+                                    # Check data quality
+                                    missing_hpm = preview_df['hpm'].isnull().sum()
+                                    missing_id = preview_df['id'].isnull().sum()
+                                    missing_group = preview_df[group_column].isnull().sum()
+                                    
+                                    if missing_hpm > 0:
+                                        st.warning(f"⚠️ Found {missing_hpm:,} missing values in 'hpm' column - these will be excluded")
+                                    if missing_id > 0:
+                                        st.warning(f"⚠️ Found {missing_id:,} missing values in 'id' column - these will be excluded")
+                                    if missing_group > 0:
+                                        st.warning(f"⚠️ Found {missing_group:,} missing values in '{group_column}' column - these will be excluded")
+                                    
+                                    # Check if we have enough data after cleaning
+                                    clean_data_count = len(preview_df.dropna(subset=['hpm', 'id', group_column]))
+                                    if clean_data_count < 10:
+                                        st.error(f"❌ Not enough clean data: only {clean_data_count} valid rows remaining")
+                                        st.stop()
+                                    
+                                    # Run outlier detection
                                     flagged_preview = analyzer.detect_outliers(
                                         preview_df,
                                         id_col='id',
@@ -2551,26 +2680,89 @@ elif st.session_state.processing_step == 'clean':
                                         skew_threshold=skew_threshold
                                     )
                                     
-                                    outliers_count = flagged_preview['is_outlier'].sum()
+                                    if flagged_preview.empty:
+                                        st.error("❌ Outlier detection returned empty results")
+                                        st.stop()
+                                    
+                                    outliers_count = int(flagged_preview['is_outlier'].sum())
                                     total_count = len(flagged_preview)
-                                    outlier_pct = (outliers_count / total_count) * 100
+                                    outlier_pct = (outliers_count / total_count) * 100 if total_count > 0 else 0
+                                    
+                                    # Display results
+                                    col1, col2, col3 = st.columns(3)
+                                    with col1:
+                                        st.metric("Total Records", f"{total_count:,}")
+                                    with col2:
+                                        st.metric("Outliers Found", f"{outliers_count:,}")
+                                    with col3:
+                                        st.metric("Outlier Rate", f"{outlier_pct:.1f}%")
                                     
                                     if outlier_pct > 50:
-                                        st.error(f"⚠️ High outlier rate: {outliers_count:,} outliers ({outlier_pct:.1f}%) detected")
-                                        st.warning("Consider adjusting parameters - this seems excessive")
+                                        st.error(f"⚠️ **High outlier rate**: {outliers_count:,} outliers ({outlier_pct:.1f}%) detected")
+                                        st.warning("🔧 **Suggestion**: Consider adjusting parameters - this seems excessive")
+                                        st.info("💡 Try increasing P10 (e.g., 0.05) or decreasing P90 (e.g., 0.95)")
                                     elif outlier_pct > 20:
-                                        st.warning(f"⚠️ Moderate outlier rate: {outliers_count:,} outliers ({outlier_pct:.1f}%) detected")
+                                        st.warning(f"⚠️ **Moderate outlier rate**: {outliers_count:,} outliers ({outlier_pct:.1f}%) detected")
+                                        st.info("This is acceptable but consider if it matches your expectations")
                                     else:
-                                        st.success(f"✅ Normal outlier rate: {outliers_count:,} outliers ({outlier_pct:.1f}%) detected")
+                                        st.success(f"✅ **Normal outlier rate**: {outliers_count:,} outliers ({outlier_pct:.1f}%) detected")
                                     
                                     # Show sample outliers
                                     if outliers_count > 0:
-                                        st.markdown("**Sample outliers:**")
-                                        sample_outliers = flagged_preview[flagged_preview['is_outlier'] == 1][['id', group_column, 'hpm']].head(5)
+                                        st.markdown("**📋 Sample outliers (showing up to 10):**")
+                                        outlier_cols = ['id', group_column, 'hpm', 'upper_border', 'lower_border']
+                                        available_cols = [col for col in outlier_cols if col in flagged_preview.columns]
+                                        
+                                        sample_outliers = flagged_preview[flagged_preview['is_outlier'] == 1][available_cols].head(10)
                                         st.dataframe(sample_outliers, use_container_width=True)
+                                        
+                                        # Show distribution by group
+                                        if len(sample_outliers) > 0:
+                                            outlier_by_group = (
+                                                flagged_preview[flagged_preview['is_outlier'] == 1]
+                                                .groupby(group_column)
+                                                .size()
+                                                .sort_values(ascending=False)
+                                                .head(10)
+                                            )
+                                            st.markdown("**🏘️ Top groups with most outliers:**")
+                                            for group, count in outlier_by_group.items():
+                                                st.write(f"• **{group}**: {count} outliers")
+                                    else:
+                                        st.info("✅ No outliers detected with current parameters")
                                     
                                 except Exception as e:
-                                    st.error(f"Preview failed: {str(e)}")
+                                    st.error(f"❌ **Preview failed**: {str(e)}")
+                                    
+                                    # **ENHANCED**: Provide specific troubleshooting
+                                    if "NaN" in str(e):
+                                        st.info("💡 **Issue**: Missing values detected. Try handling missing values first in Basic Cleaning.")
+                                    elif "convert" in str(e):
+                                        st.info("💡 **Issue**: Data type problem. Check if 'hpm' column contains numeric values.")
+                                    elif "empty" in str(e).lower():
+                                        st.info("💡 **Issue**: Not enough valid data. Check your data quality.")
+                                    else:
+                                        st.info("💡 **Suggestion**: Try running Basic Cleaning (handle missing values) first, then retry outlier detection.")
+                                    
+                                    # Show data quality summary
+                                    st.markdown("**🔍 Data Quality Check:**")
+                                    quality_info = []
+                                    if 'hpm' in analyzer.current_data.columns:
+                                        hpm_nulls = analyzer.current_data['hpm'].isnull().sum()
+                                        hpm_numeric = pd.to_numeric(analyzer.current_data['hpm'], errors='coerce').notna().sum()
+                                        quality_info.append(f"• HPM column: {hpm_nulls} nulls, {hpm_numeric} numeric values")
+                                    
+                                    if 'id' in analyzer.current_data.columns:
+                                        id_nulls = analyzer.current_data['id'].isnull().sum()
+                                        quality_info.append(f"• ID column: {id_nulls} nulls")
+                                    
+                                    if group_column in analyzer.current_data.columns:
+                                        group_nulls = analyzer.current_data[group_column].isnull().sum()
+                                        group_unique = analyzer.current_data[group_column].nunique()
+                                        quality_info.append(f"• {group_column} column: {group_nulls} nulls, {group_unique} unique groups")
+                                    
+                                    for info in quality_info:
+                                        st.write(info)
 
         # **ENHANCED**: Cleaning options dictionary with all parameters
         cleaning_options = {
