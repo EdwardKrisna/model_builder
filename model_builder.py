@@ -251,8 +251,8 @@ def cached_clean_data(df, cleaning_options):
                 cleaned_df[categorical_cols] = cleaned_df[categorical_cols].fillna(modes)
         
         # Remove outliers (optimized)
-        if cleaning_options.get('remove_outliers', False) and cleaning_options.get('group_column'):
-            group_col = cleaning_options['group_column']
+        if cleaning_options.get('remove_outliers', False) and cleaning_options.get('outlier_column'):
+            group_col = cleaning_options['outlier_column'] 
             
             # Use analyzer method instead of standalone function
             # Note: We need to temporarily set the data for the method
