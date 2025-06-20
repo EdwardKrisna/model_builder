@@ -509,18 +509,19 @@ class RealEstateAnalyzer:
         Applies basic cleaning (dedupe, missing‐value fill) and then, optionally,
         group‐wise outlier removal via detect_outliers.
         """
+        # 1) Ensure there’s data to work on
         if self.current_data is None:
             return False, "No data to clean"
 
         try:
-            # 1) Basic cleaning (cached, no self reference)
+            # 2) Delegate dedupe & missing‐value handling to the cached helper
             cleaned_df = cached_clean_data(self.current_data, cleaning_options)
 
-            # 2) Outlier removal (only if requested)
+            # 3) Optionally remove group‐wise outliers
             if cleaning_options.get('remove_outliers', False) and cleaning_options.get('outlier_column'):
                 group_col = cleaning_options['outlier_column']
 
-                # run your detect_outliers (self is defined here)
+                # flag outliers
                 flagged = self.detect_outliers(
                     cleaned_df,
                     id_col='id',
@@ -531,7 +532,7 @@ class RealEstateAnalyzer:
                     skew_threshold=cleaning_options.get('skew_threshold', 0.5)
                 )
 
-                # drop the outliers and the helper columns
+                # drop them and the helper cols
                 cleaned_df = (
                     flagged
                     .loc[flagged['is_outlier'] == 0]
@@ -539,7 +540,7 @@ class RealEstateAnalyzer:
                     .copy()
                 )
 
-            # 3) Commit back to session state
+            # 4) Commit the cleaned DataFrame back to the analyzer
             self.current_data = cleaned_df
             if 'st' in globals():
                 st.session_state.data_changed = True
@@ -547,10 +548,8 @@ class RealEstateAnalyzer:
             return True, f"Cleaned data: {len(self.current_data)} properties remaining"
 
         except Exception as e:
-            # Return False so Streamlit shows st.error(message)
+            # Return False so Streamlit’s st.error is used
             return False, f"Data cleaning failed: {str(e)}"
-
-
 
     
     def apply_transformations(self, transformations):
