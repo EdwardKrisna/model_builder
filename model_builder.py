@@ -34,6 +34,7 @@ import optuna
 from sklearn.ensemble import GradientBoostingRegressor
 from sklearn.linear_model import LinearRegression
 from datetime import timezone, timedelta
+import pygwalker as pyg
 
 from skl2onnx import convert_sklearn
 from skl2onnx.common.data_types import FloatTensorType
@@ -1139,6 +1140,7 @@ workflow_steps = [
     ('overview', '📊 Data Overview'),
     ('dtype', '🔧 Data Types'),
     ('filter', '🔍 Additional Filters'),     # Renamed
+    ('eda', '🕵🏽‍♂️ EDA'),
     ('clean', '🧹 Cleaning'),
     ('transform', '⚡ Transform'),
     ('model', '📈 OLS Model'),
@@ -2141,6 +2143,30 @@ elif st.session_state.processing_step == 'filter':
         if not selected_filters:
             st.info("No manual filters applied - use quick filters above or add manual filters below")
 
+elif st.session_state.processing_step == 'eda':
+    if fun_mode:
+        st.markdown('## <img src="https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExN3VzcWJuc3EyeHB6d3N6ejBocmoxNzAwZnB1OWtqa2V3bGtrZTR0ZCZlcD12MV9naWZzX3NlYXJjaCZjdD1n/98C4E2HeR4NBm/giphy.gif" alt="data gif" style="height:72px; vertical-align:middle;"> EDA', unsafe_allow_html=True)
+    else:
+        st.markdown('## EDA')
+    
+    if analyzer.current_data is None:
+        st.warning("⚠️ No data loaded. Please go back to Data Selection.")
+        if st.button("← Back to Data Selection"):
+            st.session_state.processing_step = 'selection'
+            st.rerun()
+        st.stop()
+    else:
+        df = analyzer.current_data.copy()  # Fixed: use analyzer.current_data
+        spec_path = f"./pyg_config_{st.session_state.get('selected_table', 'default')}.json"
+        
+        # PyGWalker integration
+        try:
+            pyg_app = pyg.walk(df, spec=spec_path)
+            pyg_app
+        except Exception as e:
+            st.error(f"EDA visualization failed: {str(e)}")
+            st.info("💡 Make sure pygwalker is installed: `pip install pygwalker`")
+
 elif st.session_state.processing_step == 'clean':
     if fun_mode:
         st.markdown('## <img src="https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExajh0eW9iZTMxZDZpMGxzbTgxanVicXM4b2YybW5zdDR2cHQzMjFnMiZlcD12MV9naWZzX3NlYXJjaCZjdD1n/NV4cSrRYXXwfUcYnua/giphy.gif" alt="data gif" style="height:96px; vertical-align:middle;"> Data Cleaning', unsafe_allow_html=True)
@@ -2774,7 +2800,6 @@ elif st.session_state.processing_step == 'model':
                     st.write(f"**Target (Y):** {saved_vars['y_column']}")
                     st.write(f"**Features (X):** {', '.join(saved_vars['x_columns'])}")
                     st.write(f"**Saved at:** {saved_vars['timestamp']}")
-
        
 elif st.session_state.processing_step == 'advanced':
     # Direct ML implementation with 3-tab structure
