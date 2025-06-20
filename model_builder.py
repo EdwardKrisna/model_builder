@@ -252,18 +252,25 @@ def cached_clean_data(df, cleaning_options):
         
         # Remove outliers (optimized)
         if cleaning_options.get('remove_outliers', False) and cleaning_options.get('outlier_column'):
-            group_col = cleaning_options['outlier_column'] 
-            
-            # Use analyzer method instead of standalone function
-            # Note: We need to temporarily set the data for the method
-            temp_data = analyzer.current_data
-            analyzer.current_data = cleaned_df
-            
-            success, message = analyzer.detect_outliers_iqr_per_group(
-                group_column=group_col, 
-                value_column='hpm', 
-                id_col='id'
+            group_col = cleaning_options['outlier_column']
+            # flag outliers in the cleaned_df
+            flagged = self.detect_outliers(
+                cleaned_df,
+                id_col='id',
+                group_column=group_col,
+                value_column='hpm',
+                p10_quantile=cleaning_options.get('p10_quantile', 0.1),
+                p90_quantile=cleaning_options.get('p90_quantile', 0.9),
+                skew_threshold=cleaning_options.get('skew_threshold', 0.5)
             )
+            # drop the outliers completely
+            cleaned_df = (
+                flagged
+                .loc[flagged['is_outlier'] == 0]
+                .drop(columns=['upper_border','lower_border','is_outlier'])
+                .copy()
+            )
+
             
             if success:
                 cleaned_df = analyzer.current_data
@@ -784,86 +791,108 @@ class RealEstateAnalyzer:
             st.error(f"Failed to load {column} options: {str(e)}")
             return []
     
-    def detect_outliers_iqr_per_group(self, group_column='wadmkc', value_column='hpm', id_col='id',
-                                     lower_multiplier=1.5, upper_multiplier=1.5):
+    def detect_outliers(self,
+                    df: pd.DataFrame,
+                    id_col: str,
+                    group_column: str,
+                    value_column: str,
+                    p10_quantile: float = 0.1,
+                    p90_quantile: float = 0.9,
+                    skew_threshold: float = 0.5) -> pd.DataFrame:
         """
-        Detect outliers using IQR method per group
+        Detects outliers in value data for each group in a given DataFrame.
+
+        Parameters:
+        -----------
+        df : pd.DataFrame
+            The DataFrame containing the data.
+        id_col : str
+            The name of the column representing the object ID.
+        group_column : str
+            The name of the column to group by (e.g., district or category).
+        value_column : str
+            The name of the column containing the values to analyze (e.g., price).
+        p10_quantile : float, optional
+            The lower quantile threshold for trimming (default is 0.1).
+        p90_quantile : float, optional
+            The upper quantile threshold for trimming (default is 0.9).
+        skew_threshold : float, optional
+            The threshold for skewness to choose between mean and median (default is 0.5).
+
+        Returns:
+        --------
+        pd.DataFrame
+            The modified DataFrame with 'upper_border', 'lower_border', and 'is_outlier' columns added.
         """
-        if self.current_data is None:
-            return False, "No data available"
-        
-        # Validate required columns
-        required_cols = [value_column, id_col, group_column]
-        missing_cols = [col for col in required_cols if col not in self.current_data.columns]
-        if missing_cols:
-            return False, f"Missing required columns: {missing_cols}"
-        
-        try:
-            import numpy as np
-            
-            df = self.current_data.copy()
-            lower_bounds = {}
-            upper_bounds = {}
-            outlier_ids = []
-            total_groups = 0
-            
-            # Loop per group
-            for group, group_df in df.groupby(group_column):
-                total_groups += 1
-                q1 = np.percentile(group_df[value_column], 25)
-                q3 = np.percentile(group_df[value_column], 75)
-                iqr = q3 - q1
-                
-                # Calculate fences
-                lower_fence = q1 - lower_multiplier * iqr
-                upper_fence = q3 + upper_multiplier * iqr
-                
-                # Detect lower outliers
-                lower_outliers = group_df[group_df[value_column] < lower_fence]
-                if lower_outliers.empty:
-                    lower_fence = None  # No lower outliers in this group
-                
-                # Detect upper outliers
-                upper_outliers = group_df[group_df[value_column] > upper_fence]
-                if upper_outliers.empty:
-                    upper_fence = None  # No upper outliers in this group
-                
-                # Save fences per group for reference
-                lower_bounds[group] = lower_fence
-                upper_bounds[group] = upper_fence
-                
-                # Collect outlier ids
-                if not lower_outliers.empty:
-                    outlier_ids.extend(lower_outliers[id_col].tolist())
-                if not upper_outliers.empty:
-                    outlier_ids.extend(upper_outliers[id_col].tolist())
-            
-            # Map fences back to dataframe rows by group
-            df['lower_border'] = df[group_column].map(lower_bounds)
-            df['upper_border'] = df[group_column].map(upper_bounds)
-            
-            # Flag outliers using calculated fences
-            def is_outlier(row):
-                if row['lower_border'] is not None and row[value_column] < row['lower_border']:
-                    return 1
-                if row['upper_border'] is not None and row[value_column] > row['upper_border']:
-                    return 1
-                return 0
-            
-            df['is_outlier'] = df.apply(is_outlier, axis=1)
-            
-            # Remove outliers and clean up temporary columns
-            cleaned_df = df[df['is_outlier'] == 0].copy()
-            cleaned_df = cleaned_df.drop(columns=['lower_border', 'upper_border', 'is_outlier'])
-            
-            # Update current data
-            self.current_data = cleaned_df
-            outlier_count = len(outlier_ids)
-            
-            return True, f"Removed {outlier_count} outliers across {total_groups} groups using IQR method"
-            
-        except Exception as e:
-            return False, f"Outlier removal failed: {str(e)}"
+        import numpy as np
+        import math
+        from scipy.stats import skew
+
+        top_border = {'group': [], 'upper_value': []}
+        lower_border = {'group': [], 'lower_value': []}
+        outlier_ids = []
+
+        # Loop through each unique group
+        for group in df[group_column].unique():
+            temp_df = df[df[group_column] == group]
+            values = temp_df[value_column].dropna()
+
+            if values.empty:
+                continue
+
+            # 10th and 90th percentiles
+            p10 = np.quantile(values, p10_quantile)
+            p90 = np.quantile(values, p90_quantile)
+
+            # Trim to between p10 and p90
+            trimmed = values[(values > p10) & (values < p90)]
+            if trimmed.empty:
+                continue
+
+            std = trimmed.std()
+            if std == 0:
+                continue
+
+            mean = trimmed.mean()
+            med = trimmed.median()
+            skewness = skew(trimmed, bias=True)
+
+            # choose center
+            center = med if abs(skewness) > skew_threshold else mean
+
+            # compute borders (in units of std)
+            lower_n = math.ceil((center - p10) / std)
+            upper_n = math.ceil((p90 - center) / std)
+            lower_val = center - lower_n * std
+            upper_val = center + upper_n * std
+
+            top_border['group'].append(group)
+            top_border['upper_value'].append(upper_val)
+            lower_border['group'].append(group)
+            lower_border['lower_value'].append(lower_val)
+
+            # collect outlier ids
+            group_outliers = temp_df[
+                (temp_df[value_column] < lower_val) |
+                (temp_df[value_column] > upper_val)
+            ][id_col].tolist()
+            outlier_ids.extend(group_outliers)
+
+        # build lookup dicts
+        up_map = dict(zip(top_border['group'], top_border['upper_value']))
+        low_map = dict(zip(lower_border['group'], lower_border['lower_value']))
+
+        # annotate dataframe
+        df['upper_border'] = df[group_column].map(up_map)
+        df['lower_border'] = df[group_column].map(low_map)
+        df['is_outlier'] = df[id_col].apply(lambda x: 1 if x in outlier_ids else 0)
+
+        # summary
+        ratio = df['is_outlier'].mean()
+        print(f"Outliers flagged: {len(outlier_ids)} (ratio: {ratio:.2%})")
+
+        return df
+
 
     def apply_label_encoding(self, column):    
         """Apply label encoding to a column"""
