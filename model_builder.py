@@ -35,6 +35,7 @@ from sklearn.ensemble import GradientBoostingRegressor
 from sklearn.linear_model import LinearRegression
 from datetime import timezone, timedelta
 import pygwalker as pyg
+from pygwalker.api.streamlit import StreamlitRenderer
 
 from skl2onnx import convert_sklearn
 from skl2onnx.common.data_types import FloatTensorType
@@ -321,7 +322,8 @@ def get_data_metrics(data_shape, data_memory_usage_sum):
         'memory_mb': data_memory_usage_sum / 1024**2
     }
 
-
+def get_pyg_renderer(df: pd.DataFrame, spec_path: str) -> "StreamlitRenderer":
+    return StreamlitRenderer(df, spec=spec_path, spec_io_mode="rw")
 
 class RealEstateAnalyzer:
     """Flexible Real Estate Analysis System"""
@@ -2145,9 +2147,9 @@ elif st.session_state.processing_step == 'filter':
 
 elif st.session_state.processing_step == 'eda':
     if fun_mode:
-        st.markdown('## <img src="https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExN3VzcWJuc3EyeHB6d3N6ejBocmoxNzAwZnB1OWtqa2V3bGtrZTR0ZCZlcD12MV9naWZzX3NlYXJjaCZjdD1n/98C4E2HeR4NBm/giphy.gif" alt="data gif" style="height:72px; vertical-align:middle;"> EDA', unsafe_allow_html=True)
+        st.markdown('## <img src="https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExN3VzcWJuc3EyeHB6d3N6ejBocmoxNzAwZnB1OWtqa2V3bGtrZTR0ZCZlcD12MV9naWZzX3NlYXJjaCZjdD1n/98C4E2HeR4NBm/giphy.gif" alt="data gif" style="height:72px; vertical-align:middle;"> Exploratory Data Analysis', unsafe_allow_html=True)
     else:
-        st.markdown('## EDA')
+        st.markdown('## Exploratory Data Analysis')
     
     if analyzer.current_data is None:
         st.warning("⚠️ No data loaded. Please go back to Data Selection.")
@@ -2156,16 +2158,36 @@ elif st.session_state.processing_step == 'eda':
             st.rerun()
         st.stop()
     else:
-        df = analyzer.current_data.copy()  # Fixed: use analyzer.current_data
-        spec_path = f"./pyg_config_{st.session_state.get('selected_table', 'default')}.json"
+        st.info("🎯 **Interactive EDA Dashboard** - Create charts, explore patterns, and analyze your data visually")
         
-        # PyGWalker integration
         try:
-            pyg_app = pyg.walk(df, spec=spec_path)
-            pyg_app
+            df = analyzer.current_data.copy()  # Use analyzer.current_data for consistency
+            
+            # Create unique spec path for this dataset
+            data_hash = str(hash(str(df.shape) + str(df.columns.tolist())))[:8]
+            spec_path = f"./pyg_config_{data_hash}.json"
+            
+            # Initialize PyGWalker
+            pyg_app = get_pyg_renderer(df, spec_path)
+            
+            # Display the interactive explorer
+            pyg_app.explorer()
+            
         except Exception as e:
-            st.error(f"EDA visualization failed: {str(e)}")
+            st.error(f"❌ EDA visualization failed: {str(e)}")
             st.info("💡 Make sure pygwalker is installed: `pip install pygwalker`")
+            
+            # Fallback: Show basic info
+            st.markdown("### 📋 Basic Data Information")
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                st.metric("Rows", f"{len(analyzer.current_data):,}")
+            with col2:
+                st.metric("Columns", len(analyzer.current_data.columns))
+            with col3:
+                numeric_cols = len(analyzer.current_data.select_dtypes(include=[np.number]).columns)
+                st.metric("Numeric Columns", numeric_cols)
 
 elif st.session_state.processing_step == 'clean':
     if fun_mode:
