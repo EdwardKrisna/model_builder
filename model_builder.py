@@ -4416,18 +4416,45 @@ elif st.session_state.processing_step == 'advanced':
                         st.success(f"✅ All models trained successfully! Results saved with timestamp: {timestamp}")
                         
                         # Show quick metrics comparison
+                        # Add evaluation mode toggle
                         st.markdown("### 📊 Quick Results Summary")
-                        
+
+                        # Toggle for evaluation mode
+                        eval_mode_summary = st.toggle(
+                            "🔄 Evaluate in Original Scale (exp transform)", 
+                            value=True, 
+                            key=f"eval_mode_summary_{timestamp}",
+                            help="Toggle between ln scale (False) and original HPM scale (True)"
+                        )
+
+                        # Recalculate metrics based on toggle
+                        if eval_mode_summary:
+                            st.info("📈 Showing metrics in **Original Scale** (HPM values)")
+                        else:
+                            st.info("📊 Showing metrics in **Log Scale** (ln values)")
+
+                        # Recalculate metrics for all models
+                        summary_metrics = {}
+                        for model_name, result in all_results.items():
+                            # Get fresh predictions
+                            y_test = result['y_test_last']
+                            y_pred = result['y_pred_last']
+                            
+                            # Recalculate with chosen evaluation mode
+                            fresh_metrics = evaluate(y_test, y_pred, squared=eval_mode_summary)
+                            summary_metrics[model_name] = fresh_metrics
+
+                        # Create updated metrics DataFrame
                         metrics_df = pd.DataFrame({
                             model_name: {
-                                'Test R²': result['global_test_metrics']['R2'],
-                                'Test PE10': result['global_test_metrics']['PE10'],
-                                'Test RT20': result['global_test_metrics']['RT20'],
-                                'Test FSD': result['global_test_metrics']['FSD']
+                                'Test R²': metrics['R2'],
+                                'Test PE10': metrics['PE10'],
+                                'Test RT20': metrics['RT20'],
+                                'Test FSD': metrics['FSD']
                             }
-                            for model_name, result in all_results.items()
+                            for model_name, metrics in summary_metrics.items()
                         }).T
-                        
+
                         st.dataframe(metrics_df.style.format({
                             'Test R²': '{:.4f}',
                             'Test PE10': '{:.4f}',
@@ -4569,19 +4596,39 @@ elif st.session_state.processing_step == 'advanced':
                 if selected_session:
                     results = st.session_state.all_model_results[selected_session]
                     
+                    # Add evaluation mode toggle for comparison
+                    st.markdown("#### ⚙️ Evaluation Settings")
+                    eval_mode_comparison = st.toggle(
+                        "🔄 Evaluate in Original Scale (exp transform)", 
+                        value=True, 
+                        key=f"eval_mode_comparison_{selected_session}",
+                        help="Toggle between ln scale (False) and original HPM scale (True)"
+                    )
+                    
+                    if eval_mode_comparison:
+                        st.success("📈 Evaluating in **Original Scale** (HPM values)")
+                    else:
+                        st.info("📊 Evaluating in **Log Scale** (ln values)")
+                    
                     # Metrics Comparison
                     st.markdown("#### 📊 Performance Metrics Comparison")
                     
-                    # Create metrics comparison chart
+                    # Recalculate metrics based on toggle
                     metrics_data = []
                     for model_name, result in results.items():
-                        metrics = result['global_test_metrics']
+                        # Get fresh predictions
+                        y_test = result['y_test_last']
+                        y_pred = result['y_pred_last']
+                        
+                        # Recalculate with chosen evaluation mode
+                        fresh_metrics = evaluate(y_test, y_pred, squared=eval_mode_comparison)
+                        
                         metrics_data.append({
                             'Model': model_name,
-                            'R²': metrics['R2'],
-                            'PE10': metrics['PE10'],
-                            'RT20': metrics['RT20'],
-                            'FSD': metrics['FSD']
+                            'R²': fresh_metrics['R2'],
+                            'PE10': fresh_metrics['PE10'],
+                            'RT20': fresh_metrics['RT20'],
+                            'FSD': fresh_metrics['FSD']
                         })
                     
                     metrics_df = pd.DataFrame(metrics_data)
@@ -4649,7 +4696,18 @@ elif st.session_state.processing_step == 'advanced':
                     st.markdown("#### 🎯 Combined Actual vs Predicted Comparison")
                     
                     # ADD THIS TOGGLE OPTION
-                    show_ln_scale = st.toggle("Show ln (log) scale", value=True, help="Toggle between ln scale and actual values")
+                    # UPDATE THIS SECTION (around line with "Show ln (log) scale")
+                    col1, col2 = st.columns(2)
+
+                    with col1:
+                        show_ln_scale = st.toggle(
+                            "Show ln (log) scale in plot", 
+                            value=not eval_mode_comparison,  # Sync with evaluation mode
+                            help="Toggle between ln scale and actual values for visualization"
+                        )
+
+                    with col2:
+                        st.info(f"📊 Current evaluation: {'Original Scale' if eval_mode_comparison else 'Log Scale'}")
                     
                     fig_pred = go.Figure()
                     
