@@ -4316,10 +4316,10 @@ elif st.session_state.processing_step == 'advanced':
                             }
                         ]
                         
-                        # Train each model (UPDATE THIS SECTION)
+                        # Train each model (CORRECTED SECTION)
                         for i, model_config in enumerate(models_config):
                             model_name = model_config['name']
-                            status_text.text(f"Training {model_name}...")
+                            status_text.text(f"Training {model_name} (CV + Full Dataset)...")
                             overall_progress.progress(i / len(models_config))
                             
                             try:
@@ -4351,7 +4351,7 @@ elif st.session_state.processing_step == 'advanced':
                                     )
                                     
                                     # Run Full Dataset training
-                                    final_model, full_evaluation_df, full_train_results_df, full_global_train_metrics, full_global_test_metrics, full_y_test_last, full_y_pred_last, full_is_log_transformed = train_rerf_model(
+                                    full_model, full_evaluation_df, full_train_results_df, full_global_train_metrics, full_global_test_metrics, full_y_test_last, full_y_pred_last, full_is_log_transformed = train_rerf_model(
                                         analyzer.current_data, ml_x_columns, ml_y_column,
                                         model_config['model']['linear'], model_config['model']['rf'],
                                         group_column if use_group else None,
@@ -4372,12 +4372,26 @@ elif st.session_state.processing_step == 'advanced':
                                     )
                                     
                                     # Run Full Dataset training using the same function
-                                    final_model, full_evaluation_df, full_train_results_df, full_global_train_metrics, full_global_test_metrics, full_y_test_last, full_y_pred_last, full_is_log_transformed = analyzer.goval_machine_learning(
+                                    full_model, full_evaluation_df, full_train_results_df, full_global_train_metrics, full_global_test_metrics, full_y_test_last, full_y_pred_last, full_is_log_transformed = analyzer.goval_machine_learning(
                                         ml_x_columns, ml_y_column, ols_lr_model,
                                         group_column if use_group else None,
                                         n_splits, random_state, min_sample,
                                         full_dataset_eval=True  # Full dataset mode
                                     )
+                                
+                                # Store BOTH CV and Full Dataset results
+                                all_results[model_name] = {
+                                    'model': full_model,  # Full dataset model for download
+                                    'cv_evaluation_df': cv_evaluation_df,
+                                    'full_evaluation_df': full_evaluation_df,
+                                    'cv_global_test_metrics': cv_global_test_metrics,
+                                    'full_global_test_metrics': full_global_test_metrics,
+                                    'y_test_last': full_y_test_last,  # Use full dataset predictions for scatter plot
+                                    'y_pred_last': full_y_pred_last,
+                                    'is_log_transformed': full_is_log_transformed,
+                                    'feature_names': ml_x_columns,
+                                    'target_name': ml_y_column
+                                }
                                 
                             except Exception as e:
                                 st.error(f"❌ {model_name} training failed: {str(e)}")
@@ -4526,12 +4540,16 @@ elif st.session_state.processing_step == 'advanced':
                                     'categorical_encodings': st.session_state.get('categorical_encodings', None),  # Add this line
                                     'performance_summary': {
                                         model_name: {
-                                            'test_r2': result['global_test_metrics']['R2'],
-                                            'test_pe10': result['global_test_metrics']['PE10'],
-                                            'test_rt20': result['global_test_metrics']['RT20'],
-                                            'test_fsd': result['global_test_metrics']['FSD']
+                                            'cv_r2': result['cv_global_test_metrics']['R2'],
+                                            'cv_pe10': result['cv_global_test_metrics']['PE10'], 
+                                            'cv_rt20': result['cv_global_test_metrics']['RT20'],
+                                            'cv_fsd': result['cv_global_test_metrics']['FSD'],
+                                            'full_r2': result['full_global_test_metrics']['R2'],
+                                            'full_pe10': result['full_global_test_metrics']['PE10'],
+                                            'full_rt20': result['full_global_test_metrics']['RT20'],
+                                            'full_fsd': result['full_global_test_metrics']['FSD']
                                         }
-                                        for model_name, result in downloadable_results.items()  # Use downloadable_results
+                                        for model_name, result in downloadable_results.items()
                                     }
                                 }
                                 
@@ -4578,7 +4596,7 @@ elif st.session_state.processing_step == 'advanced':
                 if selected_session:
                     results = st.session_state.all_model_results[selected_session]
                     
-                    # NEW: Cross-Validation Analytics Section
+                    # Cross-Validation Analytics Section
                     st.markdown("#### 📊 Cross-Validation Analytics")
                     st.info("📈 Individual fold performance for model validation")
                     
@@ -4621,99 +4639,95 @@ elif st.session_state.processing_step == 'advanced':
                     else:
                         st.info("📊 Evaluating in **Log Scale** (ln values)")
                     
-                    # Metrics Comparison
+                    # Performance Metrics Comparison - Show both CV and Full Dataset
                     st.markdown("#### 📊 Performance Metrics Comparison")
                     
-                    # Recalculate metrics based on toggle
+                    # Create comprehensive metrics table
                     metrics_data = []
                     for model_name, result in results.items():
-                        # Use the new key structure
+                        # Get fresh predictions for recalculation
+                        y_test = result['y_test_last']
+                        y_pred = result['y_pred_last']
+                        
+                        # Recalculate full dataset metrics with chosen evaluation mode
+                        fresh_full_metrics = evaluate(y_test, y_pred, squared=eval_mode_comparison)
+                        
+                        # Get CV metrics (recalculate if needed)
                         cv_metrics = result['cv_global_test_metrics']
-                        full_metrics = result['full_global_test_metrics']
                         
                         metrics_data.append({
                             'Model': model_name,
                             'CV R²': cv_metrics['R2'],
-                            'Full R²': full_metrics['R2'],
+                            'Full R²': fresh_full_metrics['R2'],
                             'CV PE10': cv_metrics['PE10'],
-                            'Full PE10': full_metrics['PE10'],
+                            'Full PE10': fresh_full_metrics['PE10'],
                             'CV RT20': cv_metrics['RT20'],
-                            'Full RT20': full_metrics['RT20'],
+                            'Full RT20': fresh_full_metrics['RT20'],
                             'CV FSD': cv_metrics['FSD'],
-                            'Full FSD': full_metrics['FSD']
+                            'Full FSD': fresh_full_metrics['FSD']
                         })
-
+                    
                     metrics_df = pd.DataFrame(metrics_data)
                     
-                    # Display metrics table
+                    # Display comprehensive metrics table
                     st.dataframe(metrics_df.style.format({
-                        'R²': '{:.4f}',
-                        'PE10': '{:.4f}',
-                        'RT20': '{:.4f}',
-                        'FSD': '{:.4f}'
+                        'CV R²': '{:.4f}',
+                        'Full R²': '{:.4f}',
+                        'CV PE10': '{:.4f}',
+                        'Full PE10': '{:.4f}',
+                        'CV RT20': '{:.4f}',
+                        'Full RT20': '{:.4f}',
+                        'CV FSD': '{:.4f}',
+                        'Full FSD': '{:.4f}'
                     }), use_container_width=True)
                     
-                    # Side-by-side bar charts for metrics comparison
-                    st.markdown("#### 📊 Metrics Comparison Charts")
-
+                    # Side-by-side bar charts for metrics comparison (using Full Dataset metrics)
+                    st.markdown("#### 📊 Metrics Comparison Charts (Full Dataset)")
+                    
                     # Create side-by-side bar charts
                     fig_metrics = make_subplots(
                         rows=2, cols=2,
-                        subplot_titles=('CV R² vs Full R²', 'CV PE10 vs Full PE10', 
-                                    'CV RT20 vs Full RT20', 'CV FSD vs Full FSD'),
+                        subplot_titles=('R² (Higher is Better)', 'PE10 (Higher is Better)', 
+                                    'RT20 (Lower is Better)', 'FSD (Lower is Better)'),
                         specs=[[{"secondary_y": False}, {"secondary_y": False}],
                             [{"secondary_y": False}, {"secondary_y": False}]]
                     )
-
+                    
                     models = metrics_df['Model'].tolist()
                     colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd']
-
-                    # CV R² vs Full R² comparison
+                    
+                    # R² chart
                     fig_metrics.add_trace(
-                        go.Bar(x=models, y=metrics_df['CV R²'], name='CV R²', 
-                            marker_color=colors[0], showlegend=True),
-                        row=1, col=1
-                    )
-                    fig_metrics.add_trace(
-                        go.Bar(x=models, y=metrics_df['Full R²'], name='Full R²', 
-                            marker_color=colors[1], showlegend=True),
-                        row=1, col=1
-                    )
-
-                    # CV PE10 vs Full PE10 comparison
-                    fig_metrics.add_trace(
-                        go.Bar(x=models, y=metrics_df['CV PE10'], name='CV PE10', 
+                        go.Bar(x=models, y=metrics_df['Full R²'], name='R²', 
                             marker_color=colors[0], showlegend=False),
-                        row=1, col=2
+                        row=1, col=1
                     )
+                    
+                    # PE10 chart
                     fig_metrics.add_trace(
-                        go.Bar(x=models, y=metrics_df['Full PE10'], name='Full PE10', 
+                        go.Bar(x=models, y=metrics_df['Full PE10'], name='PE10', 
                             marker_color=colors[1], showlegend=False),
                         row=1, col=2
                     )
-
-                    # CV RT20 vs Full RT20 comparison
+                    
+                    # RT20 chart
                     fig_metrics.add_trace(
-                        go.Bar(x=models, y=metrics_df['CV RT20'], name='CV RT20', 
-                            marker_color=colors[0], showlegend=False),
+                        go.Bar(x=models, y=metrics_df['Full RT20'], name='RT20', 
+                            marker_color=colors[2], showlegend=False),
                         row=2, col=1
                     )
+                    
+                    # FSD chart
                     fig_metrics.add_trace(
-                        go.Bar(x=models, y=metrics_df['Full RT20'], name='Full RT20', 
-                            marker_color=colors[1], showlegend=False),
-                        row=2, col=1
-                    )
-
-                    # CV FSD vs Full FSD comparison
-                    fig_metrics.add_trace(
-                        go.Bar(x=models, y=metrics_df['CV FSD'], name='CV FSD', 
-                            marker_color=colors[0], showlegend=False),
+                        go.Bar(x=models, y=metrics_df['Full FSD'], name='FSD', 
+                            marker_color=colors[3], showlegend=False),
                         row=2, col=2
                     )
-                    fig_metrics.add_trace(
-                        go.Bar(x=models, y=metrics_df['Full FSD'], name='Full FSD', 
-                            marker_color=colors[1], showlegend=False),
-                        row=2, col=2
+                    
+                    fig_metrics.update_layout(
+                        height=600,
+                        title_text="Model Performance Comparison (Full Dataset)",
+                        showlegend=False
                     )
                     
                     st.plotly_chart(fig_metrics, use_container_width=True)
@@ -4721,8 +4735,6 @@ elif st.session_state.processing_step == 'advanced':
                     # Combined Actual vs Predicted Plot
                     st.markdown("#### 🎯 Combined Actual vs Predicted Comparison")
                     
-                    # ADD THIS TOGGLE OPTION
-                    # UPDATE THIS SECTION (around line with "Show ln (log) scale")
                     col1, col2 = st.columns(2)
 
                     with col1:
@@ -4742,7 +4754,7 @@ elif st.session_state.processing_step == 'advanced':
                         y_actual = result['y_test_last']
                         y_pred = result['y_pred_last']
                         
-                        # FIXED: Apply consistent transformation based on toggle
+                        # Apply consistent transformation based on toggle
                         if show_ln_scale and (result['is_log_transformed'] or ('ln_' in result['target_name'])):
                             # Keep in ln scale
                             y_actual_plot = y_actual
@@ -4759,11 +4771,14 @@ elif st.session_state.processing_step == 'advanced':
                             y_pred_plot = y_pred
                             axis_title = "Values" if show_ln_scale else "Values (Original Scale)"
                         
+                        # Use full dataset metrics for legend
+                        r2_value = result['full_global_test_metrics']['R2']
+                        
                         fig_pred.add_trace(go.Scatter(
                             x=y_actual_plot,
                             y=y_pred_plot,
                             mode='markers',
-                            name=f'{model_name} (R²={result["global_test_metrics"]["R2"]:.3f})',
+                            name=f'{model_name} (R²={r2_value:.3f})',
                             marker=dict(
                                 color=colors[i % len(colors)],
                                 size=6,
@@ -4801,7 +4816,7 @@ elif st.session_state.processing_step == 'advanced':
                         ))
                     
                     fig_pred.update_layout(
-                        title='Actual vs Predicted Values - All Models',
+                        title='Actual vs Predicted Values - All Models (Full Dataset)',
                         xaxis_title=f'Actual {axis_title}',
                         yaxis_title=f'Predicted {axis_title}',
                         height=600,
@@ -4844,29 +4859,35 @@ elif st.session_state.processing_step == 'advanced':
                     
                     st.plotly_chart(fig_pred, use_container_width=True)
                     
-                    # Model Rankings
-                    st.markdown("#### 🏆 Model Rankings")
+                    # Model Rankings (based on Full Dataset metrics)
+                    st.markdown("#### 🏆 Model Rankings (Full Dataset)")
+                    
+                    # Create simplified metrics for ranking
+                    ranking_metrics_df = pd.DataFrame({
+                        'Model': metrics_df['Model'],
+                        'R²': metrics_df['Full R²'],
+                        'PE10': metrics_df['Full PE10'],
+                        'RT20': metrics_df['Full RT20'],
+                        'FSD': metrics_df['Full FSD']
+                    })
                     
                     # Calculate rankings for each metric
                     rankings_data = []
+                    models = ranking_metrics_df['Model'].tolist()
                     for model_name in models:
-                        model_data = metrics_df[metrics_df['Model'] == model_name].iloc[0]
+                        model_data = ranking_metrics_df[ranking_metrics_df['Model'] == model_name].iloc[0]
                         rankings_data.append({
                             'Model': model_name,
-                            'CV R² Rank': metrics_df['CV R²'].rank(ascending=False)[metrics_df['Model'] == model_name].iloc[0],
-                            'Full R² Rank': metrics_df['Full R²'].rank(ascending=False)[metrics_df['Model'] == model_name].iloc[0],
-                            'CV PE10 Rank': metrics_df['CV PE10'].rank(ascending=False)[metrics_df['Model'] == model_name].iloc[0],
-                            'Full PE10 Rank': metrics_df['Full PE10'].rank(ascending=False)[metrics_df['Model'] == model_name].iloc[0],
-                            'CV RT20 Rank': metrics_df['CV RT20'].rank(ascending=True)[metrics_df['Model'] == model_name].iloc[0],
-                            'Full RT20 Rank': metrics_df['Full RT20'].rank(ascending=True)[metrics_df['Model'] == model_name].iloc[0],
-                            'CV FSD Rank': metrics_df['CV FSD'].rank(ascending=True)[metrics_df['Model'] == model_name].iloc[0],
-                            'Full FSD Rank': metrics_df['Full FSD'].rank(ascending=True)[metrics_df['Model'] == model_name].iloc[0],
+                            'R² Rank': ranking_metrics_df['R²'].rank(ascending=False)[ranking_metrics_df['Model'] == model_name].iloc[0],
+                            'PE10 Rank': ranking_metrics_df['PE10'].rank(ascending=False)[ranking_metrics_df['Model'] == model_name].iloc[0],
+                            'RT20 Rank': ranking_metrics_df['RT20'].rank(ascending=True)[ranking_metrics_df['Model'] == model_name].iloc[0],  # Lower is better
+                            'FSD Rank': ranking_metrics_df['FSD'].rank(ascending=True)[ranking_metrics_df['Model'] == model_name].iloc[0],   # Lower is better
                         })
-
+                    
                     rankings_df = pd.DataFrame(rankings_data)
-
-                    # Calculate average rank (you can choose which metrics to average)
-                    rankings_df['Average Rank'] = rankings_df[['Full R² Rank', 'Full PE10 Rank', 'Full RT20 Rank', 'Full FSD Rank']].mean(axis=1)
+                    
+                    # Calculate average rank
+                    rankings_df['Average Rank'] = rankings_df[['R² Rank', 'PE10 Rank', 'RT20 Rank', 'FSD Rank']].mean(axis=1)
                     rankings_df = rankings_df.sort_values('Average Rank')
                     
                     # Add ranking indicators
@@ -4901,7 +4922,7 @@ elif st.session_state.processing_step == 'advanced':
                             else:
                                 st.write(f"**{rank}. {model}** (Avg Rank: {avg_rank:.1f})")
                     
-                    # Download comparison results - FIXED: No restart on download
+                    # Download comparison results
                     st.markdown("#### 💾 Download Comparison Results")
                     
                     col1, col2, col3 = st.columns(3)
@@ -4937,12 +4958,12 @@ elif st.session_state.processing_step == 'advanced':
                                 'feature_count': len(results[list(results.keys())[0]]['feature_names']),
                                 'models_trained': list(results.keys())
                             },
-                            'metrics_comparison': metrics_df.to_dict('records'),
+                            'cv_metrics': {model: result['cv_global_test_metrics'] for model, result in results.items()},
+                            'full_metrics': {model: result['full_global_test_metrics'] for model, result in results.items()},
                             'rankings': rankings_df.to_dict('records'),
                             'best_model': {
                                 'name': rankings_df.iloc[0]['Model'],
-                                'average_rank': rankings_df.iloc[0]['Average Rank'],
-                                'metrics': metrics_df[metrics_df['Model'] == rankings_df.iloc[0]['Model']].iloc[0].to_dict()
+                                'average_rank': rankings_df.iloc[0]['Average Rank']
                             }
                         }
                         
