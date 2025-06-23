@@ -4511,7 +4511,10 @@ elif st.session_state.processing_step == 'advanced':
                                         'feature_names': result['feature_names'],
                                         'target_name': result['target_name'],
                                         'model_type': model_name,
-                                        'metrics': result['global_test_metrics'],
+                                        'metrics': {
+                                            'cv_metrics': result['cv_global_test_metrics'],
+                                            'full_metrics': result['full_global_test_metrics']
+                                        },
                                         'timestamp': timestamp,
                                     }
                                     
@@ -4531,13 +4534,13 @@ elif st.session_state.processing_step == 'advanced':
                                     'target_variable': ml_y_column,
                                     'feature_names': ml_x_columns,
                                     'feature_count': len(ml_x_columns),
-                                    'models_trained': list(downloadable_results.keys()),  # Use downloadable_results instead of all_results
+                                    'models_trained': list(downloadable_results.keys()),
                                     'cross_validation': {
                                         'n_splits': n_splits,
                                         'random_state': random_state,
                                         'group_column': group_column if use_group else None
                                     },
-                                    'categorical_encodings': st.session_state.get('categorical_encodings', None),  # Add this line
+                                    'categorical_encodings': st.session_state.get('categorical_encodings', None),
                                     'performance_summary': {
                                         model_name: {
                                             'cv_r2': result['cv_global_test_metrics']['R2'],
