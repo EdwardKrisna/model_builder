@@ -4259,213 +4259,29 @@ elif st.session_state.processing_step == 'advanced':
                 
                 # Train All Models Button
                 st.markdown("#### 🚀 Model Training")
-                
-                if st.button("🤖 Train All Models", type="primary", use_container_width=True):
-                    with st.spinner("Training all models sequentially..."):
-                        
-                        all_results = {}
-                        overall_progress = st.progress(0)
-                        status_text = st.empty()
-                        
-                        # Model configurations (EXISTING - NO CHANGE)
-                        models_config = [
-                            {
-                                'name': 'Random Forest',
-                                'model': RandomForestRegressor(
-                                    n_estimators=rf_n_estimators,
-                                    max_depth=rf_max_depth,
-                                    min_samples_split=rf_min_samples_split,
-                                    min_samples_leaf=rf_min_samples_leaf,
-                                    max_features=rf_max_features,
-                                    random_state=random_state
-                                ),
-                                'type': 'standard'
-                            },
-                            {
-                                'name': 'Gradient Boosting',
-                                'model': GradientBoostingRegressor(
-                                    n_estimators=gbdt_n_estimators,
-                                    learning_rate=gbdt_learning_rate,
-                                    max_depth=gbdt_max_depth,
-                                    subsample=gbdt_subsample,
-                                    min_samples_split=gbdt_min_samples_split,
-                                    min_samples_leaf=gbdt_min_samples_leaf,
-                                    random_state=random_state
-                                ),
-                                'type': 'standard'
-                            },
-                            {
-                                'name': 'RERF',
-                                'model': {
-                                    'linear': LinearRegression(),
-                                    'rf': RandomForestRegressor(
-                                        n_estimators=rerf_n_estimators,
-                                        max_depth=rerf_max_depth,
-                                        min_samples_split=rerf_min_samples_split,
-                                        min_samples_leaf=rerf_min_samples_leaf,
-                                        max_features=rerf_max_features,
-                                        random_state=random_state
-                                    )
-                                },
-                                'type': 'rerf'
-                            },
-                            {
-                                'name': 'OLS',
-                                'model': LinearRegression(),
-                                'type': 'ols'
-                            }
-                        ]
-                        
-                        # Train each model (CORRECTED SECTION)
-                        for i, model_config in enumerate(models_config):
-                            model_name = model_config['name']
-                            status_text.text(f"Training {model_name} (CV + Full Dataset)...")
-                            overall_progress.progress(i / len(models_config))
-                            
-                            try:
-                                if model_config['type'] == 'standard':
-                                    # Run CV evaluation first
-                                    cv_model, cv_evaluation_df, cv_train_results_df, cv_global_train_metrics, cv_global_test_metrics, cv_y_test_last, cv_y_pred_last, cv_is_log_transformed = analyzer.goval_machine_learning(
-                                        ml_x_columns, ml_y_column, model_config['model'],
-                                        group_column if use_group else None,
-                                        n_splits, random_state, min_sample,
-                                        full_dataset_eval=False  # CV mode
-                                    )
-                                    
-                                    # Run Full Dataset training
-                                    full_model, full_evaluation_df, full_train_results_df, full_global_train_metrics, full_global_test_metrics, full_y_test_last, full_y_pred_last, full_is_log_transformed = analyzer.goval_machine_learning(
-                                        ml_x_columns, ml_y_column, model_config['model'],
-                                        group_column if use_group else None,
-                                        n_splits, random_state, min_sample,
-                                        full_dataset_eval=True  # Full dataset mode
-                                    )
-                                    
-                                elif model_config['type'] == 'rerf':
-                                    # Run CV evaluation first
-                                    cv_model, cv_evaluation_df, cv_train_results_df, cv_global_train_metrics, cv_global_test_metrics, cv_y_test_last, cv_y_pred_last, cv_is_log_transformed = train_rerf_model(
-                                        analyzer.current_data, ml_x_columns, ml_y_column,
-                                        model_config['model']['linear'], model_config['model']['rf'],
-                                        group_column if use_group else None,
-                                        n_splits, random_state, min_sample,
-                                        full_dataset_eval=False  # CV mode
-                                    )
-                                    
-                                    # Run Full Dataset training
-                                    full_model, full_evaluation_df, full_train_results_df, full_global_train_metrics, full_global_test_metrics, full_y_test_last, full_y_pred_last, full_is_log_transformed = train_rerf_model(
-                                        analyzer.current_data, ml_x_columns, ml_y_column,
-                                        model_config['model']['linear'], model_config['model']['rf'],
-                                        group_column if use_group else None,
-                                        n_splits, random_state, min_sample,
-                                        full_dataset_eval=True  # Full dataset mode
-                                    )
-                                
-                                elif model_config['type'] == 'ols':
-                                    # Create a LinearRegression model instance
-                                    ols_lr_model = LinearRegression()
-                                    
-                                    # Run CV evaluation using the same function as RF/GBDT
-                                    cv_model, cv_evaluation_df, cv_train_results_df, cv_global_train_metrics, cv_global_test_metrics, cv_y_test_last, cv_y_pred_last, cv_is_log_transformed = analyzer.goval_machine_learning(
-                                        ml_x_columns, ml_y_column, ols_lr_model,
-                                        group_column if use_group else None,
-                                        n_splits, random_state, min_sample,
-                                        full_dataset_eval=False  # CV mode
-                                    )
-                                    
-                                    # Run Full Dataset training using the same function
-                                    full_model, full_evaluation_df, full_train_results_df, full_global_train_metrics, full_global_test_metrics, full_y_test_last, full_y_pred_last, full_is_log_transformed = analyzer.goval_machine_learning(
-                                        ml_x_columns, ml_y_column, ols_lr_model,
-                                        group_column if use_group else None,
-                                        n_splits, random_state, min_sample,
-                                        full_dataset_eval=True  # Full dataset mode
-                                    )
-                                
-                                # Store BOTH CV and Full Dataset results
-                                all_results[model_name] = {
-                                    'model': full_model,  # Full dataset model for download
-                                    'cv_evaluation_df': cv_evaluation_df,
-                                    'full_evaluation_df': full_evaluation_df,
-                                    'cv_global_test_metrics': cv_global_test_metrics,
-                                    'full_global_test_metrics': full_global_test_metrics,
-                                    'y_test_last': full_y_test_last,  # Use full dataset predictions for scatter plot
-                                    'y_pred_last': full_y_pred_last,
-                                    'is_log_transformed': full_is_log_transformed,
-                                    'feature_names': ml_x_columns,
-                                    'target_name': ml_y_column
-                                }
-                                
-                            except Exception as e:
-                                st.error(f"❌ {model_name} training failed: {str(e)}")
-                                continue
-                        
-                        overall_progress.progress(1.0)
-                        status_text.text("All models trained successfully!")
-                        
-                        # Store in session state for comparison
-                        if 'all_model_results' not in st.session_state:
-                            st.session_state.all_model_results = {}
-                        
-                        # Add timestamp to results
-                        wib_timezone = timezone(timedelta(hours=7))  # WIB is UTC+7
-                        timestamp = datetime.now(wib_timezone).strftime('%Y%m%d_%H%M%S_WIB')
-                        st.session_state.all_model_results[timestamp] = all_results
-                        
-                        st.success(f"✅ All models trained successfully! Results saved with timestamp: {timestamp}")
-                        
-                        # # Show quick metrics comparison
-                        # # Add evaluation mode toggle
-                        # st.markdown("### 📊 Quick Results Summary")
 
-                        # # Toggle for evaluation mode
-                        # eval_mode_summary = st.toggle(
-                        #     "🔄 Evaluate in Original Scale (exp transform)", 
-                        #     value=True, 
-                        #     key=f"eval_mode_summary_{timestamp}",
-                        #     help="Toggle between ln scale (False) and original HPM scale (True)"
-                        # )
+                # Check if current session is locked
+                current_session = st.session_state.get('current_training_session', None)
+                is_locked = current_session and st.session_state.get(f'training_locked_{current_session}', False)
 
-                        # # Recalculate metrics based on toggle
-                        # if eval_mode_summary:
-                        #     st.info("📈 Showing metrics in **Original Scale** (HPM values)")
-                        # else:
-                        #     st.info("📊 Showing metrics in **Log Scale** (ln values)")
-
-                        # # Recalculate metrics for all models
-                        # summary_metrics = {}
-                        # for model_name, result in all_results.items():
-                        #     # Get fresh predictions
-                        #     y_test = result['y_test_last']
-                        #     y_pred = result['y_pred_last']
-                            
-                        #     # Recalculate with chosen evaluation mode
-                        #     fresh_metrics = evaluate(y_test, y_pred, squared=eval_mode_summary)
-                        #     summary_metrics[model_name] = fresh_metrics
-
-                        # # Create updated metrics DataFrame
-                        # metrics_df = pd.DataFrame({
-                        #     model_name: {
-                        #         'Test R²': metrics['R2'],
-                        #         'Test PE10': metrics['PE10'],
-                        #         'Test RT20': metrics['RT20'],
-                        #         'Test FSD': metrics['FSD']
-                        #     }
-                        #     for model_name, metrics in summary_metrics.items()
-                        # }).T
-
-                        # st.dataframe(metrics_df.style.format({
-                        #     'Test R²': '{:.4f}',
-                        #     'Test PE10': '{:.4f}',
-                        #     'Test RT20': '{:.4f}',
-                        #     'Test FSD': '{:.4f}'
-                        # }), use_container_width=True)
+                if is_locked:
+                    # Show locked state with results
+                    st.info(f"🔒 **Training Complete** - Session: {current_session}")
+                    st.info("💡 Results are locked. Use 'Train Another Model Set' below to start new training.")
+                    
+                    # Show the download section even when locked
+                    if current_session in st.session_state.all_model_results:
+                        all_results = st.session_state.all_model_results[current_session]
+                        timestamp = current_session
                         
-                        # Model downloads - FIXED: True one-click download all
+                        # Model downloads section (same as before)
                         st.markdown("### 💾 Download All Trained Models")
                         st.info("📋 Note: OLS model is for comparison only and not included in downloads")
                         
                         # Filter out OLS from downloads
                         downloadable_results = {k: v for k, v in all_results.items() if k != 'OLS'}
                         
-                        # User input for individual PKL filenames (exclude OLS)
+                        # User input for individual PKL filenames (exclude OLS) - USE LOCKED KEYS
                         if downloadable_results:
                             st.markdown("**📝 Customize Model Filenames:**")
                             col1, col2, col3 = st.columns(3)
@@ -4475,7 +4291,7 @@ elif st.session_state.processing_step == 'advanced':
                                     "Random Forest filename", 
                                     value=f"random_forest_model_{timestamp}",
                                     placeholder="Enter filename (without .pkl)",
-                                    key=f"rf_filename_{timestamp}"
+                                    key=f"rf_filename_locked_{timestamp}"  # LOCKED KEY
                                 )
                             
                             with col2:
@@ -4483,7 +4299,7 @@ elif st.session_state.processing_step == 'advanced':
                                     "Gradient Boosting filename", 
                                     value=f"gradient_boosting_model_{timestamp}",
                                     placeholder="Enter filename (without .pkl)",
-                                    key=f"gbdt_filename_{timestamp}"
+                                    key=f"gbdt_filename_locked_{timestamp}"  # LOCKED KEY
                                 )
                             
                             with col3:
@@ -4491,10 +4307,10 @@ elif st.session_state.processing_step == 'advanced':
                                     "RERF filename", 
                                     value=f"rerf_model_{timestamp}",
                                     placeholder="Enter filename (without .pkl)",
-                                    key=f"rerf_filename_{timestamp}"
+                                    key=f"rerf_filename_locked_{timestamp}"  # LOCKED KEY
                                 )
-                                
-                        # Prepare ZIP file with all models
+                        
+                        # ZIP download (same code as before)
                         try:
                             import zipfile
                             import io
@@ -4531,7 +4347,7 @@ elif st.session_state.processing_step == 'advanced':
                                 # Create and add features JSON
                                 features_info = {
                                     'training_session': timestamp,
-                                    'target_variable': ml_y_column,
+                                    'target_variable': ml_x_columns[0] if ml_x_columns else '',  # Handle safely
                                     'feature_names': ml_x_columns,
                                     'feature_count': len(ml_x_columns),
                                     'models_trained': list(downloadable_results.keys()),
@@ -4562,13 +4378,13 @@ elif st.session_state.processing_step == 'advanced':
                             
                             zip_buffer.seek(0)
                             
-                            # One-click download button
+                            # One-click download button - USE LOCKED KEY
                             st.download_button(
                                 label="📦 Download All Models + Features (ZIP)",
                                 data=zip_buffer.getvalue(),
                                 file_name=f"ml_models_package_{timestamp}.zip",
                                 mime="application/zip",
-                                key=f"download_all_{timestamp}",
+                                key=f"download_all_locked_{timestamp}",  # LOCKED KEY
                                 type="primary",
                                 use_container_width=True
                             )
@@ -4578,23 +4394,346 @@ elif st.session_state.processing_step == 'advanced':
                                 
                         except Exception as e:
                             st.error(f"❌ Failed to prepare ZIP download: {str(e)}")
-
-                    # ADD THIS NEW SECTION HERE:
+                    
+                    # UNLOCK BUTTON
                     st.markdown("---")
                     st.markdown("### 🔄 Train Another Model Set")
-
+                    
                     if st.button("🚀 Make Another Model", type="secondary", use_container_width=True, help="Clear results and train new models with different parameters"):
-                        # Clear the current training results
-                        if timestamp in st.session_state.all_model_results:
-                            del st.session_state.all_model_results[timestamp]
+                        # Clear the lock
+                        if current_session:
+                            if f'training_locked_{current_session}' in st.session_state:
+                                del st.session_state[f'training_locked_{current_session}']
+                            if 'current_training_session' in st.session_state:
+                                del st.session_state['current_training_session']
                         
-                        # Clear any cached results that might interfere
+                        # Clear optuna results
                         if 'optuna_results' in st.session_state:
                             del st.session_state.optuna_results
                         
-                        st.success("✅ Cleared current results! You can now adjust parameters and train new models.")
-                        st.info("💡 Modify parameters above and click 'Train All Models' again")
+                        st.success("✅ Unlocked! You can now train new models.")
                         st.rerun()
+
+                else:
+                    # Show normal training button when not locked
+                    if st.button("🤖 Train All Models", type="primary", use_container_width=True):
+                        with st.spinner("Training all models sequentially..."):
+                            
+                            all_results = {}
+                            overall_progress = st.progress(0)
+                            status_text = st.empty()
+                            
+                            # Model configurations (EXISTING - NO CHANGE)
+                            models_config = [
+                                {
+                                    'name': 'Random Forest',
+                                    'model': RandomForestRegressor(
+                                        n_estimators=rf_n_estimators,
+                                        max_depth=rf_max_depth,
+                                        min_samples_split=rf_min_samples_split,
+                                        min_samples_leaf=rf_min_samples_leaf,
+                                        max_features=rf_max_features,
+                                        random_state=random_state
+                                    ),
+                                    'type': 'standard'
+                                },
+                                {
+                                    'name': 'Gradient Boosting',
+                                    'model': GradientBoostingRegressor(
+                                        n_estimators=gbdt_n_estimators,
+                                        learning_rate=gbdt_learning_rate,
+                                        max_depth=gbdt_max_depth,
+                                        subsample=gbdt_subsample,
+                                        min_samples_split=gbdt_min_samples_split,
+                                        min_samples_leaf=gbdt_min_samples_leaf,
+                                        random_state=random_state
+                                    ),
+                                    'type': 'standard'
+                                },
+                                {
+                                    'name': 'RERF',
+                                    'model': {
+                                        'linear': LinearRegression(),
+                                        'rf': RandomForestRegressor(
+                                            n_estimators=rerf_n_estimators,
+                                            max_depth=rerf_max_depth,
+                                            min_samples_split=rerf_min_samples_split,
+                                            min_samples_leaf=rerf_min_samples_leaf,
+                                            max_features=rerf_max_features,
+                                            random_state=random_state
+                                        )
+                                    },
+                                    'type': 'rerf'
+                                },
+                                {
+                                    'name': 'OLS',
+                                    'model': LinearRegression(),
+                                    'type': 'ols'
+                                }
+                            ]
+                            
+                            # Train each model (CORRECTED SECTION)
+                            for i, model_config in enumerate(models_config):
+                                model_name = model_config['name']
+                                status_text.text(f"Training {model_name} (CV + Full Dataset)...")
+                                overall_progress.progress(i / len(models_config))
+                                
+                                try:
+                                    if model_config['type'] == 'standard':
+                                        # Run CV evaluation first
+                                        cv_model, cv_evaluation_df, cv_train_results_df, cv_global_train_metrics, cv_global_test_metrics, cv_y_test_last, cv_y_pred_last, cv_is_log_transformed = analyzer.goval_machine_learning(
+                                            ml_x_columns, ml_y_column, model_config['model'],
+                                            group_column if use_group else None,
+                                            n_splits, random_state, min_sample,
+                                            full_dataset_eval=False  # CV mode
+                                        )
+                                        
+                                        # Run Full Dataset training
+                                        full_model, full_evaluation_df, full_train_results_df, full_global_train_metrics, full_global_test_metrics, full_y_test_last, full_y_pred_last, full_is_log_transformed = analyzer.goval_machine_learning(
+                                            ml_x_columns, ml_y_column, model_config['model'],
+                                            group_column if use_group else None,
+                                            n_splits, random_state, min_sample,
+                                            full_dataset_eval=True  # Full dataset mode
+                                        )
+                                        
+                                    elif model_config['type'] == 'rerf':
+                                        # Run CV evaluation first
+                                        cv_model, cv_evaluation_df, cv_train_results_df, cv_global_train_metrics, cv_global_test_metrics, cv_y_test_last, cv_y_pred_last, cv_is_log_transformed = train_rerf_model(
+                                            analyzer.current_data, ml_x_columns, ml_y_column,
+                                            model_config['model']['linear'], model_config['model']['rf'],
+                                            group_column if use_group else None,
+                                            n_splits, random_state, min_sample,
+                                            full_dataset_eval=False  # CV mode
+                                        )
+                                        
+                                        # Run Full Dataset training
+                                        full_model, full_evaluation_df, full_train_results_df, full_global_train_metrics, full_global_test_metrics, full_y_test_last, full_y_pred_last, full_is_log_transformed = train_rerf_model(
+                                            analyzer.current_data, ml_x_columns, ml_y_column,
+                                            model_config['model']['linear'], model_config['model']['rf'],
+                                            group_column if use_group else None,
+                                            n_splits, random_state, min_sample,
+                                            full_dataset_eval=True  # Full dataset mode
+                                        )
+                                    
+                                    elif model_config['type'] == 'ols':
+                                        # Create a LinearRegression model instance
+                                        ols_lr_model = LinearRegression()
+                                        
+                                        # Run CV evaluation using the same function as RF/GBDT
+                                        cv_model, cv_evaluation_df, cv_train_results_df, cv_global_train_metrics, cv_global_test_metrics, cv_y_test_last, cv_y_pred_last, cv_is_log_transformed = analyzer.goval_machine_learning(
+                                            ml_x_columns, ml_y_column, ols_lr_model,
+                                            group_column if use_group else None,
+                                            n_splits, random_state, min_sample,
+                                            full_dataset_eval=False  # CV mode
+                                        )
+                                        
+                                        # Run Full Dataset training using the same function
+                                        full_model, full_evaluation_df, full_train_results_df, full_global_train_metrics, full_global_test_metrics, full_y_test_last, full_y_pred_last, full_is_log_transformed = analyzer.goval_machine_learning(
+                                            ml_x_columns, ml_y_column, ols_lr_model,
+                                            group_column if use_group else None,
+                                            n_splits, random_state, min_sample,
+                                            full_dataset_eval=True  # Full dataset mode
+                                        )
+                                    
+                                    # Store BOTH CV and Full Dataset results
+                                    all_results[model_name] = {
+                                        'model': full_model,  # Full dataset model for download
+                                        'cv_evaluation_df': cv_evaluation_df,
+                                        'full_evaluation_df': full_evaluation_df,
+                                        'cv_global_test_metrics': cv_global_test_metrics,
+                                        'full_global_test_metrics': full_global_test_metrics,
+                                        'y_test_last': full_y_test_last,  # Use full dataset predictions for scatter plot
+                                        'y_pred_last': full_y_pred_last,
+                                        'is_log_transformed': full_is_log_transformed,
+                                        'feature_names': ml_x_columns,
+                                        'target_name': ml_y_column
+                                    }
+                                    
+                                except Exception as e:
+                                    st.error(f"❌ {model_name} training failed: {str(e)}")
+                                    continue
+                            
+                            overall_progress.progress(1.0)
+                            status_text.text("All models trained successfully!")
+                            
+                            # Store in session state for comparison
+                            if 'all_model_results' not in st.session_state:
+                                st.session_state.all_model_results = {}
+                            
+                            # Add timestamp to results
+                            wib_timezone = timezone(timedelta(hours=7))  # WIB is UTC+7
+                            timestamp = datetime.now(wib_timezone).strftime('%Y%m%d_%H%M%S_WIB')
+                            st.session_state.all_model_results[timestamp] = all_results
+                            
+                            st.success(f"✅ All models trained successfully! Results saved with timestamp: {timestamp}")
+                            
+                            # # Show quick metrics comparison
+                            # # Add evaluation mode toggle
+                            # st.markdown("### 📊 Quick Results Summary")
+
+                            # # Toggle for evaluation mode
+                            # eval_mode_summary = st.toggle(
+                            #     "🔄 Evaluate in Original Scale (exp transform)", 
+                            #     value=True, 
+                            #     key=f"eval_mode_summary_{timestamp}",
+                            #     help="Toggle between ln scale (False) and original HPM scale (True)"
+                            # )
+
+                            # # Recalculate metrics based on toggle
+                            # if eval_mode_summary:
+                            #     st.info("📈 Showing metrics in **Original Scale** (HPM values)")
+                            # else:
+                            #     st.info("📊 Showing metrics in **Log Scale** (ln values)")
+
+                            # # Recalculate metrics for all models
+                            # summary_metrics = {}
+                            # for model_name, result in all_results.items():
+                            #     # Get fresh predictions
+                            #     y_test = result['y_test_last']
+                            #     y_pred = result['y_pred_last']
+                                
+                            #     # Recalculate with chosen evaluation mode
+                            #     fresh_metrics = evaluate(y_test, y_pred, squared=eval_mode_summary)
+                            #     summary_metrics[model_name] = fresh_metrics
+
+                            # # Create updated metrics DataFrame
+                            # metrics_df = pd.DataFrame({
+                            #     model_name: {
+                            #         'Test R²': metrics['R2'],
+                            #         'Test PE10': metrics['PE10'],
+                            #         'Test RT20': metrics['RT20'],
+                            #         'Test FSD': metrics['FSD']
+                            #     }
+                            #     for model_name, metrics in summary_metrics.items()
+                            # }).T
+
+                            # st.dataframe(metrics_df.style.format({
+                            #     'Test R²': '{:.4f}',
+                            #     'Test PE10': '{:.4f}',
+                            #     'Test RT20': '{:.4f}',
+                            #     'Test FSD': '{:.4f}'
+                            # }), use_container_width=True)
+                            
+                            # Model downloads - FIXED: True one-click download all
+                            st.markdown("### 💾 Download All Trained Models")
+                            st.info("📋 Note: OLS model is for comparison only and not included in downloads")
+                            
+                            # Filter out OLS from downloads
+                            downloadable_results = {k: v for k, v in all_results.items() if k != 'OLS'}
+                            
+                            # User input for individual PKL filenames (exclude OLS)
+                            if downloadable_results:
+                                st.markdown("**📝 Customize Model Filenames:**")
+                                col1, col2, col3 = st.columns(3)
+                                
+                                with col1:
+                                    rf_filename = st.text_input(
+                                        "Random Forest filename", 
+                                        value=f"random_forest_model_{timestamp}",
+                                        placeholder="Enter filename (without .pkl)",
+                                        key=f"rf_filename_{timestamp}"
+                                    )
+                                
+                                with col2:
+                                    gbdt_filename = st.text_input(
+                                        "Gradient Boosting filename", 
+                                        value=f"gradient_boosting_model_{timestamp}",
+                                        placeholder="Enter filename (without .pkl)",
+                                        key=f"gbdt_filename_{timestamp}"
+                                    )
+                                
+                                with col3:
+                                    rerf_filename = st.text_input(
+                                        "RERF filename", 
+                                        value=f"rerf_model_{timestamp}",
+                                        placeholder="Enter filename (without .pkl)",
+                                        key=f"rerf_filename_{timestamp}"
+                                    )
+                                    
+                            # Prepare ZIP file with all models
+                            try:
+                                import zipfile
+                                import io
+                                
+                                # Create in-memory ZIP file
+                                zip_buffer = io.BytesIO()
+                                
+                                with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+                                    # Add each model to ZIP
+                                    for model_name, result in downloadable_results.items():
+                                        # Prepare model data
+                                        model_data = {
+                                            'model': result['model'],
+                                            'feature_names': result['feature_names'],
+                                            'target_name': result['target_name'],
+                                            'model_type': model_name,
+                                            'metrics': {
+                                                'cv_metrics': result['cv_global_test_metrics'],
+                                                'full_metrics': result['full_global_test_metrics']
+                                            },
+                                            'timestamp': timestamp,
+                                        }
+                                        
+                                        # Add model file to ZIP with user-defined names
+                                        if model_name == 'Random Forest':
+                                            model_filename = f"{rf_filename}.pkl"
+                                        elif model_name == 'Gradient Boosting':
+                                            model_filename = f"{gbdt_filename}.pkl"
+                                        elif model_name == 'RERF':
+                                            model_filename = f"{rerf_filename}.pkl"
+                                        model_bytes = pickle.dumps(model_data)
+                                        zip_file.writestr(model_filename, model_bytes)
+                                    
+                                    # Create and add features JSON
+                                    features_info = {
+                                        'training_session': timestamp,
+                                        'target_variable': ml_y_column,
+                                        'feature_names': ml_x_columns,
+                                        'feature_count': len(ml_x_columns),
+                                        'models_trained': list(downloadable_results.keys()),
+                                        'cross_validation': {
+                                            'n_splits': n_splits,
+                                            'random_state': random_state,
+                                            'group_column': group_column if use_group else None
+                                        },
+                                        'categorical_encodings': st.session_state.get('categorical_encodings', None),
+                                        'performance_summary': {
+                                            model_name: {
+                                                'cv_r2': result['cv_global_test_metrics']['R2'],
+                                                'cv_pe10': result['cv_global_test_metrics']['PE10'], 
+                                                'cv_rt20': result['cv_global_test_metrics']['RT20'],
+                                                'cv_fsd': result['cv_global_test_metrics']['FSD'],
+                                                'full_r2': result['full_global_test_metrics']['R2'],
+                                                'full_pe10': result['full_global_test_metrics']['PE10'],
+                                                'full_rt20': result['full_global_test_metrics']['RT20'],
+                                                'full_fsd': result['full_global_test_metrics']['FSD']
+                                            }
+                                            for model_name, result in downloadable_results.items()
+                                        }
+                                    }
+                                    
+                                    # Add features JSON to ZIP
+                                    features_json = json.dumps(features_info, indent=2)
+                                    zip_file.writestr(f"features_info_{timestamp}.json", features_json)
+                                
+                                zip_buffer.seek(0)
+                                
+                                # One-click download button
+                                st.download_button(
+                                    label="📦 Download All Models + Features (ZIP)",
+                                    data=zip_buffer.getvalue(),
+                                    file_name=f"ml_models_package_{timestamp}.zip",
+                                    mime="application/zip",
+                                    key=f"download_all_{timestamp}",
+                                    type="primary",
+                                    use_container_width=True
+                                )
+                                
+                                st.success("✅ Click above to download all models in one ZIP file!")
+                                st.info("📋 ZIP contains: 3 model files (.pkl) + features info (.json)")
+                                    
+                            except Exception as e:
+                                st.error(f"❌ Failed to prepare ZIP download: {str(e)}")
 
         with tab3:
             st.markdown("### 📊 Model Comparison Dashboard")
