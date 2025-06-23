@@ -4225,37 +4225,29 @@ elif st.session_state.processing_step == 'advanced':
                         
                         st.info("Linear Regression has no hyperparameters")
                 
-                # NEW SECTION: Add this after RERF parameters
+                # NEW SECTION: Simplified ZIP name configuration
                 st.markdown("---")
-                st.markdown("#### 📝 Model Export Configuration")
-                st.info("💡 Configure filenames for your trained models before training")
+                st.markdown("#### 📦 Export Configuration")
+                st.info("💡 Configure your model package name before training")
 
-                col1, col2, col3 = st.columns(3)
+                col1, col2 = st.columns([2, 1])
 
                 with col1:
                     default_timestamp = datetime.now().strftime('%Y%m%d_%H%M')
-                    rf_filename = st.text_input(
-                        "Random Forest filename", 
-                        value=f"random_forest_model_{default_timestamp}",
-                        placeholder="Enter filename (without .pkl)",
-                        key="rf_filename_input"
+                    zip_package_name = st.text_input(
+                        "Model Package Name", 
+                        value=f"ml_models_package_{default_timestamp}",
+                        placeholder="Enter package name (without .zip)",
+                        key="zip_package_name_input",
+                        help="This will be the name of your downloaded ZIP file"
                     )
 
                 with col2:
-                    gbdt_filename = st.text_input(
-                        "Gradient Boosting filename", 
-                        value=f"gradient_boosting_model_{default_timestamp}",
-                        placeholder="Enter filename (without .pkl)",
-                        key="gbdt_filename_input"
-                    )
-
-                with col3:
-                    rerf_filename = st.text_input(
-                        "RERF filename", 
-                        value=f"rerf_model_{default_timestamp}",
-                        placeholder="Enter filename (without .pkl)",
-                        key="rerf_filename_input"
-                    )
+                    st.markdown("**📋 Contents Preview:**")
+                    st.write("• random_forest_model.pkl")
+                    st.write("• gradient_boosting_model.pkl") 
+                    st.write("• rerf_model.pkl")
+                    st.write("• features_info.json")
 
                 st.markdown("---")
                 
@@ -4448,11 +4440,11 @@ elif st.session_state.processing_step == 'advanced':
                         # SIMPLIFIED DOWNLOAD SECTION - Only ZIP download button
                         st.markdown("### 💾 Download Trained Models")
                         st.info("📋 Note: OLS model is for comparison only and not included in downloads")
-                        
+
                         # Filter out OLS from downloads
                         downloadable_results = {k: v for k, v in all_results.items() if k != 'OLS'}
-                        
-                        # Prepare ZIP file with all models using pre-configured filenames
+
+                        # Prepare ZIP file with all models using standard filenames
                         try:
                             import zipfile
                             import io
@@ -4461,7 +4453,7 @@ elif st.session_state.processing_step == 'advanced':
                             zip_buffer = io.BytesIO()
                             
                             with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
-                                # Add each model to ZIP
+                                # Add each model to ZIP with standard filenames
                                 for model_name, result in downloadable_results.items():
                                     # Prepare model data
                                     model_data = {
@@ -4476,18 +4468,18 @@ elif st.session_state.processing_step == 'advanced':
                                         'timestamp': timestamp,
                                     }
                                     
-                                    # Add model file to ZIP with pre-configured names
+                                    # Standard filenames (no user customization)
                                     if model_name == 'Random Forest':
-                                        model_filename = f"{rf_filename}.pkl"
+                                        model_filename = "random_forest_model.pkl"
                                     elif model_name == 'Gradient Boosting':
-                                        model_filename = f"{gbdt_filename}.pkl"
+                                        model_filename = "gradient_boosting_model.pkl"
                                     elif model_name == 'RERF':
-                                        model_filename = f"{rerf_filename}.pkl"
+                                        model_filename = "rerf_model.pkl"
                                     
                                     model_bytes = pickle.dumps(model_data)
                                     zip_file.writestr(model_filename, model_bytes)
                                 
-                                # Create and add features JSON
+                                # Create and add features JSON with standard filename
                                 features_info = {
                                     'training_session': timestamp,
                                     'target_variable': ml_y_column,
@@ -4501,9 +4493,9 @@ elif st.session_state.processing_step == 'advanced':
                                     },
                                     'categorical_encodings': st.session_state.get('categorical_encodings', None),
                                     'model_filenames': {
-                                        'Random Forest': f"{rf_filename}.pkl",
-                                        'Gradient Boosting': f"{gbdt_filename}.pkl",
-                                        'RERF': f"{rerf_filename}.pkl"
+                                        'Random Forest': "random_forest_model.pkl",
+                                        'Gradient Boosting': "gradient_boosting_model.pkl",
+                                        'RERF': "rerf_model.pkl"
                                     },
                                     'performance_summary': {
                                         model_name: {
@@ -4520,28 +4512,28 @@ elif st.session_state.processing_step == 'advanced':
                                     }
                                 }
                                 
-                                # Add features JSON to ZIP
+                                # Add features JSON to ZIP with standard filename
                                 features_json = json.dumps(features_info, indent=2)
-                                zip_file.writestr(f"features_info_{timestamp}.json", features_json)
+                                zip_file.writestr("features_info.json", features_json)
                             
                             zip_buffer.seek(0)
                             
-                            # Single download button
+                            # Single download button with user-defined ZIP name
                             st.download_button(
-                                label="📦 Download All Models + Features (ZIP)",
+                                label="📦 Download Model Package (ZIP)",
                                 data=zip_buffer.getvalue(),
-                                file_name=f"ml_models_package_{timestamp}.zip",
+                                file_name=f"{zip_package_name}.zip",
                                 mime="application/zip",
-                                key=f"download_all_{timestamp}",
+                                key=f"download_package_{timestamp}",
                                 type="primary",
                                 use_container_width=True
                             )
                             
-                            st.success("✅ Click above to download all models in one ZIP file!")
-                            st.info(f"📋 ZIP contains: {rf_filename}.pkl, {gbdt_filename}.pkl, {rerf_filename}.pkl + features_info_{timestamp}.json")
+                            st.success("✅ Click above to download your model package!")
+                            st.info("📋 **Package Contents**: random_forest_model.pkl, gradient_boosting_model.pkl, rerf_model.pkl, features_info.json")
                                 
                         except Exception as e:
-                            st.error(f"❌ Failed to prepare ZIP download: {str(e)}")
+                            st.error(f"❌ Failed to prepare model package: {str(e)}")
 
         with tab3:
             st.markdown("### 📊 Model Comparison Dashboard")
