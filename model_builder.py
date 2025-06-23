@@ -4225,37 +4225,37 @@ elif st.session_state.processing_step == 'advanced':
                         
                         st.info("Linear Regression has no hyperparameters")
                 
-                st.markdown("---")
-                st.markdown("#### ⚙️ Evaluation Configuration")
+                # st.markdown("---")
+                # st.markdown("#### ⚙️ Evaluation Configuration")
 
-                col1, col2 = st.columns(2)
+                # col1, col2 = st.columns(2)
 
-                with col1:
-                    st.markdown("**Evaluation Mode:**")
-                    evaluation_mode = st.radio(
-                        "Choose evaluation approach:",
-                        ["Cross-Validation (Recommended)", "Full Dataset Training Performance"],
-                        index=0,
-                        help="""
-                        • Cross-Validation: More realistic, tests on unseen data
-                        • Full Dataset: Shows maximum training performance, may overestimate
-                        """,
-                        key="eval_mode_radio"
-                    )
+                # with col1:
+                #     st.markdown("**Evaluation Mode:**")
+                #     evaluation_mode = st.radio(
+                #         "Choose evaluation approach:",
+                #         ["Cross-Validation (Recommended)", "Full Dataset Training Performance"],
+                #         index=0,
+                #         help="""
+                #         • Cross-Validation: More realistic, tests on unseen data
+                #         • Full Dataset: Shows maximum training performance, may overestimate
+                #         """,
+                #         key="eval_mode_radio"
+                #     )
 
-                    full_dataset_eval = (evaluation_mode == "Full Dataset Training Performance")
+                #     full_dataset_eval = (evaluation_mode == "Full Dataset Training Performance")
 
-                with col2:
-                    if full_dataset_eval:
-                        st.warning("⚠️ **Full Dataset Mode**")
-                        st.write("• Models trained and evaluated on same data")
-                        st.write("• Results show training performance")
-                        st.write("• May be overly optimistic")
-                    else:
-                        st.info("✅ **Cross-Validation Mode**")
-                        st.write("• Models tested on unseen data")
-                        st.write("• More reliable for real-world performance")
-                        st.write("• Conservative estimates")
+                # with col2:
+                #     if full_dataset_eval:
+                #         st.warning("⚠️ **Full Dataset Mode**")
+                #         st.write("• Models trained and evaluated on same data")
+                #         st.write("• Results show training performance")
+                #         st.write("• May be overly optimistic")
+                #     else:
+                #         st.info("✅ **Cross-Validation Mode**")
+                #         st.write("• Models tested on unseen data")
+                #         st.write("• More reliable for real-world performance")
+                #         st.write("• Conservative estimates")
                 
                 # Train All Models Button
                 st.markdown("#### 🚀 Model Training")
@@ -4324,78 +4324,60 @@ elif st.session_state.processing_step == 'advanced':
                             
                             try:
                                 if model_config['type'] == 'standard':
-                                    # UPDATED: Add full_dataset_eval parameter
-                                    final_model, evaluation_df, train_results_df, global_train_metrics, global_test_metrics, y_test_last, y_pred_last, is_log_transformed = analyzer.goval_machine_learning(
+                                    # Run CV evaluation first
+                                    cv_model, cv_evaluation_df, cv_train_results_df, cv_global_train_metrics, cv_global_test_metrics, cv_y_test_last, cv_y_pred_last, cv_is_log_transformed = analyzer.goval_machine_learning(
                                         ml_x_columns, ml_y_column, model_config['model'],
                                         group_column if use_group else None,
                                         n_splits, random_state, min_sample,
-                                        full_dataset_eval=full_dataset_eval  # ADD THIS LINE
+                                        full_dataset_eval=False  # CV mode
+                                    )
+                                    
+                                    # Run Full Dataset training
+                                    full_model, full_evaluation_df, full_train_results_df, full_global_train_metrics, full_global_test_metrics, full_y_test_last, full_y_pred_last, full_is_log_transformed = analyzer.goval_machine_learning(
+                                        ml_x_columns, ml_y_column, model_config['model'],
+                                        group_column if use_group else None,
+                                        n_splits, random_state, min_sample,
+                                        full_dataset_eval=True  # Full dataset mode
                                     )
                                     
                                 elif model_config['type'] == 'rerf':
-                                    # UPDATED: Add full_dataset_eval parameter
-                                    final_model, evaluation_df, train_results_df, global_train_metrics, global_test_metrics, y_test_last, y_pred_last, is_log_transformed = train_rerf_model(
+                                    # Run CV evaluation first
+                                    cv_model, cv_evaluation_df, cv_train_results_df, cv_global_train_metrics, cv_global_test_metrics, cv_y_test_last, cv_y_pred_last, cv_is_log_transformed = train_rerf_model(
                                         analyzer.current_data, ml_x_columns, ml_y_column,
                                         model_config['model']['linear'], model_config['model']['rf'],
                                         group_column if use_group else None,
                                         n_splits, random_state, min_sample,
-                                        full_dataset_eval=full_dataset_eval  # ADD THIS LINE
+                                        full_dataset_eval=False  # CV mode
+                                    )
+                                    
+                                    # Run Full Dataset training
+                                    final_model, full_evaluation_df, full_train_results_df, full_global_train_metrics, full_global_test_metrics, full_y_test_last, full_y_pred_last, full_is_log_transformed = train_rerf_model(
+                                        analyzer.current_data, ml_x_columns, ml_y_column,
+                                        model_config['model']['linear'], model_config['model']['rf'],
+                                        group_column if use_group else None,
+                                        n_splits, random_state, min_sample,
+                                        full_dataset_eval=True  # Full dataset mode
                                     )
                                 
                                 elif model_config['type'] == 'ols':
-                                    # Use scikit-learn LinearRegression for consistency with other ML models
-                                    model_vars = [ml_y_column] + ml_x_columns
-                                    df_model = analyzer.current_data[model_vars].dropna()
-                                    X = df_model[ml_x_columns]
-                                    y = df_model[ml_y_column]
+                                    # Create a LinearRegression model instance
+                                    ols_lr_model = LinearRegression()
                                     
-                                    # Use scikit-learn LinearRegression (same as other ML models)
-                                    lr_model = LinearRegression()
-                                    lr_model.fit(X, y)
-                                    y_pred_full = lr_model.predict(X)
+                                    # Run CV evaluation using the same function as RF/GBDT
+                                    cv_model, cv_evaluation_df, cv_train_results_df, cv_global_train_metrics, cv_global_test_metrics, cv_y_test_last, cv_y_pred_last, cv_is_log_transformed = analyzer.goval_machine_learning(
+                                        ml_x_columns, ml_y_column, ols_lr_model,
+                                        group_column if use_group else None,
+                                        n_splits, random_state, min_sample,
+                                        full_dataset_eval=False  # CV mode
+                                    )
                                     
-                                    # Calculate metrics using the same evaluate function
-                                    full_metrics = evaluate(y, y_pred_full, squared=True)
-                                    
-                                    # Create evaluation results for consistency with other models
-                                    evaluation_results = {
-                                        'Fold': ['Full-Dataset'], 
-                                        'R2': [full_metrics['R2']], 
-                                        'FSD': [full_metrics['FSD']], 
-                                        'PE10': [full_metrics['PE10']], 
-                                        'RT20': [full_metrics['RT20']]
-                                    }
-                                    evaluation_df = pd.DataFrame(evaluation_results)
-                                    
-                                    # Train results are the same as test results for OLS (no CV)
-                                    train_results_df = pd.DataFrame({
-                                        'R2': [full_metrics['R2']], 
-                                        'FSD': [full_metrics['FSD']], 
-                                        'PE10': [full_metrics['PE10']], 
-                                        'RT20': [full_metrics['RT20']]
-                                    })
-                                    
-                                    # Set final values
-                                    final_model = lr_model
-                                    global_train_metrics = full_metrics
-                                    global_test_metrics = full_metrics  # Same as train for OLS
-                                    y_test_last = y
-                                    y_pred_last = y_pred_full
-                                    is_log_transformed = ('ln_' in ml_y_column) or ('log_' in ml_y_column.lower())
-                                
-                                # Store results (NO CHANGE)
-                                all_results[model_name] = {
-                                    'model': final_model,
-                                    'evaluation_df': evaluation_df,
-                                    'train_results_df': train_results_df,
-                                    'global_train_metrics': global_train_metrics,
-                                    'global_test_metrics': global_test_metrics,
-                                    'y_test_last': y_test_last,
-                                    'y_pred_last': y_pred_last,
-                                    'is_log_transformed': is_log_transformed,
-                                    'feature_names': ml_x_columns,
-                                    'target_name': ml_y_column
-                                }
+                                    # Run Full Dataset training using the same function
+                                    final_model, full_evaluation_df, full_train_results_df, full_global_train_metrics, full_global_test_metrics, full_y_test_last, full_y_pred_last, full_is_log_transformed = analyzer.goval_machine_learning(
+                                        ml_x_columns, ml_y_column, ols_lr_model,
+                                        group_column if use_group else None,
+                                        n_splits, random_state, min_sample,
+                                        full_dataset_eval=True  # Full dataset mode
+                                    )
                                 
                             except Exception as e:
                                 st.error(f"❌ {model_name} training failed: {str(e)}")
@@ -4589,12 +4571,41 @@ elif st.session_state.processing_step == 'advanced':
                 selected_session = st.selectbox(
                     "Select Training Session",
                     session_options,
-                    index=len(session_options)-1,  # Default to latest
+                    index=len(session_options)-1,
                     key="comparison_session"
                 )
                 
                 if selected_session:
                     results = st.session_state.all_model_results[selected_session]
+                    
+                    # NEW: Cross-Validation Analytics Section
+                    st.markdown("#### 📊 Cross-Validation Analytics")
+                    st.info("📈 Individual fold performance for model validation")
+                    
+                    for model_name, result in results.items():
+                        with st.expander(f"📋 {model_name} - CV Fold Results", expanded=False):
+                            cv_df = result['cv_evaluation_df']
+                            st.dataframe(cv_df.style.format({
+                                'R2': '{:.4f}',
+                                'FSD': '{:.4f}',
+                                'PE10': '{:.4f}',
+                                'RT20': '{:.4f}'
+                            }), use_container_width=True)
+                            
+                            # CV Summary Stats
+                            col1, col2, col3, col4 = st.columns(4)
+                            with col1:
+                                st.metric("CV R² Mean", f"{cv_df['R2'].mean():.4f}")
+                                st.caption(f"Std: {cv_df['R2'].std():.4f}")
+                            with col2:
+                                st.metric("CV PE10 Mean", f"{cv_df['PE10'].mean():.4f}")
+                                st.caption(f"Std: {cv_df['PE10'].std():.4f}")
+                            with col3:
+                                st.metric("CV RT20 Mean", f"{cv_df['RT20'].mean():.4f}")
+                                st.caption(f"Std: {cv_df['RT20'].std():.4f}")
+                            with col4:
+                                st.metric("CV FSD Mean", f"{cv_df['FSD'].mean():.4f}")
+                                st.caption(f"Std: {cv_df['FSD'].std():.4f}")
                     
                     # Add evaluation mode toggle for comparison
                     st.markdown("#### ⚙️ Evaluation Settings")
