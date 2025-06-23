@@ -4415,52 +4415,52 @@ elif st.session_state.processing_step == 'advanced':
                         
                         st.success(f"✅ All models trained successfully! Results saved with timestamp: {timestamp}")
                         
-                        # Show quick metrics comparison
-                        # Add evaluation mode toggle
-                        st.markdown("### 📊 Quick Results Summary")
+                        # # Show quick metrics comparison
+                        # # Add evaluation mode toggle
+                        # st.markdown("### 📊 Quick Results Summary")
 
-                        # Toggle for evaluation mode
-                        eval_mode_summary = st.toggle(
-                            "🔄 Evaluate in Original Scale (exp transform)", 
-                            value=True, 
-                            key=f"eval_mode_summary_{timestamp}",
-                            help="Toggle between ln scale (False) and original HPM scale (True)"
-                        )
+                        # # Toggle for evaluation mode
+                        # eval_mode_summary = st.toggle(
+                        #     "🔄 Evaluate in Original Scale (exp transform)", 
+                        #     value=True, 
+                        #     key=f"eval_mode_summary_{timestamp}",
+                        #     help="Toggle between ln scale (False) and original HPM scale (True)"
+                        # )
 
-                        # Recalculate metrics based on toggle
-                        if eval_mode_summary:
-                            st.info("📈 Showing metrics in **Original Scale** (HPM values)")
-                        else:
-                            st.info("📊 Showing metrics in **Log Scale** (ln values)")
+                        # # Recalculate metrics based on toggle
+                        # if eval_mode_summary:
+                        #     st.info("📈 Showing metrics in **Original Scale** (HPM values)")
+                        # else:
+                        #     st.info("📊 Showing metrics in **Log Scale** (ln values)")
 
-                        # Recalculate metrics for all models
-                        summary_metrics = {}
-                        for model_name, result in all_results.items():
-                            # Get fresh predictions
-                            y_test = result['y_test_last']
-                            y_pred = result['y_pred_last']
+                        # # Recalculate metrics for all models
+                        # summary_metrics = {}
+                        # for model_name, result in all_results.items():
+                        #     # Get fresh predictions
+                        #     y_test = result['y_test_last']
+                        #     y_pred = result['y_pred_last']
                             
-                            # Recalculate with chosen evaluation mode
-                            fresh_metrics = evaluate(y_test, y_pred, squared=eval_mode_summary)
-                            summary_metrics[model_name] = fresh_metrics
+                        #     # Recalculate with chosen evaluation mode
+                        #     fresh_metrics = evaluate(y_test, y_pred, squared=eval_mode_summary)
+                        #     summary_metrics[model_name] = fresh_metrics
 
-                        # Create updated metrics DataFrame
-                        metrics_df = pd.DataFrame({
-                            model_name: {
-                                'Test R²': metrics['R2'],
-                                'Test PE10': metrics['PE10'],
-                                'Test RT20': metrics['RT20'],
-                                'Test FSD': metrics['FSD']
-                            }
-                            for model_name, metrics in summary_metrics.items()
-                        }).T
+                        # # Create updated metrics DataFrame
+                        # metrics_df = pd.DataFrame({
+                        #     model_name: {
+                        #         'Test R²': metrics['R2'],
+                        #         'Test PE10': metrics['PE10'],
+                        #         'Test RT20': metrics['RT20'],
+                        #         'Test FSD': metrics['FSD']
+                        #     }
+                        #     for model_name, metrics in summary_metrics.items()
+                        # }).T
 
-                        st.dataframe(metrics_df.style.format({
-                            'Test R²': '{:.4f}',
-                            'Test PE10': '{:.4f}',
-                            'Test RT20': '{:.4f}',
-                            'Test FSD': '{:.4f}'
-                        }), use_container_width=True)
+                        # st.dataframe(metrics_df.style.format({
+                        #     'Test R²': '{:.4f}',
+                        #     'Test PE10': '{:.4f}',
+                        #     'Test RT20': '{:.4f}',
+                        #     'Test FSD': '{:.4f}'
+                        # }), use_container_width=True)
                         
                         # Model downloads - FIXED: True one-click download all
                         st.markdown("### 💾 Download All Trained Models")
