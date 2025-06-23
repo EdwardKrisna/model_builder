@@ -5,8 +5,8 @@ matplotlib
 seaborn
 plotly
 SQLAlchemy
-statsmodels
-scipy
+scipy>=1.9.0
+statsmodels>=0.14.0
 scikit-learn
 optuna
 folium
