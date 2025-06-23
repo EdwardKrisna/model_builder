@@ -4574,10 +4574,27 @@ elif st.session_state.processing_step == 'advanced':
                             )
                             
                             st.success("✅ Click above to download all models in one ZIP file!")
-                            st.info("📋 ZIP contains: 3 model files (.pkl) + features info (.json) + README (.md)")
+                            st.info("📋 ZIP contains: 3 model files (.pkl) + features info (.json)")
                                 
                         except Exception as e:
                             st.error(f"❌ Failed to prepare ZIP download: {str(e)}")
+                        
+                        # ADD THIS NEW SECTION HERE:
+                        st.markdown("---")
+                        st.markdown("### 🔄 Train Another Model Set")
+
+                        if st.button("🚀 Make Another Model", type="secondary", use_container_width=True, help="Clear results and train new models with different parameters"):
+                            # Clear the current training results
+                            if timestamp in st.session_state.all_model_results:
+                                del st.session_state.all_model_results[timestamp]
+                            
+                            # Clear any cached results that might interfere
+                            if 'optuna_results' in st.session_state:
+                                del st.session_state.optuna_results
+                            
+                            st.success("✅ Cleared current results! You can now adjust parameters and train new models.")
+                            st.info("💡 Modify parameters above and click 'Train All Models' again")
+                            st.rerun()
 
         with tab3:
             st.markdown("### 📊 Model Comparison Dashboard")
