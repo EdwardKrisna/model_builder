@@ -4088,7 +4088,7 @@ elif st.session_state.processing_step == 'advanced':
                         rf_max_depth = st.number_input(
                             "max_depth", 
                             min_value=1, max_value=50, 
-                            value=rf_defaults.get('max_depth', 10),
+                            value=rf_defaults.get('max_depth', 30),
                             key="rf_max_depth"
                         )
                     
@@ -4138,7 +4138,7 @@ elif st.session_state.processing_step == 'advanced':
                         gbdt_learning_rate = st.number_input(
                             "learning_rate", 
                             min_value=0.01, max_value=0.5, 
-                            value=gbdt_defaults.get('learning_rate', 0.1),
+                            value=gbdt_defaults.get('learning_rate', 0.01),
                             step=0.01,
                             key="gbdt_lr"
                         )
