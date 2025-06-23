@@ -1213,7 +1213,10 @@ class RealEstateAnalyzer:
                 global_test_metrics, y_test_last, y_pred_last, is_log_transformed)
         """
         data = self.current_data
-
+    
+        # Determine if target is log-transformed ONCE at the beginning
+        is_log_transformed = ('ln_' in y) or ('log_' in y.lower())
+        
         # Prepare data
         model_vars = [y] + X
         df_model = data[model_vars].dropna()
@@ -1236,27 +1239,23 @@ class RealEstateAnalyzer:
             # --- Standard KFold Cross-Validation ---
             if group is None:
                 from sklearn.model_selection import KFold
-
                 kf = KFold(n_splits=n_splits, shuffle=True, random_state=random_state)
-
+                
                 for fold, (train_idx, test_idx) in enumerate(kf.split(X_full)):
                     X_train, X_test = X_full.iloc[train_idx], X_full.iloc[test_idx]
                     y_train, y_test = y_full.iloc[train_idx], y_full.iloc[test_idx]
-
-                    # Create a copy of the algorithm for this fold
-                    if hasattr(algorithm, 'get_params'):
-                        fold_model = algorithm.__class__(**algorithm.get_params())
-                    else:
-                        fold_model = algorithm
-
-                    # Train fold model
+                    
+                    # Train model
+                    fold_model = algorithm.__class__(**algorithm.get_params())
                     fold_model = fold_model.fit(X_train, y_train)
                     y_train_pred = fold_model.predict(X_train)
                     y_test_pred = fold_model.predict(X_test)
-
-                    train_metrics = evaluate(y_train, y_train_pred, squared=True)
-                    test_metrics = evaluate(y_test, y_test_pred, squared=True)
-
+                    
+                    # FIXED: Use is_log_transformed instead of hardcoded True
+                    train_metrics = evaluate(y_train, y_train_pred, squared=is_log_transformed)
+                    test_metrics = evaluate(y_test, y_test_pred, squared=is_log_transformed)
+                    
+                    # Store metrics...
                     for metric in global_train_metrics.keys():
                         global_train_metrics[metric] += train_metrics[metric]
                         global_test_metrics[metric] += test_metrics[metric]
@@ -1304,20 +1303,14 @@ class RealEstateAnalyzer:
                     y_train_all = pd.concat(y_train_)
                     y_test_all = pd.concat(y_test_)
 
-                    # Create a copy of the algorithm for this fold
-                    if hasattr(algorithm, 'get_params'):
-                        fold_model = algorithm.__class__(**algorithm.get_params())
-                    else:
-                        fold_model = algorithm
-
-                    # Train fold model
+                    fold_model = algorithm.__class__(**algorithm.get_params())
                     fold_model = fold_model.fit(X_train_all, y_train_all)
                     y_train_pred = fold_model.predict(X_train_all)
                     y_test_pred = fold_model.predict(X_test_all)
 
                     # Evaluate train and test scores
-                    train_metrics = evaluate(y_train_all, y_train_pred, squared=True)
-                    test_metrics = evaluate(y_test_all, y_test_pred, squared=True)
+                    train_metrics = evaluate(y_train_all, y_train_pred, squared=is_log_transformed)
+                    test_metrics = evaluate(y_test_all, y_test_pred, squared=is_log_transformed)
 
                     for metric in global_train_metrics.keys():
                         global_train_metrics[metric] += train_metrics[metric]
@@ -1353,11 +1346,11 @@ class RealEstateAnalyzer:
             y_full_pred = full_model.predict(X_full)
             
             # Calculate full dataset metrics
-            full_dataset_metrics = evaluate(y_full, y_full_pred, squared=True)
+            full_dataset_metrics = evaluate(y_full, y_full_pred, squared=is_log_transformed)
             
             # Replace global test metrics with full dataset metrics
             global_test_metrics = full_dataset_metrics.copy()
-            global_train_metrics = full_dataset_metrics.copy()  # Same for training since it's same data
+            global_train_metrics = full_dataset_metrics.copy() # Same for training since it's same data
             
             # Create single "fold" entry for full dataset
             evaluation_results['Fold'].append('Full-Dataset')
@@ -1408,11 +1401,36 @@ class RealEstateAnalyzer:
         # Check if log transformed
         is_log_transformed = ('ln_' in y) or ('log_' in y.lower())
 
+        if not full_dataset_eval:
+            # Collect all CV predictions for recalculation
+            cv_raw_predictions = {
+                'y_actual_all': [],
+                'y_pred_all': []
+            }
+            
+            # Use the last fold data for representative CV predictions
+            if group is None and last_test_idx is not None:  
+                cv_raw_predictions['y_actual_all'] = y_full.iloc[last_test_idx].tolist()  
+                cv_raw_predictions['y_pred_all'] = final_model.predict(X_full.iloc[last_test_idx]).tolist()  
+            elif group is not None and last_group_test_data is not None:  
+                cv_raw_predictions['y_actual_all'] = last_group_test_data['y_test'].tolist()
+                cv_raw_predictions['y_pred_all'] = final_model.predict(last_group_test_data['X_test']).tolist()
+            else:
+                # Fallback: use sample for CV predictions
+                sample_size = min(1000, len(y_full))  
+                sample_idx = np.random.choice(len(y_full), sample_size, replace=False)
+                cv_raw_predictions['y_actual_all'] = y_full.iloc[sample_idx].tolist()  
+                cv_raw_predictions['y_pred_all'] = final_model.predict(X_full.iloc[sample_idx]).tolist()  
+        else:
+            cv_raw_predictions = None
+
+        # Update the return statement to include CV predictions:
         return (
             final_model, evaluation_df, train_results_df,
             global_train_metrics, global_test_metrics,
-            y_test_last, y_pred_last, is_log_transformed
-        )    
+            y_test_last, y_pred_last, is_log_transformed,
+            cv_raw_predictions
+        )
         
     
     def export_model_onnx(self, model, feature_names, model_name):
@@ -3550,6 +3568,8 @@ elif st.session_state.processing_step == 'advanced':
             tuple : (final_model, evaluation_df, train_results_df, global_train_metrics, 
                     global_test_metrics, y_test_last, y_pred_last, is_log_transformed)
             """
+            is_log_transformed = ('ln_' in y_column) or ('log_' in y_column.lower())
+
             try:
                 # Prepare data
                 model_vars = [y_column] + X_columns
@@ -3606,8 +3626,8 @@ elif st.session_state.processing_step == 'advanced':
                             rerf_pred_test = lr_pred_test + rf_pred_residuals_test
                             
                             # Evaluate with same function as other models
-                            train_metrics = evaluate(y_train, rerf_pred_train, squared=True)
-                            test_metrics = evaluate(y_test, rerf_pred_test, squared=True)
+                            train_metrics = evaluate(y_train, rerf_pred_train, squared=is_log_transformed)
+                            test_metrics = evaluate(y_test, rerf_pred_test, squared=is_log_transformed)
                             
                             # Store metrics
                             for metric in global_train_metrics.keys():
@@ -3833,10 +3853,52 @@ elif st.session_state.processing_step == 'advanced':
                 # Check if log transformed
                 is_log_transformed = ('ln_' in y_column) or ('log_' in y_column.lower())
                 
+                # Store raw CV predictions for later recalculation
+                if not full_dataset_eval:
+                    cv_raw_predictions = {
+                        'y_actual_all': [],
+                        'y_pred_all': []
+                    }
+                    
+                    if group_column is None and last_test_idx is not None:
+                        X_test_last = X.iloc[last_test_idx]
+                        y_actual_cv = y.iloc[last_test_idx]
+                        lr_pred_cv = final_linear_model.predict(X_test_last)
+                        rf_pred_cv = final_rf_model.predict(X_test_last)
+                        y_pred_cv = lr_pred_cv + rf_pred_cv
+                        
+                        cv_raw_predictions['y_actual_all'] = y_actual_cv.tolist()
+                        cv_raw_predictions['y_pred_all'] = y_pred_cv.tolist()
+                    elif group_column is not None and last_group_test_data is not None:
+                        X_test_cv = last_group_test_data['X_test']
+                        y_actual_cv = last_group_test_data['y_test']
+                        lr_pred_cv = final_linear_model.predict(X_test_cv)
+                        rf_pred_cv = final_rf_model.predict(X_test_cv)
+                        y_pred_cv = lr_pred_cv + rf_pred_cv
+                        
+                        cv_raw_predictions['y_actual_all'] = y_actual_cv.tolist()
+                        cv_raw_predictions['y_pred_all'] = y_pred_cv.tolist()
+                    else:
+                        # Fallback
+                        sample_size = min(1000, len(y))
+                        sample_idx = np.random.choice(len(y), sample_size, replace=False)
+                        X_sample = X.iloc[sample_idx]
+                        y_sample = y.iloc[sample_idx]
+                        lr_pred_sample = final_linear_model.predict(X_sample)
+                        rf_pred_sample = final_rf_model.predict(X_sample)
+                        rerf_pred_sample = lr_pred_sample + rf_pred_sample
+                        
+                        cv_raw_predictions['y_actual_all'] = y_sample.tolist()
+                        cv_raw_predictions['y_pred_all'] = rerf_pred_sample.tolist()
+                else:
+                    cv_raw_predictions = None
+
+                # Update return statement:
                 return (
                     final_model, evaluation_df, train_results_df,
                     global_train_metrics, global_test_metrics,
-                    y_test_last, rerf_pred_last, is_log_transformed
+                    y_test_last, rerf_pred_last, is_log_transformed,
+                    cv_raw_predictions  # Add this
                 )
                 
             except Exception as e:
@@ -4351,7 +4413,7 @@ elif st.session_state.processing_step == 'advanced':
                             try:
                                 if model_config['type'] == 'standard':
                                     # Run CV evaluation first
-                                    cv_model, cv_evaluation_df, cv_train_results_df, cv_global_train_metrics, cv_global_test_metrics, cv_y_test_last, cv_y_pred_last, cv_is_log_transformed = analyzer.goval_machine_learning(
+                                    cv_model, cv_evaluation_df, cv_train_results_df, cv_global_train_metrics, cv_global_test_metrics, cv_y_test_last, cv_y_pred_last, cv_is_log_transformed, cv_raw_predictions = analyzer.goval_machine_learning(
                                         ml_x_columns, ml_y_column, model_config['model'],
                                         group_column if use_group else None,
                                         n_splits, random_state, min_sample,
@@ -4359,7 +4421,7 @@ elif st.session_state.processing_step == 'advanced':
                                     )
                                     
                                     # Run Full Dataset training
-                                    full_model, full_evaluation_df, full_train_results_df, full_global_train_metrics, full_global_test_metrics, full_y_test_last, full_y_pred_last, full_is_log_transformed = analyzer.goval_machine_learning(
+                                    full_model, full_evaluation_df, full_train_results_df, full_global_train_metrics, full_global_test_metrics, full_y_test_last, full_y_pred_last, full_is_log_transformed, _ = analyzer.goval_machine_learning(
                                         ml_x_columns, ml_y_column, model_config['model'],
                                         group_column if use_group else None,
                                         n_splits, random_state, min_sample,
@@ -4368,7 +4430,7 @@ elif st.session_state.processing_step == 'advanced':
                                     
                                 elif model_config['type'] == 'rerf':
                                     # Run CV evaluation first
-                                    cv_model, cv_evaluation_df, cv_train_results_df, cv_global_train_metrics, cv_global_test_metrics, cv_y_test_last, cv_y_pred_last, cv_is_log_transformed = train_rerf_model(
+                                    cv_model, cv_evaluation_df, cv_train_results_df, cv_global_train_metrics, cv_global_test_metrics, cv_y_test_last, cv_y_pred_last, cv_is_log_transformed, cv_raw_predictions = train_rerf_model(
                                         analyzer.current_data, ml_x_columns, ml_y_column,
                                         model_config['model']['linear'], model_config['model']['rf'],
                                         group_column if use_group else None,
@@ -4377,7 +4439,7 @@ elif st.session_state.processing_step == 'advanced':
                                     )
                                     
                                     # Run Full Dataset training
-                                    full_model, full_evaluation_df, full_train_results_df, full_global_train_metrics, full_global_test_metrics, full_y_test_last, full_y_pred_last, full_is_log_transformed = train_rerf_model(
+                                    full_model, full_evaluation_df, full_train_results_df, full_global_train_metrics, full_global_test_metrics, full_y_test_last, full_y_pred_last, full_is_log_transformed, _ = train_rerf_model(
                                         analyzer.current_data, ml_x_columns, ml_y_column,
                                         model_config['model']['linear'], model_config['model']['rf'],
                                         group_column if use_group else None,
@@ -4390,7 +4452,7 @@ elif st.session_state.processing_step == 'advanced':
                                     ols_lr_model = LinearRegression()
                                     
                                     # Run CV evaluation using the same function as RF/GBDT
-                                    cv_model, cv_evaluation_df, cv_train_results_df, cv_global_train_metrics, cv_global_test_metrics, cv_y_test_last, cv_y_pred_last, cv_is_log_transformed = analyzer.goval_machine_learning(
+                                    cv_model, cv_evaluation_df, cv_train_results_df, cv_global_train_metrics, cv_global_test_metrics, cv_y_test_last, cv_y_pred_last, cv_is_log_transformed, cv_raw_predictions = analyzer.goval_machine_learning(
                                         ml_x_columns, ml_y_column, ols_lr_model,
                                         group_column if use_group else None,
                                         n_splits, random_state, min_sample,
@@ -4398,7 +4460,7 @@ elif st.session_state.processing_step == 'advanced':
                                     )
                                     
                                     # Run Full Dataset training using the same function
-                                    full_model, full_evaluation_df, full_train_results_df, full_global_train_metrics, full_global_test_metrics, full_y_test_last, full_y_pred_last, full_is_log_transformed = analyzer.goval_machine_learning(
+                                    full_model, full_evaluation_df, full_train_results_df, full_global_train_metrics, full_global_test_metrics, full_y_test_last, full_y_pred_last, full_is_log_transformed, _ = analyzer.goval_machine_learning(
                                         ml_x_columns, ml_y_column, ols_lr_model,
                                         group_column if use_group else None,
                                         n_splits, random_state, min_sample,
@@ -4407,12 +4469,13 @@ elif st.session_state.processing_step == 'advanced':
                                 
                                 # Store BOTH CV and Full Dataset results
                                 all_results[model_name] = {
-                                    'model': full_model,  # Full dataset model for download
+                                    'model': full_model,
                                     'cv_evaluation_df': cv_evaluation_df,
                                     'full_evaluation_df': full_evaluation_df,
                                     'cv_global_test_metrics': cv_global_test_metrics,
                                     'full_global_test_metrics': full_global_test_metrics,
-                                    'y_test_last': full_y_test_last,  # Use full dataset predictions for scatter plot
+                                    'cv_raw_predictions': cv_raw_predictions,  # Add this
+                                    'y_test_last': full_y_test_last,
                                     'y_pred_last': full_y_pred_last,
                                     'is_log_transformed': full_is_log_transformed,
                                     'feature_names': ml_x_columns,
@@ -4592,43 +4655,52 @@ elif st.session_state.processing_step == 'advanced':
                         key=f"eval_mode_comparison_{selected_session}",
                         help="Toggle between ln scale (False) and original HPM scale (True)"
                     )
-                    
+
                     if eval_mode_comparison:
-                        st.success("📈 Evaluating in **Original Scale** (HPM values)")
+                        st.success("📈 Evaluating **both CV and Full Dataset** in **Original Scale** (HPM values)")
                     else:
-                        st.info("📊 Evaluating in **Log Scale** (ln values)")
+                        st.info("📊 Evaluating **both CV and Full Dataset** in **Log Scale** (ln values)")
+
+                    st.info("💡 **Note**: Both CV and Full Dataset metrics will recalculate when you toggle the scale")
 
                     # Performance Metrics Comparison - Show both CV and Full Dataset
                     st.markdown("#### 📊 Performance Metrics Comparison")
-                    st.info("‼️ **Note**: CV metrics are calculated in original scale during training and cannot be toggled.")
-                    
+
                     # Create comprehensive metrics table
                     metrics_data = []
                     for model_name, result in results.items():
-                        # Get fresh predictions for recalculation
+                        # Get fresh predictions for full dataset recalculation
                         y_test = result['y_test_last']
                         y_pred = result['y_pred_last']
                         
                         # Recalculate full dataset metrics with chosen evaluation mode
                         fresh_full_metrics = evaluate(y_test, y_pred, squared=eval_mode_comparison)
                         
-                        # Get CV metrics (recalculate if needed)
-                        cv_metrics = result['cv_global_test_metrics']
+                        # Recalculate CV metrics if raw predictions available
+                        if result.get('cv_raw_predictions') is not None and result['cv_raw_predictions']['y_actual_all']:
+                            cv_y_actual = np.array(result['cv_raw_predictions']['y_actual_all'])
+                            cv_y_pred = np.array(result['cv_raw_predictions']['y_pred_all'])
+                            fresh_cv_metrics = evaluate(cv_y_actual, cv_y_pred, squared=eval_mode_comparison)
+                        else:
+                            # Fallback to stored CV metrics
+                            fresh_cv_metrics = result['cv_global_test_metrics']
+                            if not eval_mode_comparison:
+                                st.warning(f"⚠️ {model_name}: CV metrics cannot be toggled (using stored values)")
                         
                         metrics_data.append({
                             'Model': model_name,
-                            'CV R²': cv_metrics['R2'],
+                            'CV R²': fresh_cv_metrics['R2'],
                             'Full R²': fresh_full_metrics['R2'],
-                            'CV PE10': cv_metrics['PE10'],
+                            'CV PE10': fresh_cv_metrics['PE10'],
                             'Full PE10': fresh_full_metrics['PE10'],
-                            'CV RT20': cv_metrics['RT20'],
+                            'CV RT20': fresh_cv_metrics['RT20'],
                             'Full RT20': fresh_full_metrics['RT20'],
-                            'CV FSD': cv_metrics['FSD'],
+                            'CV FSD': fresh_cv_metrics['FSD'],
                             'Full FSD': fresh_full_metrics['FSD']
                         })
-                    
+
                     metrics_df = pd.DataFrame(metrics_data)
-                    
+
                     # Display comprehensive metrics table
                     st.dataframe(metrics_df.style.format({
                         'CV R²': '{:.4f}',
