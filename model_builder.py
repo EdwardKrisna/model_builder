@@ -4627,21 +4627,22 @@ elif st.session_state.processing_step == 'advanced':
                     # Recalculate metrics based on toggle
                     metrics_data = []
                     for model_name, result in results.items():
-                        # Get fresh predictions
-                        y_test = result['y_test_last']
-                        y_pred = result['y_pred_last']
-                        
-                        # Recalculate with chosen evaluation mode
-                        fresh_metrics = evaluate(y_test, y_pred, squared=eval_mode_comparison)
+                        # Use the new key structure
+                        cv_metrics = result['cv_global_test_metrics']
+                        full_metrics = result['full_global_test_metrics']
                         
                         metrics_data.append({
                             'Model': model_name,
-                            'R²': fresh_metrics['R2'],
-                            'PE10': fresh_metrics['PE10'],
-                            'RT20': fresh_metrics['RT20'],
-                            'FSD': fresh_metrics['FSD']
+                            'CV R²': cv_metrics['R2'],
+                            'Full R²': full_metrics['R2'],
+                            'CV PE10': cv_metrics['PE10'],
+                            'Full PE10': full_metrics['PE10'],
+                            'CV RT20': cv_metrics['RT20'],
+                            'Full RT20': full_metrics['RT20'],
+                            'CV FSD': cv_metrics['FSD'],
+                            'Full FSD': full_metrics['FSD']
                         })
-                    
+
                     metrics_df = pd.DataFrame(metrics_data)
                     
                     # Display metrics table
