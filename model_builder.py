@@ -4355,7 +4355,7 @@ elif st.session_state.processing_step == 'advanced':
                                     y_pred_full = lr_model.predict(X)
                                     
                                     # Calculate metrics using the same evaluate function
-                                    full_metrics = evaluate(y, y_pred_full, squared=False)
+                                    full_metrics = evaluate(y, y_pred_full, squared=True)
                                     
                                     # Create evaluation results for consistency with other models
                                     evaluation_results = {
