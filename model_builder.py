@@ -2809,7 +2809,7 @@ elif st.session_state.processing_step == 'clean':
                         st.info("💡 **Suggestion**: Try adjusting the quantile parameters (P10/P90) to be less restrictive")
                     elif "Group column" in message:
                         st.info("💡 **Suggestion**: Check if your data has geographic columns like 'wadmkc' or 'wadmkd'")
-                        
+
 elif st.session_state.processing_step == 'transform':
     if fun_mode:
         st.markdown('## <img src="https://media.giphy.com/media/v1.Y2lkPWVjZjA1ZTQ3Y25yOXB5MDFqNGlmdmJnenFqandjMzl6YnJscnRseDlzN2poZG1wMiZlcD12MV9naWZzX3NlYXJjaCZjdD1n/EjLTU9HAnnskywtJ9j/giphy.gif" alt="data gif" style="height:96px; vertical-align:middle;"> Variable Transformations', unsafe_allow_html=True)
@@ -4343,28 +4343,21 @@ elif st.session_state.processing_step == 'advanced':
                                     )
                                 
                                 elif model_config['type'] == 'ols':
-                                    # OLS implementation - Always use statsmodels OLS for consistency
-                                    # Prepare data
+                                    # Use scikit-learn LinearRegression for consistency with other ML models
                                     model_vars = [ml_y_column] + ml_x_columns
                                     df_model = analyzer.current_data[model_vars].dropna()
                                     X = df_model[ml_x_columns]
                                     y = df_model[ml_y_column]
                                     
-                                    # Add constant for statsmodels
-                                    X_with_const = sm.add_constant(X)
-                                    
-                                    # Fit statsmodels OLS with HC3 (same as in OLS Model section)
-                                    ols_model = sm.OLS(y, X_with_const).fit(cov_type='HC3')
-                                    
-                                    # Get predictions
-                                    y_pred_full = ols_model.fittedvalues
-                                    y_actual = y
+                                    # Use scikit-learn LinearRegression (same as other ML models)
+                                    lr_model = LinearRegression()
+                                    lr_model.fit(X, y)
+                                    y_pred_full = lr_model.predict(X)
                                     
                                     # Calculate metrics using the same evaluate function
-                                    full_metrics = evaluate(y_actual, y_pred_full, squared=False)
+                                    full_metrics = evaluate(y, y_pred_full, squared=True)
                                     
                                     # Create evaluation results for consistency with other models
-                                    # OLS doesn't use cross-validation, so we only have full dataset results
                                     evaluation_results = {
                                         'Fold': ['Full-Dataset'], 
                                         'R2': [full_metrics['R2']], 
@@ -4383,21 +4376,12 @@ elif st.session_state.processing_step == 'advanced':
                                     })
                                     
                                     # Set final values
-                                    final_model = ols_model
+                                    final_model = lr_model
                                     global_train_metrics = full_metrics
                                     global_test_metrics = full_metrics  # Same as train for OLS
-                                    y_test_last = y_actual
+                                    y_test_last = y
                                     y_pred_last = y_pred_full
                                     is_log_transformed = ('ln_' in ml_y_column) or ('log_' in ml_y_column.lower())
-                                    
-                                    # Store OLS-specific information
-                                    st.session_state.ols_model_info = {
-                                        'summary': str(ols_model.summary()),
-                                        'params': ols_model.params,
-                                        'pvalues': ols_model.pvalues,
-                                        'rsquared': ols_model.rsquared,
-                                        'rsquared_adj': ols_model.rsquared_adj
-                                    }
                                 
                                 # Store results (NO CHANGE)
                                 all_results[model_name] = {
