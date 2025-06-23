@@ -4655,51 +4655,65 @@ elif st.session_state.processing_step == 'advanced':
                     
                     # Side-by-side bar charts for metrics comparison
                     st.markdown("#### 📊 Metrics Comparison Charts")
-                    
+
                     # Create side-by-side bar charts
                     fig_metrics = make_subplots(
                         rows=2, cols=2,
-                        subplot_titles=('R² (Higher is Better)', 'PE10 (Higher is Better)', 
-                                      'RT20 (Lower is Better)', 'FSD (Lower is Better)'),
+                        subplot_titles=('CV R² vs Full R²', 'CV PE10 vs Full PE10', 
+                                    'CV RT20 vs Full RT20', 'CV FSD vs Full FSD'),
                         specs=[[{"secondary_y": False}, {"secondary_y": False}],
-                               [{"secondary_y": False}, {"secondary_y": False}]]
+                            [{"secondary_y": False}, {"secondary_y": False}]]
                     )
-                    
+
                     models = metrics_df['Model'].tolist()
                     colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd']
-                    
-                    # R² chart
+
+                    # CV R² vs Full R² comparison
                     fig_metrics.add_trace(
-                        go.Bar(x=models, y=metrics_df['R²'], name='R²', 
-                               marker_color=colors[0], showlegend=False),
+                        go.Bar(x=models, y=metrics_df['CV R²'], name='CV R²', 
+                            marker_color=colors[0], showlegend=True),
                         row=1, col=1
                     )
-                    
-                    # PE10 chart
                     fig_metrics.add_trace(
-                        go.Bar(x=models, y=metrics_df['PE10'], name='PE10', 
-                               marker_color=colors[1], showlegend=False),
+                        go.Bar(x=models, y=metrics_df['Full R²'], name='Full R²', 
+                            marker_color=colors[1], showlegend=True),
+                        row=1, col=1
+                    )
+
+                    # CV PE10 vs Full PE10 comparison
+                    fig_metrics.add_trace(
+                        go.Bar(x=models, y=metrics_df['CV PE10'], name='CV PE10', 
+                            marker_color=colors[0], showlegend=False),
                         row=1, col=2
                     )
-                    
-                    # RT20 chart
                     fig_metrics.add_trace(
-                        go.Bar(x=models, y=metrics_df['RT20'], name='RT20', 
-                               marker_color=colors[2], showlegend=False),
+                        go.Bar(x=models, y=metrics_df['Full PE10'], name='Full PE10', 
+                            marker_color=colors[1], showlegend=False),
+                        row=1, col=2
+                    )
+
+                    # CV RT20 vs Full RT20 comparison
+                    fig_metrics.add_trace(
+                        go.Bar(x=models, y=metrics_df['CV RT20'], name='CV RT20', 
+                            marker_color=colors[0], showlegend=False),
                         row=2, col=1
                     )
-                    
-                    # FSD chart
                     fig_metrics.add_trace(
-                        go.Bar(x=models, y=metrics_df['FSD'], name='FSD', 
-                               marker_color=colors[3], showlegend=False),
+                        go.Bar(x=models, y=metrics_df['Full RT20'], name='Full RT20', 
+                            marker_color=colors[1], showlegend=False),
+                        row=2, col=1
+                    )
+
+                    # CV FSD vs Full FSD comparison
+                    fig_metrics.add_trace(
+                        go.Bar(x=models, y=metrics_df['CV FSD'], name='CV FSD', 
+                            marker_color=colors[0], showlegend=False),
                         row=2, col=2
                     )
-                    
-                    fig_metrics.update_layout(
-                        height=600,
-                        title_text="Model Performance Comparison",
-                        showlegend=False
+                    fig_metrics.add_trace(
+                        go.Bar(x=models, y=metrics_df['Full FSD'], name='Full FSD', 
+                            marker_color=colors[1], showlegend=False),
+                        row=2, col=2
                     )
                     
                     st.plotly_chart(fig_metrics, use_container_width=True)
@@ -4839,16 +4853,20 @@ elif st.session_state.processing_step == 'advanced':
                         model_data = metrics_df[metrics_df['Model'] == model_name].iloc[0]
                         rankings_data.append({
                             'Model': model_name,
-                            'R² Rank': metrics_df['R²'].rank(ascending=False)[metrics_df['Model'] == model_name].iloc[0],
-                            'PE10 Rank': metrics_df['PE10'].rank(ascending=False)[metrics_df['Model'] == model_name].iloc[0],
-                            'RT20 Rank': metrics_df['RT20'].rank(ascending=True)[metrics_df['Model'] == model_name].iloc[0],  # Lower is better
-                            'FSD Rank': metrics_df['FSD'].rank(ascending=True)[metrics_df['Model'] == model_name].iloc[0],   # Lower is better
+                            'CV R² Rank': metrics_df['CV R²'].rank(ascending=False)[metrics_df['Model'] == model_name].iloc[0],
+                            'Full R² Rank': metrics_df['Full R²'].rank(ascending=False)[metrics_df['Model'] == model_name].iloc[0],
+                            'CV PE10 Rank': metrics_df['CV PE10'].rank(ascending=False)[metrics_df['Model'] == model_name].iloc[0],
+                            'Full PE10 Rank': metrics_df['Full PE10'].rank(ascending=False)[metrics_df['Model'] == model_name].iloc[0],
+                            'CV RT20 Rank': metrics_df['CV RT20'].rank(ascending=True)[metrics_df['Model'] == model_name].iloc[0],
+                            'Full RT20 Rank': metrics_df['Full RT20'].rank(ascending=True)[metrics_df['Model'] == model_name].iloc[0],
+                            'CV FSD Rank': metrics_df['CV FSD'].rank(ascending=True)[metrics_df['Model'] == model_name].iloc[0],
+                            'Full FSD Rank': metrics_df['Full FSD'].rank(ascending=True)[metrics_df['Model'] == model_name].iloc[0],
                         })
-                    
+
                     rankings_df = pd.DataFrame(rankings_data)
-                    
-                    # Calculate average rank
-                    rankings_df['Average Rank'] = rankings_df[['R² Rank', 'PE10 Rank', 'RT20 Rank', 'FSD Rank']].mean(axis=1)
+
+                    # Calculate average rank (you can choose which metrics to average)
+                    rankings_df['Average Rank'] = rankings_df[['Full R² Rank', 'Full PE10 Rank', 'Full RT20 Rank', 'Full FSD Rank']].mean(axis=1)
                     rankings_df = rankings_df.sort_values('Average Rank')
                     
                     # Add ranking indicators
