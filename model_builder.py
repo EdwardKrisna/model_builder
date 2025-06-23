@@ -4644,7 +4644,7 @@ elif st.session_state.processing_step == 'advanced':
 
                     # Performance Metrics Comparison - Show both CV and Full Dataset
                     st.markdown("#### 📊 Performance Metrics Comparison")
-                    st.info("❌⭕️❌ **Note**: CV metrics are calculated in original scale during training and cannot be toggled.")
+                    st.info("‼️ **Note**: CV metrics are calculated in original scale during training and cannot be toggled.")
                     
                     # Create comprehensive metrics table
                     metrics_data = []
