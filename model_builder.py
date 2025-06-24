@@ -1185,35 +1185,10 @@ class RealEstateAnalyzer:
     
     def goval_machine_learning(self, X, y, algorithm, group=None, n_splits=10, random_state=101, min_sample=3, full_dataset_eval=False):
         """
-        Group-based machine learning with evaluation. Falls back to standard CV if group=None.
-        
-        Parameters:
-        -----------
-        X : list
-            Feature column names
-        y : str
-            Target column name
-        algorithm : sklearn estimator
-            Machine learning algorithm to train
-        group : str, optional
-            Column name for group-based cross-validation
-        n_splits : int, default=10
-            Number of cross-validation folds
-        random_state : int, default=101
-            Random state for reproducibility
-        min_sample : int, default=3
-            Minimum samples per group for group-based CV
-        full_dataset_eval : bool, default=False
-            If True, evaluate on full dataset (training performance)
-            If False, use cross-validation (test performance)
-        
-        Returns:
-        --------
-        tuple : (final_model, evaluation_df, train_results_df, global_train_metrics, 
-                global_test_metrics, y_test_last, y_pred_last, is_log_transformed)
+        Enhanced version that stores raw predictions per fold for dynamic metric recalculation
         """
         data = self.current_data
-    
+
         # Determine if target is log-transformed ONCE at the beginning
         is_log_transformed = ('ln_' in y) or ('log_' in y.lower())
         
@@ -1226,6 +1201,9 @@ class RealEstateAnalyzer:
         # Initialize results containers
         evaluation_results = {'Fold': [], 'R2': [], 'FSD': [], 'PE10': [], 'RT20': []}
         train_results = {'R2': [], 'FSD': [], 'PE10': [], 'RT20': []}
+        
+        # NEW: Store raw predictions per fold for dynamic recalculation
+        fold_raw_predictions = []
 
         global_train_metrics = {'R2': 0, 'FSD': 0, 'PE10': 0, 'RT20': 0}
         global_test_metrics = {'R2': 0, 'FSD': 0, 'PE10': 0, 'RT20': 0}
@@ -1251,11 +1229,19 @@ class RealEstateAnalyzer:
                     y_train_pred = fold_model.predict(X_train)
                     y_test_pred = fold_model.predict(X_test)
                     
-                    # FIXED: Use is_log_transformed instead of hardcoded True
+                    # NEW: Store raw predictions for this fold
+                    fold_raw_predictions.append({
+                        'fold': fold + 1,
+                        'y_actual': y_test.values.tolist(),
+                        'y_predicted': y_test_pred.tolist(),
+                        'fold_name': f"Fold-{fold + 1}"
+                    })
+                    
+                    # Calculate metrics with current scale
                     train_metrics = evaluate(y_train, y_train_pred, squared=is_log_transformed)
                     test_metrics = evaluate(y_test, y_test_pred, squared=is_log_transformed)
                     
-                    # Store metrics...
+                    # Store metrics
                     for metric in global_train_metrics.keys():
                         global_train_metrics[metric] += train_metrics[metric]
                         global_test_metrics[metric] += test_metrics[metric]
@@ -1307,6 +1293,14 @@ class RealEstateAnalyzer:
                     fold_model = fold_model.fit(X_train_all, y_train_all)
                     y_train_pred = fold_model.predict(X_train_all)
                     y_test_pred = fold_model.predict(X_test_all)
+                    
+                    # NEW: Store raw predictions for this fold
+                    fold_raw_predictions.append({
+                        'fold': fold + 1,
+                        'y_actual': y_test_all.values.tolist(),
+                        'y_predicted': y_test_pred.tolist(),
+                        'fold_name': f"Fold-{fold + 1}"
+                    })
 
                     # Evaluate train and test scores
                     train_metrics = evaluate(y_train_all, y_train_pred, squared=is_log_transformed)
@@ -1350,7 +1344,7 @@ class RealEstateAnalyzer:
             
             # Replace global test metrics with full dataset metrics
             global_test_metrics = full_dataset_metrics.copy()
-            global_train_metrics = full_dataset_metrics.copy() # Same for training since it's same data
+            global_train_metrics = full_dataset_metrics.copy()
             
             # Create single "fold" entry for full dataset
             evaluation_results['Fold'].append('Full-Dataset')
@@ -1363,6 +1357,14 @@ class RealEstateAnalyzer:
             train_results['FSD'].append(full_dataset_metrics['FSD'])
             train_results['PE10'].append(full_dataset_metrics['PE10'])
             train_results['RT20'].append(full_dataset_metrics['RT20'])
+            
+            # For full dataset mode, store single prediction set
+            fold_raw_predictions.append({
+                'fold': 'Full-Dataset',
+                'y_actual': y_full.values.tolist(),
+                'y_predicted': y_full_pred.tolist(),
+                'fold_name': 'Full-Dataset'
+            })
             
             # Use full dataset for comparison graph
             last_test_idx = None
@@ -1398,38 +1400,24 @@ class RealEstateAnalyzer:
         evaluation_df = pd.DataFrame(evaluation_results)
         train_results_df = pd.DataFrame(train_results)
 
-        # Check if log transformed
-        is_log_transformed = ('ln_' in y) or ('log_' in y.lower())
-
-        if not full_dataset_eval:
-            # Collect all CV predictions for recalculation
-            cv_raw_predictions = {
-                'y_actual_all': [],
-                'y_pred_all': []
-            }
-            
+        # Prepare CV raw predictions for legacy compatibility
+        if not full_dataset_eval and fold_raw_predictions:
             # Use the last fold data for representative CV predictions
-            if group is None and last_test_idx is not None:  
-                cv_raw_predictions['y_actual_all'] = y_full.iloc[last_test_idx].tolist()  
-                cv_raw_predictions['y_pred_all'] = final_model.predict(X_full.iloc[last_test_idx]).tolist()  
-            elif group is not None and last_group_test_data is not None:  
-                cv_raw_predictions['y_actual_all'] = last_group_test_data['y_test'].tolist()
-                cv_raw_predictions['y_pred_all'] = final_model.predict(last_group_test_data['X_test']).tolist()
-            else:
-                # Fallback: use sample for CV predictions
-                sample_size = min(1000, len(y_full))  
-                sample_idx = np.random.choice(len(y_full), sample_size, replace=False)
-                cv_raw_predictions['y_actual_all'] = y_full.iloc[sample_idx].tolist()  
-                cv_raw_predictions['y_pred_all'] = final_model.predict(X_full.iloc[sample_idx]).tolist()  
+            last_fold = fold_raw_predictions[-1]
+            cv_raw_predictions = {
+                'y_actual_all': last_fold['y_actual'],
+                'y_pred_all': last_fold['y_predicted']
+            }
         else:
             cv_raw_predictions = None
 
-        # Update the return statement to include CV predictions:
+        # NEW: Return enhanced results with per-fold raw predictions
         return (
             final_model, evaluation_df, train_results_df,
             global_train_metrics, global_test_metrics,
             y_test_last, y_pred_last, is_log_transformed,
-            cv_raw_predictions
+            cv_raw_predictions,  # Legacy compatibility
+            fold_raw_predictions  # NEW: Per-fold raw predictions
         )
         
     
@@ -3531,42 +3519,7 @@ elif st.session_state.processing_step == 'advanced':
 
         def train_rerf_model(data, X_columns, y_column, linear_model, rf_model, group_column, n_splits, random_state, min_sample, full_dataset_eval=False):
             """
-            Train RERF (Regression Enhanced Random Forest) model with same structure as goval_machine_learning.
-            
-            RERF combines Linear Regression + Random Forest on residuals:
-            1. Train Linear Regression on features
-            2. Calculate residuals = actual - linear_predictions
-            3. Train Random Forest on residuals
-            4. Final prediction = linear_prediction + rf_residual_prediction
-            
-            Parameters:
-            -----------
-            data : pd.DataFrame
-                The dataset
-            X_columns : list
-                Feature column names
-            y_column : str
-                Target column name
-            linear_model : sklearn.linear_model
-                Linear regression model (usually LinearRegression())
-            rf_model : sklearn.ensemble.RandomForestRegressor
-                Random Forest model for residuals
-            group_column : str, optional
-                Column name for group-based cross-validation
-            n_splits : int, default=10
-                Number of cross-validation folds
-            random_state : int, default=101
-                Random state for reproducibility
-            min_sample : int, default=3
-                Minimum samples per group for group-based CV
-            full_dataset_eval : bool, default=False
-                If True, evaluate on full dataset (training performance)
-                If False, use cross-validation (test performance)
-            
-            Returns:
-            --------
-            tuple : (final_model, evaluation_df, train_results_df, global_train_metrics, 
-                    global_test_metrics, y_test_last, y_pred_last, is_log_transformed)
+            Enhanced RERF training that stores raw predictions per fold for dynamic metric recalculation
             """
             is_log_transformed = ('ln_' in y_column) or ('log_' in y_column.lower())
 
@@ -3580,6 +3533,9 @@ elif st.session_state.processing_step == 'advanced':
                 # Initialize results containers
                 evaluation_results = {'Fold': [], 'R2': [], 'FSD': [], 'PE10': [], 'RT20': []}
                 train_results = {'R2': [], 'FSD': [], 'PE10': [], 'RT20': []}
+                
+                # NEW: Store raw predictions per fold for dynamic recalculation
+                fold_raw_predictions = []
                 
                 global_train_metrics = {'R2': 0, 'FSD': 0, 'PE10': 0, 'RT20': 0}
                 global_test_metrics = {'R2': 0, 'FSD': 0, 'PE10': 0, 'RT20': 0}
@@ -3624,6 +3580,14 @@ elif st.session_state.processing_step == 'advanced':
                             # RERF Step 4: Final predictions
                             rerf_pred_train = lr_pred_train + rf_pred_residuals_train
                             rerf_pred_test = lr_pred_test + rf_pred_residuals_test
+                            
+                            # NEW: Store raw predictions for this fold
+                            fold_raw_predictions.append({
+                                'fold': fold + 1,
+                                'y_actual': y_test.values.tolist(),
+                                'y_predicted': rerf_pred_test.tolist(),
+                                'fold_name': f"Fold-{fold + 1}"
+                            })
                             
                             # Evaluate with same function as other models
                             train_metrics = evaluate(y_train, rerf_pred_train, squared=is_log_transformed)
@@ -3676,16 +3640,14 @@ elif st.session_state.processing_step == 'advanced':
                             y_train_all = pd.concat(y_train_)
                             y_test_all = pd.concat(y_test_)
                             
-                            # RERF Step 1: Train Linear Regression
+                            # RERF Steps for group-based CV
                             lr_model = LinearRegression()
                             lr_model.fit(X_train_all, y_train_all)
                             lr_pred_train = lr_model.predict(X_train_all)
                             lr_pred_test = lr_model.predict(X_test_all)
                             
-                            # RERF Step 2: Calculate residuals
                             residuals_train = y_train_all - lr_pred_train
                             
-                            # RERF Step 3: Train RF on residuals
                             rf_model_fold = RandomForestRegressor(
                                 n_estimators=rf_model.n_estimators,
                                 max_depth=rf_model.max_depth,
@@ -3698,13 +3660,20 @@ elif st.session_state.processing_step == 'advanced':
                             rf_pred_residuals_train = rf_model_fold.predict(X_train_all)
                             rf_pred_residuals_test = rf_model_fold.predict(X_test_all)
                             
-                            # RERF Step 4: Final predictions
                             rerf_pred_train = lr_pred_train + rf_pred_residuals_train
                             rerf_pred_test = lr_pred_test + rf_pred_residuals_test
                             
+                            # NEW: Store raw predictions for this fold
+                            fold_raw_predictions.append({
+                                'fold': fold + 1,
+                                'y_actual': y_test_all.values.tolist(),
+                                'y_predicted': rerf_pred_test.tolist(),
+                                'fold_name': f"Fold-{fold + 1}"
+                            })
+                            
                             # Evaluate with same function as other models
-                            train_metrics = evaluate(y_train_all, rerf_pred_train, squared=True)
-                            test_metrics = evaluate(y_test_all, rerf_pred_test, squared=True)
+                            train_metrics = evaluate(y_train_all, rerf_pred_train, squared=is_log_transformed)
+                            test_metrics = evaluate(y_test_all, rerf_pred_test, squared=is_log_transformed)
                             
                             # Store metrics
                             for metric in global_train_metrics.keys():
@@ -3736,15 +3705,13 @@ elif st.session_state.processing_step == 'advanced':
 
                 # === FULL DATASET EVALUATION ===
                 else:
-                    # RERF Step 1: Train Linear Regression on full dataset
+                    # RERF on full dataset
                     lr_model_full = LinearRegression()
                     lr_model_full.fit(X, y)
                     lr_pred_full = lr_model_full.predict(X)
                     
-                    # RERF Step 2: Calculate residuals on full dataset
                     residuals_full = y - lr_pred_full
                     
-                    # RERF Step 3: Train RF on residuals using full dataset
                     rf_model_full = RandomForestRegressor(
                         n_estimators=rf_model.n_estimators,
                         max_depth=rf_model.max_depth,
@@ -3756,15 +3723,14 @@ elif st.session_state.processing_step == 'advanced':
                     rf_model_full.fit(X, residuals_full)
                     rf_pred_residuals_full = rf_model_full.predict(X)
                     
-                    # RERF Step 4: Final prediction on full dataset
                     rerf_pred_full = lr_pred_full + rf_pred_residuals_full
                     
                     # Evaluate on full dataset
-                    full_dataset_metrics = evaluate(y, rerf_pred_full, squared=True)
+                    full_dataset_metrics = evaluate(y, rerf_pred_full, squared=is_log_transformed)
                     
                     # Replace global metrics with full dataset metrics
                     global_test_metrics = full_dataset_metrics.copy()
-                    global_train_metrics = full_dataset_metrics.copy()  # Same since it's same data
+                    global_train_metrics = full_dataset_metrics.copy()
                     
                     # Create single "fold" entry for full dataset
                     evaluation_results['Fold'].append('Full-Dataset')
@@ -3778,22 +3744,26 @@ elif st.session_state.processing_step == 'advanced':
                     train_results['PE10'].append(full_dataset_metrics['PE10'])
                     train_results['RT20'].append(full_dataset_metrics['RT20'])
                     
+                    # For full dataset mode, store single prediction set
+                    fold_raw_predictions.append({
+                        'fold': 'Full-Dataset',
+                        'y_actual': y.values.tolist(),
+                        'y_predicted': rerf_pred_full.tolist(),
+                        'fold_name': 'Full-Dataset'
+                    })
+                    
                     # Clear test data indicators for full dataset mode
                     last_test_idx = None
                     last_group_test_data = None
 
                 # === FINAL MODEL TRAINING ===
                 # Train final models on complete dataset for deployment
-                
-                # Final Linear Regression
                 final_linear_model = LinearRegression()
                 final_linear_model.fit(X, y)
                 final_lr_pred = final_linear_model.predict(X)
                 
-                # Calculate final residuals
                 final_residuals = y - final_lr_pred
                 
-                # Final RF model on residuals
                 final_rf_model = RandomForestRegressor(
                     n_estimators=rf_model.n_estimators,
                     max_depth=rf_model.max_depth,
@@ -3813,7 +3783,6 @@ elif st.session_state.processing_step == 'advanced':
                 
                 # === PREPARE COMPARISON GRAPH DATA ===
                 if full_dataset_eval:
-                    # Use full dataset predictions for comparison graph
                     y_test_last = y
                     final_lr_pred_graph = final_linear_model.predict(X)
                     final_rf_pred_graph = final_rf_model.predict(X)
@@ -3821,7 +3790,6 @@ elif st.session_state.processing_step == 'advanced':
                 else:
                     # Use last fold test data for comparison graph
                     if group_column is None and last_test_idx is not None:
-                        # Standard CV: use last fold test data with full-trained models
                         y_test_last = y.iloc[last_test_idx]
                         X_test_last = X.iloc[last_test_idx]
                         lr_pred_last = final_linear_model.predict(X_test_last)
@@ -3829,7 +3797,6 @@ elif st.session_state.processing_step == 'advanced':
                         rerf_pred_last = lr_pred_last + rf_pred_residuals_last
                         
                     elif group_column is not None and last_group_test_data is not None:
-                        # Group CV: use last fold test data with full-trained models
                         y_test_last = last_group_test_data['y_test']
                         X_test_last = last_group_test_data['X_test']
                         lr_pred_last = final_linear_model.predict(X_test_last)
@@ -3837,7 +3804,6 @@ elif st.session_state.processing_step == 'advanced':
                         rerf_pred_last = lr_pred_last + rf_pred_residuals_last
                         
                     else:
-                        # Fallback: use a sample of full dataset for comparison
                         sample_size = min(1000, len(y))
                         sample_idx = np.random.choice(len(y), sample_size, replace=False)
                         y_test_last = y.iloc[sample_idx]
@@ -3853,57 +3819,28 @@ elif st.session_state.processing_step == 'advanced':
                 # Check if log transformed
                 is_log_transformed = ('ln_' in y_column) or ('log_' in y_column.lower())
                 
-                # Store raw CV predictions for later recalculation
-                if not full_dataset_eval:
+                # Prepare CV raw predictions for legacy compatibility
+                if not full_dataset_eval and fold_raw_predictions:
+                    last_fold = fold_raw_predictions[-1]
                     cv_raw_predictions = {
-                        'y_actual_all': [],
-                        'y_pred_all': []
+                        'y_actual_all': last_fold['y_actual'],
+                        'y_pred_all': last_fold['y_predicted']
                     }
-                    
-                    if group_column is None and last_test_idx is not None:
-                        X_test_last = X.iloc[last_test_idx]
-                        y_actual_cv = y.iloc[last_test_idx]
-                        lr_pred_cv = final_linear_model.predict(X_test_last)
-                        rf_pred_cv = final_rf_model.predict(X_test_last)
-                        y_pred_cv = lr_pred_cv + rf_pred_cv
-                        
-                        cv_raw_predictions['y_actual_all'] = y_actual_cv.tolist()
-                        cv_raw_predictions['y_pred_all'] = y_pred_cv.tolist()
-                    elif group_column is not None and last_group_test_data is not None:
-                        X_test_cv = last_group_test_data['X_test']
-                        y_actual_cv = last_group_test_data['y_test']
-                        lr_pred_cv = final_linear_model.predict(X_test_cv)
-                        rf_pred_cv = final_rf_model.predict(X_test_cv)
-                        y_pred_cv = lr_pred_cv + rf_pred_cv
-                        
-                        cv_raw_predictions['y_actual_all'] = y_actual_cv.tolist()
-                        cv_raw_predictions['y_pred_all'] = y_pred_cv.tolist()
-                    else:
-                        # Fallback
-                        sample_size = min(1000, len(y))
-                        sample_idx = np.random.choice(len(y), sample_size, replace=False)
-                        X_sample = X.iloc[sample_idx]
-                        y_sample = y.iloc[sample_idx]
-                        lr_pred_sample = final_linear_model.predict(X_sample)
-                        rf_pred_sample = final_rf_model.predict(X_sample)
-                        rerf_pred_sample = lr_pred_sample + rf_pred_sample
-                        
-                        cv_raw_predictions['y_actual_all'] = y_sample.tolist()
-                        cv_raw_predictions['y_pred_all'] = rerf_pred_sample.tolist()
                 else:
                     cv_raw_predictions = None
 
-                # Update return statement:
+                # NEW: Return enhanced results with per-fold raw predictions
                 return (
                     final_model, evaluation_df, train_results_df,
                     global_train_metrics, global_test_metrics,
                     y_test_last, rerf_pred_last, is_log_transformed,
-                    cv_raw_predictions  # Add this
+                    cv_raw_predictions,  # Legacy compatibility
+                    fold_raw_predictions  # NEW: Per-fold raw predictions
                 )
                 
             except Exception as e:
                 st.error(f"RERF training failed: {str(e)}")
-                return None, None, None, None, None, None, None, False
+                return None, None, None, None, None, None, None, False, None, None
 
         # Model Configuration
         st.markdown("### 🎯 Model Configuration")
@@ -4412,69 +4349,170 @@ elif st.session_state.processing_step == 'advanced':
                             
                             try:
                                 if model_config['type'] == 'standard':
-                                    # Run CV evaluation first
-                                    cv_model, cv_evaluation_df, cv_train_results_df, cv_global_train_metrics, cv_global_test_metrics, cv_y_test_last, cv_y_pred_last, cv_is_log_transformed, cv_raw_predictions = analyzer.goval_machine_learning(
-                                        ml_x_columns, ml_y_column, model_config['model'],
-                                        group_column if use_group else None,
-                                        n_splits, random_state, min_sample,
-                                        full_dataset_eval=False  # CV mode
-                                    )
+                                    # Run CV evaluation first - ENHANCED with per-fold storage
+                                    try:
+                                        cv_results = analyzer.goval_machine_learning(
+                                            ml_x_columns, ml_y_column, model_config['model'],
+                                            group_column if use_group else None,
+                                            n_splits, random_state, min_sample,
+                                            full_dataset_eval=False  # CV mode
+                                        )
+                                        
+                                        # Handle both old and new return formats
+                                        if len(cv_results) == 10:  # New enhanced format
+                                            (cv_model, cv_evaluation_df, cv_train_results_df, cv_global_train_metrics, 
+                                            cv_global_test_metrics, cv_y_test_last, cv_y_pred_last, cv_is_log_transformed, 
+                                            cv_raw_predictions, cv_fold_raw_predictions) = cv_results
+                                        else:  # Old format (fallback)
+                                            (cv_model, cv_evaluation_df, cv_train_results_df, cv_global_train_metrics, 
+                                            cv_global_test_metrics, cv_y_test_last, cv_y_pred_last, cv_is_log_transformed, 
+                                            cv_raw_predictions) = cv_results
+                                            cv_fold_raw_predictions = None  # Not available in old format
+                                            
+                                    except Exception as e:
+                                        st.error(f"CV training failed for {model_name}: {str(e)}")
+                                        continue
                                     
                                     # Run Full Dataset training
-                                    full_model, full_evaluation_df, full_train_results_df, full_global_train_metrics, full_global_test_metrics, full_y_test_last, full_y_pred_last, full_is_log_transformed, _ = analyzer.goval_machine_learning(
-                                        ml_x_columns, ml_y_column, model_config['model'],
-                                        group_column if use_group else None,
-                                        n_splits, random_state, min_sample,
-                                        full_dataset_eval=True  # Full dataset mode
-                                    )
-                                    
+                                    try:
+                                        full_results = analyzer.goval_machine_learning(
+                                            ml_x_columns, ml_y_column, model_config['model'],
+                                            group_column if use_group else None,
+                                            n_splits, random_state, min_sample,
+                                            full_dataset_eval=True  # Full dataset mode
+                                        )
+                                        
+                                        # Handle both old and new return formats
+                                        if len(full_results) == 10:  # New enhanced format
+                                            (full_model, full_evaluation_df, full_train_results_df, full_global_train_metrics, 
+                                            full_global_test_metrics, full_y_test_last, full_y_pred_last, full_is_log_transformed, 
+                                            _, full_fold_raw_predictions) = full_results
+                                        else:  # Old format (fallback)
+                                            (full_model, full_evaluation_df, full_train_results_df, full_global_train_metrics, 
+                                            full_global_test_metrics, full_y_test_last, full_y_pred_last, full_is_log_transformed, 
+                                            _) = full_results
+                                            full_fold_raw_predictions = None  # Not available in old format
+                                            
+                                    except Exception as e:
+                                        st.error(f"Full dataset training failed for {model_name}: {str(e)}")
+                                        continue
+                                        
                                 elif model_config['type'] == 'rerf':
-                                    # Run CV evaluation first
-                                    cv_model, cv_evaluation_df, cv_train_results_df, cv_global_train_metrics, cv_global_test_metrics, cv_y_test_last, cv_y_pred_last, cv_is_log_transformed, cv_raw_predictions = train_rerf_model(
-                                        analyzer.current_data, ml_x_columns, ml_y_column,
-                                        model_config['model']['linear'], model_config['model']['rf'],
-                                        group_column if use_group else None,
-                                        n_splits, random_state, min_sample,
-                                        full_dataset_eval=False  # CV mode
-                                    )
+                                    # Run CV evaluation first - ENHANCED RERF with per-fold storage
+                                    try:
+                                        cv_results = train_rerf_model(
+                                            analyzer.current_data, ml_x_columns, ml_y_column,
+                                            model_config['model']['linear'], model_config['model']['rf'],
+                                            group_column if use_group else None,
+                                            n_splits, random_state, min_sample,
+                                            full_dataset_eval=False  # CV mode
+                                        )
+                                        
+                                        # Handle both old and new return formats for RERF
+                                        if cv_results and len(cv_results) == 10:  # New enhanced format
+                                            (cv_model, cv_evaluation_df, cv_train_results_df, cv_global_train_metrics, 
+                                            cv_global_test_metrics, cv_y_test_last, cv_y_pred_last, cv_is_log_transformed, 
+                                            cv_raw_predictions, cv_fold_raw_predictions) = cv_results
+                                        elif cv_results and len(cv_results) == 9:  # Old format (fallback)
+                                            (cv_model, cv_evaluation_df, cv_train_results_df, cv_global_train_metrics, 
+                                            cv_global_test_metrics, cv_y_test_last, cv_y_pred_last, cv_is_log_transformed, 
+                                            cv_raw_predictions) = cv_results
+                                            cv_fold_raw_predictions = None  # Not available in old format
+                                        else:
+                                            st.error(f"RERF CV training failed for {model_name}")
+                                            continue
+                                            
+                                    except Exception as e:
+                                        st.error(f"RERF CV training failed for {model_name}: {str(e)}")
+                                        continue
                                     
-                                    # Run Full Dataset training
-                                    full_model, full_evaluation_df, full_train_results_df, full_global_train_metrics, full_global_test_metrics, full_y_test_last, full_y_pred_last, full_is_log_transformed, _ = train_rerf_model(
-                                        analyzer.current_data, ml_x_columns, ml_y_column,
-                                        model_config['model']['linear'], model_config['model']['rf'],
-                                        group_column if use_group else None,
-                                        n_splits, random_state, min_sample,
-                                        full_dataset_eval=True  # Full dataset mode
-                                    )
+                                    # Run Full Dataset training for RERF
+                                    try:
+                                        full_results = train_rerf_model(
+                                            analyzer.current_data, ml_x_columns, ml_y_column,
+                                            model_config['model']['linear'], model_config['model']['rf'],
+                                            group_column if use_group else None,
+                                            n_splits, random_state, min_sample,
+                                            full_dataset_eval=True  # Full dataset mode
+                                        )
+                                        
+                                        # Handle both old and new return formats for RERF
+                                        if full_results and len(full_results) == 10:  # New enhanced format
+                                            (full_model, full_evaluation_df, full_train_results_df, full_global_train_metrics, 
+                                            full_global_test_metrics, full_y_test_last, full_y_pred_last, full_is_log_transformed, 
+                                            _, full_fold_raw_predictions) = full_results
+                                        elif full_results and len(full_results) == 9:  # Old format (fallback)
+                                            (full_model, full_evaluation_df, full_train_results_df, full_global_train_metrics, 
+                                            full_global_test_metrics, full_y_test_last, full_y_pred_last, full_is_log_transformed, 
+                                            _) = full_results
+                                            full_fold_raw_predictions = None  # Not available in old format
+                                        else:
+                                            st.error(f"RERF Full dataset training failed for {model_name}")
+                                            continue
+                                            
+                                    except Exception as e:
+                                        st.error(f"RERF Full dataset training failed for {model_name}: {str(e)}")
+                                        continue
                                 
                                 elif model_config['type'] == 'ols':
-                                    # Create a LinearRegression model instance
+                                    # Handle OLS (Linear Regression) - same as standard but simpler
                                     ols_lr_model = LinearRegression()
                                     
-                                    # Run CV evaluation using the same function as RF/GBDT
-                                    cv_model, cv_evaluation_df, cv_train_results_df, cv_global_train_metrics, cv_global_test_metrics, cv_y_test_last, cv_y_pred_last, cv_is_log_transformed, cv_raw_predictions = analyzer.goval_machine_learning(
-                                        ml_x_columns, ml_y_column, ols_lr_model,
-                                        group_column if use_group else None,
-                                        n_splits, random_state, min_sample,
-                                        full_dataset_eval=False  # CV mode
-                                    )
+                                    try:
+                                        cv_results = analyzer.goval_machine_learning(
+                                            ml_x_columns, ml_y_column, ols_lr_model,
+                                            group_column if use_group else None,
+                                            n_splits, random_state, min_sample,
+                                            full_dataset_eval=False  # CV mode
+                                        )
+                                        
+                                        # Handle both old and new return formats
+                                        if len(cv_results) == 10:  # New enhanced format
+                                            (cv_model, cv_evaluation_df, cv_train_results_df, cv_global_train_metrics, 
+                                            cv_global_test_metrics, cv_y_test_last, cv_y_pred_last, cv_is_log_transformed, 
+                                            cv_raw_predictions, cv_fold_raw_predictions) = cv_results
+                                        else:  # Old format (fallback)
+                                            (cv_model, cv_evaluation_df, cv_train_results_df, cv_global_train_metrics, 
+                                            cv_global_test_metrics, cv_y_test_last, cv_y_pred_last, cv_is_log_transformed, 
+                                            cv_raw_predictions) = cv_results
+                                            cv_fold_raw_predictions = None  # Not available in old format
+                                            
+                                    except Exception as e:
+                                        st.error(f"OLS CV training failed: {str(e)}")
+                                        continue
                                     
-                                    # Run Full Dataset training using the same function
-                                    full_model, full_evaluation_df, full_train_results_df, full_global_train_metrics, full_global_test_metrics, full_y_test_last, full_y_pred_last, full_is_log_transformed, _ = analyzer.goval_machine_learning(
-                                        ml_x_columns, ml_y_column, ols_lr_model,
-                                        group_column if use_group else None,
-                                        n_splits, random_state, min_sample,
-                                        full_dataset_eval=True  # Full dataset mode
-                                    )
+                                    try:
+                                        full_results = analyzer.goval_machine_learning(
+                                            ml_x_columns, ml_y_column, ols_lr_model,
+                                            group_column if use_group else None,
+                                            n_splits, random_state, min_sample,
+                                            full_dataset_eval=True  # Full dataset mode
+                                        )
+                                        
+                                        # Handle both old and new return formats
+                                        if len(full_results) == 10:  # New enhanced format
+                                            (full_model, full_evaluation_df, full_train_results_df, full_global_train_metrics, 
+                                            full_global_test_metrics, full_y_test_last, full_y_pred_last, full_is_log_transformed, 
+                                            _, full_fold_raw_predictions) = full_results
+                                        else:  # Old format (fallback)
+                                            (full_model, full_evaluation_df, full_train_results_df, full_global_train_metrics, 
+                                            full_global_test_metrics, full_y_test_last, full_y_pred_last, full_is_log_transformed, 
+                                            _) = full_results
+                                            full_fold_raw_predictions = None  # Not available in old format
+                                            
+                                    except Exception as e:
+                                        st.error(f"OLS Full dataset training failed: {str(e)}")
+                                        continue
                                 
-                                # Store BOTH CV and Full Dataset results
+                                # Store BOTH CV and Full Dataset results with enhanced fold data
                                 all_results[model_name] = {
                                     'model': full_model,
                                     'cv_evaluation_df': cv_evaluation_df,
                                     'full_evaluation_df': full_evaluation_df,
                                     'cv_global_test_metrics': cv_global_test_metrics,
                                     'full_global_test_metrics': full_global_test_metrics,
-                                    'cv_raw_predictions': cv_raw_predictions,  # Add this
+                                    'cv_raw_predictions': cv_raw_predictions,  # Legacy compatibility
+                                    'cv_fold_raw_predictions': cv_fold_raw_predictions,  # NEW: Per-fold raw predictions
                                     'y_test_last': full_y_test_last,
                                     'y_pred_last': full_y_pred_last,
                                     'is_log_transformed': full_is_log_transformed,
@@ -4628,73 +4666,117 @@ elif st.session_state.processing_step == 'advanced':
                     )
 
                     if eval_mode_comparison:
-                        st.success("📈 Evaluating **metrics below** in **Original Scale** (HPM values)")
+                        st.success("📈 Evaluating **all metrics below** in **Original Scale** (HPM values)")
                     else:
-                        st.info("📊 Evaluating **metrics below** in **Log Scale** (ln values)")
+                        st.info("📊 Evaluating **all metrics below** in **Log Scale** (ln values)")
 
-                    st.info("💡 **Note**: Summary metrics and charts will recalculate. Individual fold details show original training scale.")
+                    st.info("💡 **All CV fold results will now recalculate when you toggle the scale!**")
                     
-                    # Cross-Validation Analytics Section
+                    # Cross-Validation Analytics Section - NOW FULLY DYNAMIC
                     st.markdown("#### 📊 Cross-Validation Analytics")
-                    st.info("📈 Individual fold performance for model validation")
+                    st.info("📈 Individual fold performance - **dynamically calculated** based on evaluation mode")
                     
                     for model_name, result in results.items():
                         with st.expander(f"📋 {model_name} - CV Fold Results", expanded=False):
-                            # Show original fold results with clear labeling
-                            st.markdown("**📊 Individual Fold Performance (Original Training Scale):**")
-                            cv_df = result['cv_evaluation_df']
-                            st.dataframe(cv_df.style.format({
-                                'R2': '{:.4f}',
-                                'FSD': '{:.4f}',
-                                'PE10': '{:.4f}',
-                                'RT20': '{:.4f}'
-                            }), use_container_width=True)
                             
-                            # Add recalculated summary stats
-                            st.markdown(f"**📈 Summary Stats ({('Original Scale' if eval_mode_comparison else 'Log Scale')}):**")
+                            # Check if we have per-fold raw predictions
+                            cv_fold_predictions = result.get('cv_fold_raw_predictions')
                             
-                            # Recalculate CV summary metrics based on toggle
-                            if result.get('cv_raw_predictions') is not None and result['cv_raw_predictions']['y_actual_all']:
-                                cv_y_actual = np.array(result['cv_raw_predictions']['y_actual_all'])
-                                cv_y_pred = np.array(result['cv_raw_predictions']['y_pred_all'])
-                                fresh_cv_metrics = evaluate(cv_y_actual, cv_y_pred, squared=eval_mode_comparison)
+                            if cv_fold_predictions is not None and len(cv_fold_predictions) > 0:
+                                # DYNAMIC RECALCULATION - This will change with the toggle!
+                                st.markdown(f"**📊 Individual Fold Performance ({('Original Scale' if eval_mode_comparison else 'Log Scale')}):**")
+                                
+                                # Recalculate metrics for each fold based on current toggle
+                                dynamic_fold_results = []
+                                
+                                for fold_data in cv_fold_predictions:
+                                    fold_name = fold_data['fold_name']
+                                    y_actual = np.array(fold_data['y_actual'])
+                                    y_predicted = np.array(fold_data['y_predicted'])
+                                    
+                                    # Recalculate metrics with current evaluation mode
+                                    fold_metrics = evaluate(y_actual, y_predicted, squared=eval_mode_comparison)
+                                    
+                                    dynamic_fold_results.append({
+                                        'Fold': fold_name,
+                                        'R2': fold_metrics['R2'],
+                                        'FSD': fold_metrics['FSD'], 
+                                        'PE10': fold_metrics['PE10'],
+                                        'RT20': fold_metrics['RT20']
+                                    })
+                                
+                                # Create dynamic DataFrame that responds to toggle
+                                dynamic_cv_df = pd.DataFrame(dynamic_fold_results)
+                                
+                                # Display the dynamically calculated results
+                                st.dataframe(dynamic_cv_df.style.format({
+                                    'R2': '{:.4f}',
+                                    'FSD': '{:.4f}',
+                                    'PE10': '{:.4f}',
+                                    'RT20': '{:.4f}'
+                                }), use_container_width=True)
+                                
+                                # Show dynamic summary stats
+                                st.markdown(f"**📈 Summary Statistics ({('Original Scale' if eval_mode_comparison else 'Log Scale')}):**")
                                 
                                 col1, col2, col3, col4 = st.columns(4)
                                 with col1:
-                                    st.metric("CV R² Mean", f"{fresh_cv_metrics['R2']:.4f}")
-                                    st.caption("Recalculated")
+                                    st.metric("CV R² Mean", f"{dynamic_cv_df['R2'].mean():.4f}")
+                                    st.caption("✅ Dynamic")
                                 with col2:
-                                    st.metric("CV PE10", f"{fresh_cv_metrics['PE10']:.4f}")
-                                    st.caption("Recalculated")
+                                    st.metric("CV PE10 Mean", f"{dynamic_cv_df['PE10'].mean():.4f}")
+                                    st.caption("✅ Dynamic")
                                 with col3:
-                                    st.metric("CV RT20", f"{fresh_cv_metrics['RT20']:.4f}")
-                                    st.caption("Recalculated")
+                                    st.metric("CV RT20 Mean", f"{dynamic_cv_df['RT20'].mean():.4f}")
+                                    st.caption("✅ Dynamic")
                                 with col4:
-                                    st.metric("CV FSD", f"{fresh_cv_metrics['FSD']:.4f}")
-                                    st.caption("Recalculated")
+                                    st.metric("CV FSD Mean", f"{dynamic_cv_df['FSD'].mean():.4f}")
+                                    st.caption("✅ Dynamic")
+                                
+                                # Show variability stats
+                                st.markdown("**📊 Fold Variability:**")
+                                col1, col2, col3, col4 = st.columns(4)
+                                with col1:
+                                    st.write(f"R² Std: {dynamic_cv_df['R2'].std():.4f}")
+                                with col2:
+                                    st.write(f"PE10 Std: {dynamic_cv_df['PE10'].std():.4f}")
+                                with col3:
+                                    st.write(f"RT20 Std: {dynamic_cv_df['RT20'].std():.4f}")
+                                with col4:
+                                    st.write(f"FSD Std: {dynamic_cv_df['FSD'].std():.4f}")
+                                    
                             else:
-                                # Fallback to original stored metrics
+                                # Fallback to original static data with clear warning
+                                st.warning("⚠️ **Static Data**: Per-fold raw predictions not available. Showing original training scale only.")
+                                st.markdown("**📊 Original Fold Performance (Training Scale):**")
+                                
+                                cv_df = result['cv_evaluation_df']
+                                st.dataframe(cv_df.style.format({
+                                    'R2': '{:.4f}',
+                                    'FSD': '{:.4f}',
+                                    'PE10': '{:.4f}',
+                                    'RT20': '{:.4f}'
+                                }), use_container_width=True)
+                                
+                                # Fallback summary stats
                                 col1, col2, col3, col4 = st.columns(4)
                                 with col1:
                                     st.metric("CV R² Mean", f"{cv_df['R2'].mean():.4f}")
-                                    st.caption("Original scale")
+                                    st.caption("⚠️ Static")
                                 with col2:
                                     st.metric("CV PE10 Mean", f"{cv_df['PE10'].mean():.4f}")
-                                    st.caption("Original scale")
+                                    st.caption("⚠️ Static")
                                 with col3:
                                     st.metric("CV RT20 Mean", f"{cv_df['RT20'].mean():.4f}")
-                                    st.caption("Original scale")
+                                    st.caption("⚠️ Static")
                                 with col4:
                                     st.metric("CV FSD Mean", f"{cv_df['FSD'].mean():.4f}")
-                                    st.caption("Original scale")
-                                
-                                if not eval_mode_comparison:
-                                    st.warning(f"⚠️ {model_name}: CV summary cannot be toggled (using stored values)")
+                                    st.caption("⚠️ Static")
 
                     # Performance Metrics Comparison - Show both CV and Full Dataset
                     st.markdown("#### 📊 Performance Metrics Comparison")
 
-                    # Create comprehensive metrics table (EXISTING CODE CONTINUES...)
+                    # Create comprehensive metrics table with DYNAMIC CV calculations
                     metrics_data = []
                     for model_name, result in results.items():
                         # Get fresh predictions for full dataset recalculation
@@ -4704,16 +4786,37 @@ elif st.session_state.processing_step == 'advanced':
                         # Recalculate full dataset metrics with chosen evaluation mode
                         fresh_full_metrics = evaluate(y_test, y_pred, squared=eval_mode_comparison)
                         
-                        # Recalculate CV metrics if raw predictions available
-                        if result.get('cv_raw_predictions') is not None and result['cv_raw_predictions']['y_actual_all']:
+                        # ENHANCED: Recalculate CV metrics using per-fold data when available
+                        cv_fold_predictions = result.get('cv_fold_raw_predictions')
+                        
+                        if cv_fold_predictions is not None and len(cv_fold_predictions) > 0:
+                            # Calculate CV metrics by averaging across all folds
+                            fold_metrics_list = []
+                            
+                            for fold_data in cv_fold_predictions:
+                                y_actual = np.array(fold_data['y_actual'])
+                                y_predicted = np.array(fold_data['y_predicted'])
+                                fold_metrics = evaluate(y_actual, y_predicted, squared=eval_mode_comparison)
+                                fold_metrics_list.append(fold_metrics)
+                            
+                            # Average metrics across folds
+                            fresh_cv_metrics = {
+                                'R2': np.mean([m['R2'] for m in fold_metrics_list]),
+                                'PE10': np.mean([m['PE10'] for m in fold_metrics_list]),
+                                'RT20': np.mean([m['RT20'] for m in fold_metrics_list]),
+                                'FSD': np.mean([m['FSD'] for m in fold_metrics_list])
+                            }
+                            
+                        elif result.get('cv_raw_predictions') is not None and result['cv_raw_predictions']['y_actual_all']:
+                            # Fallback to legacy CV predictions
                             cv_y_actual = np.array(result['cv_raw_predictions']['y_actual_all'])
                             cv_y_pred = np.array(result['cv_raw_predictions']['y_pred_all'])
                             fresh_cv_metrics = evaluate(cv_y_actual, cv_y_pred, squared=eval_mode_comparison)
                         else:
-                            # Fallback to stored CV metrics
+                            # Final fallback to stored CV metrics (with warning)
                             fresh_cv_metrics = result['cv_global_test_metrics']
-                            if not eval_mode_comparison:
-                                st.warning(f"⚠️ {model_name}: CV metrics cannot be toggled (using stored values)")
+                            if eval_mode_comparison != result.get('is_log_transformed', True):
+                                st.warning(f"⚠️ {model_name}: CV metrics cannot be recalculated (using stored values)")
                         
                         metrics_data.append({
                             'Model': model_name,
