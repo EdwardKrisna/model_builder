@@ -773,7 +773,7 @@ class RealEstateAnalyzer:
     
     def load_custom_filtered_data(self, provinces=None, regencies=None, districts=None, 
                               hpm_min=50000, hpm_max=200000000,
-                              luas_tanah_min=0, luas_tanah_max=10000,
+                              luas_tanah_min=0, luas_tanah_max=100000,
                               lebar_jalan_min=0, lebar_jalan_max=50,
                               limit=50000):
         """Load data with custom database-level filtering"""
@@ -1868,7 +1868,7 @@ if st.session_state.processing_step == 'selection':
             luas_tanah_min = st.number_input(
                 "Minimum Luas Tanah (m²)",
                 min_value=0,
-                max_value=10000,
+                max_value=100000,
                 value=50,
                 step=10,
                 key="custom_luas_tanah_min"
@@ -1877,8 +1877,8 @@ if st.session_state.processing_step == 'selection':
             luas_tanah_max = st.number_input(
                 "Maximum Luas Tanah (m²)",
                 min_value=0,
-                max_value=10000,
-                value=1000,
+                max_value=100000,
+                value=10000,
                 step=10,
                 key="custom_luas_tanah_max"
             )
