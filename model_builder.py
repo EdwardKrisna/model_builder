@@ -4618,36 +4618,7 @@ elif st.session_state.processing_step == 'advanced':
                 if selected_session:
                     results = st.session_state.all_model_results[selected_session]
                     
-                    # Cross-Validation Analytics Section
-                    st.markdown("#### 📊 Cross-Validation Analytics")
-                    st.info("📈 Individual fold performance for model validation")
-                    
-                    for model_name, result in results.items():
-                        with st.expander(f"📋 {model_name} - CV Fold Results", expanded=False):
-                            cv_df = result['cv_evaluation_df']
-                            st.dataframe(cv_df.style.format({
-                                'R2': '{:.4f}',
-                                'FSD': '{:.4f}',
-                                'PE10': '{:.4f}',
-                                'RT20': '{:.4f}'
-                            }), use_container_width=True)
-                            
-                            # CV Summary Stats
-                            col1, col2, col3, col4 = st.columns(4)
-                            with col1:
-                                st.metric("CV R² Mean", f"{cv_df['R2'].mean():.4f}")
-                                st.caption(f"Std: {cv_df['R2'].std():.4f}")
-                            with col2:
-                                st.metric("CV PE10 Mean", f"{cv_df['PE10'].mean():.4f}")
-                                st.caption(f"Std: {cv_df['PE10'].std():.4f}")
-                            with col3:
-                                st.metric("CV RT20 Mean", f"{cv_df['RT20'].mean():.4f}")
-                                st.caption(f"Std: {cv_df['RT20'].std():.4f}")
-                            with col4:
-                                st.metric("CV FSD Mean", f"{cv_df['FSD'].mean():.4f}")
-                                st.caption(f"Std: {cv_df['FSD'].std():.4f}")
-                    
-                    # Add evaluation mode toggle for comparison
+                    # MOVED: Evaluation Settings to the top
                     st.markdown("#### ⚙️ Evaluation Settings")
                     eval_mode_comparison = st.toggle(
                         "🔄 Evaluate in Original Scale (exp transform)", 
@@ -4657,16 +4628,73 @@ elif st.session_state.processing_step == 'advanced':
                     )
 
                     if eval_mode_comparison:
-                        st.success("📈 Evaluating **both CV and Full Dataset** in **Original Scale** (HPM values)")
+                        st.success("📈 Evaluating **metrics below** in **Original Scale** (HPM values)")
                     else:
-                        st.info("📊 Evaluating **both CV and Full Dataset** in **Log Scale** (ln values)")
+                        st.info("📊 Evaluating **metrics below** in **Log Scale** (ln values)")
 
-                    st.info("💡 **Note**: Both CV and Full Dataset metrics will recalculate when you toggle the scale")
+                    st.info("💡 **Note**: Summary metrics and charts will recalculate. Individual fold details show original training scale.")
+                    
+                    # Cross-Validation Analytics Section
+                    st.markdown("#### 📊 Cross-Validation Analytics")
+                    st.info("📈 Individual fold performance for model validation")
+                    
+                    for model_name, result in results.items():
+                        with st.expander(f"📋 {model_name} - CV Fold Results", expanded=False):
+                            # Show original fold results with clear labeling
+                            st.markdown("**📊 Individual Fold Performance (Original Training Scale):**")
+                            cv_df = result['cv_evaluation_df']
+                            st.dataframe(cv_df.style.format({
+                                'R2': '{:.4f}',
+                                'FSD': '{:.4f}',
+                                'PE10': '{:.4f}',
+                                'RT20': '{:.4f}'
+                            }), use_container_width=True)
+                            
+                            # Add recalculated summary stats
+                            st.markdown(f"**📈 Summary Stats ({('Original Scale' if eval_mode_comparison else 'Log Scale')}):**")
+                            
+                            # Recalculate CV summary metrics based on toggle
+                            if result.get('cv_raw_predictions') is not None and result['cv_raw_predictions']['y_actual_all']:
+                                cv_y_actual = np.array(result['cv_raw_predictions']['y_actual_all'])
+                                cv_y_pred = np.array(result['cv_raw_predictions']['y_pred_all'])
+                                fresh_cv_metrics = evaluate(cv_y_actual, cv_y_pred, squared=eval_mode_comparison)
+                                
+                                col1, col2, col3, col4 = st.columns(4)
+                                with col1:
+                                    st.metric("CV R² Mean", f"{fresh_cv_metrics['R2']:.4f}")
+                                    st.caption("Recalculated")
+                                with col2:
+                                    st.metric("CV PE10", f"{fresh_cv_metrics['PE10']:.4f}")
+                                    st.caption("Recalculated")
+                                with col3:
+                                    st.metric("CV RT20", f"{fresh_cv_metrics['RT20']:.4f}")
+                                    st.caption("Recalculated")
+                                with col4:
+                                    st.metric("CV FSD", f"{fresh_cv_metrics['FSD']:.4f}")
+                                    st.caption("Recalculated")
+                            else:
+                                # Fallback to original stored metrics
+                                col1, col2, col3, col4 = st.columns(4)
+                                with col1:
+                                    st.metric("CV R² Mean", f"{cv_df['R2'].mean():.4f}")
+                                    st.caption("Original scale")
+                                with col2:
+                                    st.metric("CV PE10 Mean", f"{cv_df['PE10'].mean():.4f}")
+                                    st.caption("Original scale")
+                                with col3:
+                                    st.metric("CV RT20 Mean", f"{cv_df['RT20'].mean():.4f}")
+                                    st.caption("Original scale")
+                                with col4:
+                                    st.metric("CV FSD Mean", f"{cv_df['FSD'].mean():.4f}")
+                                    st.caption("Original scale")
+                                
+                                if not eval_mode_comparison:
+                                    st.warning(f"⚠️ {model_name}: CV summary cannot be toggled (using stored values)")
 
                     # Performance Metrics Comparison - Show both CV and Full Dataset
                     st.markdown("#### 📊 Performance Metrics Comparison")
 
-                    # Create comprehensive metrics table
+                    # Create comprehensive metrics table (EXISTING CODE CONTINUES...)
                     metrics_data = []
                     for model_name, result in results.items():
                         # Get fresh predictions for full dataset recalculation
