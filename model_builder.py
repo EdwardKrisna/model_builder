@@ -1908,7 +1908,7 @@ if st.session_state.processing_step == 'selection':
                 "Maximum Lebar Jalan (m)",
                 min_value=0,
                 max_value=100,
-                value=20,
+                value=30,
                 step=1,
                 key="custom_lebar_jalan_max"
             )
