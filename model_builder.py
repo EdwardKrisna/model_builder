@@ -4895,53 +4895,52 @@ elif st.session_state.processing_step == 'advanced':
                     
                     st.plotly_chart(fig_metrics, use_container_width=True)
                     
-                    # Combined Actual vs Predicted Plot
+                    # Combined Actual vs Predicted Plot - FIXED VERSION
                     st.markdown("#### 🎯 Combined Actual vs Predicted Comparison")
-                    
-                    col1, col2 = st.columns(2)
 
-                    with col1:
-                        show_ln_scale = st.toggle(
-                            "Show ln (log) scale in plot", 
-                            value=not eval_mode_comparison,  # Sync with evaluation mode
-                            help="Toggle between ln scale and actual values for visualization"
-                        )
+                    # REMOVED: Independent toggle that was causing the issue
+                    # FIXED: Use the main evaluation mode toggle instead
+                    st.info(f"📊 Plot scale follows evaluation mode: {'Original Scale' if eval_mode_comparison else 'Log Scale'}")
+                    st.caption("💡 Toggle the evaluation mode above to change both metrics and plot scale")
 
-                    with col2:
-                        st.info(f"📊 Current evaluation: {'Original Scale' if eval_mode_comparison else 'Log Scale'}")
-                    
                     fig_pred = go.Figure()
-                    
+
                     # Add scatter plot for each model
                     for i, (model_name, result) in enumerate(results.items()):
                         y_actual = result['y_test_last']
                         y_pred = result['y_pred_last']
                         
-                        # Apply consistent transformation based on toggle
-                        if show_ln_scale and (result['is_log_transformed'] or ('ln_' in result['target_name'])):
-                            # Keep in ln scale
-                            y_actual_plot = y_actual
-                            y_pred_plot = y_pred
-                            axis_title = "Values (ln scale)"
-                        elif not show_ln_scale and (result['is_log_transformed'] or ('ln_' in result['target_name'])):
-                            # Convert to actual scale
-                            y_actual_plot = np.exp(y_actual)
-                            y_pred_plot = np.exp(y_pred)
-                            axis_title = "Values (Original Scale)"
+                        # FIXED: Use eval_mode_comparison instead of show_ln_scale
+                        # Apply transformation based on main evaluation toggle
+                        if eval_mode_comparison:
+                            # Original scale mode - convert from log if needed
+                            if result['is_log_transformed'] or ('ln_' in result['target_name']):
+                                y_actual_plot = np.exp(y_actual)
+                                y_pred_plot = np.exp(y_pred)
+                            else:
+                                y_actual_plot = y_actual
+                                y_pred_plot = y_pred
+                            axis_title = "HPM Values (Original Scale)"
                         else:
-                            # Already in actual scale
-                            y_actual_plot = y_actual
-                            y_pred_plot = y_pred
-                            axis_title = "Values" if show_ln_scale else "Values (Original Scale)"
+                            # Log scale mode - keep in log if available
+                            if result['is_log_transformed'] or ('ln_' in result['target_name']):
+                                y_actual_plot = y_actual
+                                y_pred_plot = y_pred
+                            else:
+                                # Convert to log scale if data is in original scale
+                                y_actual_plot = np.log(y_actual)
+                                y_pred_plot = np.log(y_pred)
+                            axis_title = "HPM Values (Log Scale)"
                         
-                        # Use full dataset metrics for legend
-                        r2_value = result['full_global_test_metrics']['R2']
+                        # FIXED: Use dynamically calculated metrics that match the evaluation mode
+                        # Recalculate R² for this specific plot with current evaluation mode
+                        plot_r2 = evaluate(y_actual, y_pred, squared=eval_mode_comparison)['R2']
                         
                         fig_pred.add_trace(go.Scatter(
                             x=y_actual_plot,
                             y=y_pred_plot,
                             mode='markers',
-                            name=f'{model_name} (R²={r2_value:.3f})',
+                            name=f'{model_name} (R²={plot_r2:.3f})',
                             marker=dict(
                                 color=colors[i % len(colors)],
                                 size=6,
@@ -4952,19 +4951,33 @@ elif st.session_state.processing_step == 'advanced':
                                         'Predicted: %{y:.0f}<br>' +
                                         '<extra></extra>'
                         ))
-                    
+
                     # Add perfect prediction line
                     if results:
-                        # Get overall min/max for the diagonal line
+                        # FIXED: Calculate min/max based on current evaluation mode
                         all_actual = []
                         all_pred = []
+                        
                         for result in results.values():
-                            if result['is_log_transformed']:
-                                all_actual.extend(np.exp(result['y_test_last']))
-                                all_pred.extend(np.exp(result['y_pred_last']))
+                            y_actual = result['y_test_last']
+                            y_pred = result['y_pred_last']
+                            
+                            if eval_mode_comparison:
+                                # Original scale
+                                if result['is_log_transformed'] or ('ln_' in result['target_name']):
+                                    all_actual.extend(np.exp(y_actual))
+                                    all_pred.extend(np.exp(y_pred))
+                                else:
+                                    all_actual.extend(y_actual)
+                                    all_pred.extend(y_pred)
                             else:
-                                all_actual.extend(result['y_test_last'])
-                                all_pred.extend(result['y_pred_last'])
+                                # Log scale
+                                if result['is_log_transformed'] or ('ln_' in result['target_name']):
+                                    all_actual.extend(y_actual)
+                                    all_pred.extend(y_pred)
+                                else:
+                                    all_actual.extend(np.log(y_actual))
+                                    all_pred.extend(np.log(y_pred))
                         
                         min_val = min(min(all_actual), min(all_pred))
                         max_val = max(max(all_actual), max(all_pred))
@@ -4977,18 +4990,17 @@ elif st.session_state.processing_step == 'advanced':
                             line=dict(color='red', dash='dash', width=2),
                             hovertemplate='Perfect Prediction Line<extra></extra>'
                         ))
-                    
+
                     fig_pred.update_layout(
-                        title='Actual vs Predicted Values - All Models (Full Dataset)',
+                        title=f'Actual vs Predicted Values - All Models ({("Original Scale" if eval_mode_comparison else "Log Scale")})',
                         xaxis_title=f'Actual {axis_title}',
                         yaxis_title=f'Predicted {axis_title}',
                         height=600,
                         hovermode='closest'
                     )
-                    
-                    # Auto-adjust axis ranges for better visualization
+
+                    # FIXED: Auto-adjust axis ranges based on current evaluation mode
                     if results:
-                        # Get the actual plot data ranges
                         all_x_vals = []
                         all_y_vals = []
                         
@@ -4996,15 +5008,22 @@ elif st.session_state.processing_step == 'advanced':
                             y_actual = result['y_test_last']
                             y_pred = result['y_pred_last']
                             
-                            if show_ln_scale and (result['is_log_transformed'] or ('ln_' in result['target_name'])):
-                                all_x_vals.extend(y_actual)
-                                all_y_vals.extend(y_pred)
-                            elif not show_ln_scale and (result['is_log_transformed'] or ('ln_' in result['target_name'])):
-                                all_x_vals.extend(np.exp(y_actual))
-                                all_y_vals.extend(np.exp(y_pred))
+                            if eval_mode_comparison:
+                                # Original scale
+                                if result['is_log_transformed'] or ('ln_' in result['target_name']):
+                                    all_x_vals.extend(np.exp(y_actual))
+                                    all_y_vals.extend(np.exp(y_pred))
+                                else:
+                                    all_x_vals.extend(y_actual)
+                                    all_y_vals.extend(y_pred)
                             else:
-                                all_x_vals.extend(y_actual)
-                                all_y_vals.extend(y_pred)
+                                # Log scale
+                                if result['is_log_transformed'] or ('ln_' in result['target_name']):
+                                    all_x_vals.extend(y_actual)
+                                    all_y_vals.extend(y_pred)
+                                else:
+                                    all_x_vals.extend(np.log(y_actual))
+                                    all_y_vals.extend(np.log(y_pred))
                         
                         if all_x_vals and all_y_vals:
                             # Calculate ranges with padding
@@ -5019,8 +5038,11 @@ elif st.session_state.processing_step == 'advanced':
                             
                             fig_pred.update_xaxes(range=[x_min - x_padding, x_max + x_padding])
                             fig_pred.update_yaxes(range=[y_min - y_padding, y_max + y_padding])
-                    
+
                     st.plotly_chart(fig_pred, use_container_width=True)
+
+                    # FIXED: Add status indicator to confirm the plot is updating
+                    st.success(f"Plot updated with {('Original Scale' if eval_mode_comparison else 'Log Scale')} evaluation mode")
                     
                     # Model Rankings (based on Full Dataset metrics)
                     st.markdown("#### 🏆 Model Rankings (Full Dataset)")
