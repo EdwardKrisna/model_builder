@@ -5615,22 +5615,11 @@ elif st.session_state.processing_step == 'advanced':
                                 fig_top.update_layout(height=500)
                                 st.plotly_chart(fig_top, use_container_width=True)
                                 
+                                
+
+                            with col2:                                
                                 # Show the actual values
                                 st.dataframe(top_features.style.format({'Importance': '{:.4f}'}), use_container_width=True)
-
-                            with col2:
-                                # Show only the selected model's detailed breakdown
-                                st.markdown(f"**{selected_model_for_importance} - Detailed Feature Analysis**")
-                                
-                                # Show all features from selected model (not just top 10)
-                                fig_all = px.bar(
-                                    selected_importance_df.head(20),  # Show top 20 instead of heatmap
-                                    x='Importance',
-                                    y='Feature',
-                                    orientation='h',
-                                    title=f'Top 20 Features - {selected_model_for_importance}'
-                                )
-                                st.plotly_chart(fig_all, use_container_width=True)
                             
                             # Download feature importance
                             st.download_button(
