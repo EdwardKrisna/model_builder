@@ -5688,7 +5688,7 @@ elif st.session_state.processing_step == 'advanced':
                     
                     # Add this after the existing download buttons section
                     st.markdown("#### 📊 Download Model Predictions")
-                    st.info("💡 Download model predictions in both actual and log scale")
+                    st.info("💡 Download original dataset with model predictions added")
 
                     # Prepare predictions dataset
                     if st.button("📁 Prepare Predictions Dataset", key=f"prepare_predictions_{selected_session}"):
@@ -5705,13 +5705,13 @@ elif st.session_state.processing_step == 'advanced':
                                 X_full = df_model[feature_names]
                                 y_full = df_model[target_name]
                                 
-                                # Create predictions dataframe with only 6 columns
-                                predictions_df = pd.DataFrame()
+                                # START WITH THE ORIGINAL DATASET
+                                predictions_df = df_model.copy()
                                 
                                 # Check if target is log-transformed
                                 is_log_target = ('ln_' in target_name) or ('log_' in target_name.lower())
                                 
-                                # Add predictions from each model (only the 3 main models)
+                                # ADD 6 PREDICTION COLUMNS to the existing dataset
                                 for model_name, result in results.items():
                                     if model_name != 'OLS':  # Skip OLS if present
                                         model = result['model']
@@ -5726,7 +5726,7 @@ elif st.session_state.processing_step == 'advanced':
                                             # Standard sklearn models
                                             y_pred = model.predict(X_full)
                                         
-                                        # Add predictions in both scales
+                                        # Add predictions in both scales to existing dataset
                                         model_key = model_name.replace(" ", "_")
                                         
                                         if is_log_target:
@@ -5747,10 +5747,11 @@ elif st.session_state.processing_step == 'advanced':
                                 st.session_state[f'predictions_data_{selected_session}'] = {
                                     'data': excel_buffer.getvalue(),
                                     'record_count': len(predictions_df),
-                                    'columns': list(predictions_df.columns)
+                                    'total_columns': len(predictions_df.columns),
+                                    'prediction_columns': [col for col in predictions_df.columns if any(model.replace(" ", "_") in col for model in results.keys() if model != 'OLS')]
                                 }
                                 
-                                st.success("✅ Predictions dataset prepared successfully!")
+                                st.success("✅ Dataset with predictions prepared successfully!")
                                 
                             except Exception as e:
                                 st.error(f"❌ Failed to prepare predictions dataset: {str(e)}")
@@ -5761,19 +5762,19 @@ elif st.session_state.processing_step == 'advanced':
                         pred_data = st.session_state[predictions_key]
                         
                         st.download_button(
-                            label="📊 Download Predictions (.xlsx)",
+                            label="📊 Download Dataset + Predictions (.xlsx)",
                             data=pred_data['data'],
-                            file_name=f"model_predictions_{selected_session}.xlsx",
+                            file_name=f"dataset_with_predictions_{selected_session}.xlsx",
                             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                             key=f"download_predictions_{selected_session}",
                             type="primary",
                             use_container_width=True
                         )
                         
-                        # Show column info
-                        st.success(f"✅ Ready: {pred_data['record_count']:,} rows × 6 columns")
-                        with st.expander("📋 Columns Included", expanded=False):
-                            for col in pred_data['columns']:
+                        # Show info
+                        st.success(f"✅ Ready: {pred_data['record_count']:,} rows × {pred_data['total_columns']} columns")
+                        with st.expander("📋 Added Prediction Columns", expanded=False):
+                            for col in pred_data['prediction_columns']:
                                 st.write(f"• {col}")
                     
                     # Clear session option
