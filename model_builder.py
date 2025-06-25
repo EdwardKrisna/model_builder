@@ -3870,7 +3870,28 @@ elif st.session_state.processing_step == 'model':
                                             }
                                             
                                             st.success("✅ Dataset prepared successfully!")
-                                            # st.rerun()  # Only rerun after successful preparation
+                                            st.session_state[dataset_key] = {
+                                                'data': excel_buffer.getvalue(),
+                                                'stats': {
+                                                    'total_records': len(export_data),
+                                                    'mean_abs_error': np.mean(export_data['absolute_percentage_error']),
+                                                    'within_10pct': (export_data['absolute_percentage_error'] <= 10).mean() * 100,
+                                                    'within_20pct': (export_data['absolute_percentage_error'] <= 20).mean() * 100,
+                                                    'high_errors': (export_data['absolute_percentage_error'] > 20).sum(),
+                                                    'r2_score': results['rsquared']
+                                                }
+                                            }
+
+                                            # Add download button immediately
+                                            st.download_button(
+                                                label="📁 Download Dataset Now",
+                                                data=st.session_state[dataset_key]['data'],
+                                                file_name=f"ols_dataset_with_predictions_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
+                                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                                help="Download complete dataset with predictions and residuals",
+                                                use_container_width=True,
+                                                type="primary"
+                                            )
                                             
                                         except Exception as e:
                                             st.error(f"❌ Failed to prepare dataset: {str(e)}")
