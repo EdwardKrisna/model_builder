@@ -5619,22 +5619,18 @@ elif st.session_state.processing_step == 'advanced':
                                 st.dataframe(top_features.style.format({'Importance': '{:.4f}'}), use_container_width=True)
 
                             with col2:
-                                # Feature importance heatmap (keep this for comparison)
-                                # Use top features from the selected model for heatmap
-                                top_feature_names = top_features['Feature'].tolist()
-                                pivot_df = importance_df.pivot(index='Feature', columns='Model', values='Importance')
-                                pivot_df = pivot_df.loc[top_feature_names]  # Show top features from selected model
+                                # Show only the selected model's detailed breakdown
+                                st.markdown(f"**{selected_model_for_importance} - Detailed Feature Analysis**")
                                 
-                                fig_heatmap = px.imshow(
-                                    pivot_df.values,
-                                    x=pivot_df.columns,
-                                    y=pivot_df.index,
-                                    aspect='auto',
-                                    title=f'Feature Importance Heatmap\n(Top 10 from {selected_model_for_importance})',
-                                    color_continuous_scale='Viridis'
+                                # Show all features from selected model (not just top 10)
+                                fig_all = px.bar(
+                                    selected_importance_df.head(20),  # Show top 20 instead of heatmap
+                                    x='Importance',
+                                    y='Feature',
+                                    orientation='h',
+                                    title=f'Top 20 Features - {selected_model_for_importance}'
                                 )
-                                fig_heatmap.update_layout(height=500)
-                                st.plotly_chart(fig_heatmap, use_container_width=True)
+                                st.plotly_chart(fig_all, use_container_width=True)
                             
                             # Download feature importance
                             st.download_button(
