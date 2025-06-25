@@ -3192,7 +3192,7 @@ elif st.session_state.processing_step == 'model':
         st.stop()
 
     else:
-        # MOVED: Map Visualization Section - Now in OLS Model step
+        # Map Visualization Section
         st.markdown("### 🗺️ Property Location Map")
         st.info("📍 Visualize your dataset's geographic distribution before modeling")
         
@@ -3394,118 +3394,246 @@ elif st.session_state.processing_step == 'model':
                 default_value = col in default_checked_cols
                 if st.checkbox(col, value=default_value, key=f"x_var_{col}"):
                     x_columns.append(col)
+        
+        # FIXED: Separate the button logic from the results display
+        model_training_container = st.container()
+        model_results_container = st.container()
+        model_export_container = st.container()
+        
+        with model_training_container:
+            # Run OLS Model button and Save Variables button
+            if x_columns:
+                col1, col2 = st.columns(2)
                 
-        # Run OLS Model button
-        # Add this after the existing OLS model configuration
-        if x_columns:
-            if st.button("📈 Run OLS Regression", type="primary") and x_columns:
-                with st.spinner("Fitting OLS model..."):
-                    success, message, vif_df = analyzer.run_ols_model(y_column, x_columns)
-                    
-                    if success:
-                        st.success(message)
-                        
-                        # Display model results
-                        results = analyzer.get_model_results()
-                        
-                        if results:
-                            # Model metrics
-                            st.markdown("### 📊 Model Results")
+                with col1:
+                    if st.button("📈 Run OLS Regression", type="primary", use_container_width=True):
+                        with st.spinner("Fitting OLS model..."):
+                            success, message, vif_df = analyzer.run_ols_model(y_column, x_columns)
+                            
+                            if success:
+                                st.success(message)
+                                # Set session state to show results
+                                st.session_state.ols_model_trained = True
+                                st.session_state.ols_results_available = True
+                                st.rerun()  # Refresh to show results
+                            else:
+                                st.error(message)
+                                st.session_state.ols_model_trained = False
+                                st.session_state.ols_results_available = False
+                
+                with col2:
+                    if st.button("💾 Save Variables for ML", type="secondary", help="Save current variable selection for ML models", use_container_width=True):
+                        success, message = analyzer.save_ols_variables(y_column, x_columns)
+                        if success:
+                            st.success(message)
+                            st.info(f"Saved: Y={y_column}, X={len(x_columns)} variables")
+                            st.session_state.show_saved_vars = True
+                        else:
+                            st.error(message)
+        
+        # FIXED: Display results only when model is trained (separate from button logic)
+        with model_results_container:
+            if st.session_state.get('ols_model_trained', False) and analyzer.model is not None:
+                results = analyzer.get_model_results()
+                
+                if results:
+                    # Model metrics
+                    st.markdown("### 📊 Model Results")
 
-                            # Model summary
-                            with st.expander("📋 Detailed Model Summary", expanded=False):
-                                st.code(results['summary'])
-                            
-                            col1, col2,= st.columns(2)
-                            with col1:
-                                st.metric("R-squared", f"{results['rsquared']:.4f}")
-                            with col2:
-                                st.metric("Adj. R-squared", f"{results['rsquared_adj']:.4f}")
-                            
-                            # Coefficients table
-                            st.markdown("### 📊 Model Coefficients")
-                            coef_df = pd.DataFrame({
-                                'Coefficient': results['params'],
-                                'P-value': results['pvalues'],
-                                'CI_Lower': results['conf_int'][0],
-                                'CI_Upper': results['conf_int'][1]
-                            })
-                            coef_df['Significant'] = coef_df['P-value'] < 0.05
-                            st.dataframe(coef_df.style.format({
-                                'Coefficient': '{:.4f}',
-                                'P-value': '{:.4f}',
-                                'CI_Lower': '{:.4f}',
-                                'CI_Upper': '{:.4f}'
-                            }), use_container_width=True)
-                            
-                            # Model diagnostics plots
-                            st.markdown("### 📈 Model Diagnostics")
-                            
-                            # Create diagnostic plots using matplotlib style
-                            dataset_name = f"Real Estate Analysis - {len(analyzer.model_data)} observations"
-                            
-                            # Create three plots side by side
-                            col1, col2, col3 = st.columns(3)
-                            
-                            with col1:
-                                # Plot 1: Actual vs Predicted (FIXED: Horizontal = Actual, Vertical = Predicted)
-                                fig1, ax1 = plt.subplots(figsize=(6, 4))
-                                y_pred = results['fitted_values']  # These will go on Y-axis (vertical)
-                                y_actual = results['actual_values']  # These will go on X-axis (horizontal)
-                                
-                                # FIXED: Swap the axes - X is actual, Y is predicted
-                                sns.regplot(x=y_actual, y=y_pred, line_kws={"color": "red"}, ax=ax1)
-                                ax1.set_xlabel('Actual Values')      # X-axis = Horizontal = Actual
-                                ax1.set_ylabel('Predicted Values')   # Y-axis = Vertical = Predicted
-                                ax1.set_title(f'{dataset_name}\nActual vs Predicted')
-                                
-                                # Add perfect prediction line (diagonal)
-                                min_val = min(min(y_actual), min(y_pred))
-                                max_val = max(max(y_actual), max(y_pred))
-                                ax1.plot([min_val, max_val], [min_val, max_val], 'r--', alpha=0.8, linewidth=1, label='Perfect Prediction')
-                                ax1.legend()
-                                
-                                plt.tight_layout()
-                                st.pyplot(fig1)
-                            
-                            with col2:
-                                # Plot 2: Residuals vs Fitted
-                                fig2, ax2 = plt.subplots(figsize=(6, 4))
-                                residuals = results['residuals']
-                                fitted_values = results['fitted_values']
-                                
-                                sns.scatterplot(x=fitted_values, y=residuals, alpha=0.7, ax=ax2)
-                                ax2.axhline(0, color='gray', linestyle='--')
-                                ax2.set_xlabel('Fitted Values')
-                                ax2.set_ylabel('Residuals')
-                                ax2.set_title(f'{dataset_name}\nResiduals vs Fitted')
-                                plt.tight_layout()
-                                st.pyplot(fig2)
-                            
-                            with col3:
-                                # Plot 3: Residual Normality (KDE Plot)
-                                fig3, ax3 = plt.subplots(figsize=(6, 4))
-                                sns.kdeplot(residuals, fill=True, color='blue', ax=ax3)
-                                ax3.set_title(f'{dataset_name}\nResidual Normality Plot (KDE)')
-                                ax3.set_xlabel('Residuals')
-                                plt.tight_layout()
-                                st.pyplot(fig3)
-                            
-                            # VIF Results
-                            if vif_df is not None:
-                                st.markdown("### 📊 Variance Inflation Factors (VIF)")
-                                st.dataframe(vif_df.style.format({'VIF': '{:.2f}'}), use_container_width=True)
-                                
-                                # VIF interpretation
-                                high_vif = vif_df[vif_df['VIF'] > 5]
-                                if not high_vif.empty:
-                                    st.warning(f"High VIF detected (>5): {', '.join(high_vif['feature'].tolist())}")
+                    # Model summary
+                    with st.expander("📋 Detailed Model Summary", expanded=False):
+                        st.code(results['summary'])
                     
-                    # MOVED: Export Results OUTSIDE the results block to prevent rerun issues
-                    # This section is now independent of the results rendering
-                    if success and results:  # Only show if model was successful and results exist
-                        st.markdown("### 💾 Export Results")
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        st.metric("R-squared", f"{results['rsquared']:.4f}")
+                    with col2:
+                        st.metric("Adj. R-squared", f"{results['rsquared_adj']:.4f}")
+                    
+                    # Coefficients table
+                    st.markdown("### 📊 Model Coefficients")
+                    coef_df = pd.DataFrame({
+                        'Coefficient': results['params'],
+                        'P-value': results['pvalues'],
+                        'CI_Lower': results['conf_int'][0],
+                        'CI_Upper': results['conf_int'][1]
+                    })
+                    coef_df['Significant'] = coef_df['P-value'] < 0.05
+                    st.dataframe(coef_df.style.format({
+                        'Coefficient': '{:.4f}',
+                        'P-value': '{:.4f}',
+                        'CI_Lower': '{:.4f}',
+                        'CI_Upper': '{:.4f}'
+                    }), use_container_width=True)
+                    
+                    # Model diagnostics plots
+                    st.markdown("### 📈 Model Diagnostics")
+                    
+                    # Create diagnostic plots
+                    dataset_name = f"Real Estate Analysis - {len(analyzer.model_data)} observations"
+                    
+                    col1, col2, col3 = st.columns(3)
+                    
+                    with col1:
+                        # Plot 1: Actual vs Predicted
+                        fig1, ax1 = plt.subplots(figsize=(6, 4))
+                        y_pred = results['fitted_values']
+                        y_actual = results['actual_values']
+                        
+                        sns.regplot(x=y_actual, y=y_pred, line_kws={"color": "red"}, ax=ax1)
+                        ax1.set_xlabel('Actual Values')
+                        ax1.set_ylabel('Predicted Values')
+                        ax1.set_title(f'{dataset_name}\nActual vs Predicted')
+                        
+                        # Add perfect prediction line
+                        min_val = min(min(y_actual), min(y_pred))
+                        max_val = max(max(y_actual), max(y_pred))
+                        ax1.plot([min_val, max_val], [min_val, max_val], 'r--', alpha=0.8, linewidth=1, label='Perfect Prediction')
+                        ax1.legend()
+                        
+                        plt.tight_layout()
+                        st.pyplot(fig1)
+                    
+                    with col2:
+                        # Plot 2: Residuals vs Fitted
+                        fig2, ax2 = plt.subplots(figsize=(6, 4))
+                        residuals = results['residuals']
+                        fitted_values = results['fitted_values']
+                        
+                        sns.scatterplot(x=fitted_values, y=residuals, alpha=0.7, ax=ax2)
+                        ax2.axhline(0, color='gray', linestyle='--')
+                        ax2.set_xlabel('Fitted Values')
+                        ax2.set_ylabel('Residuals')
+                        ax2.set_title(f'{dataset_name}\nResiduals vs Fitted')
+                        plt.tight_layout()
+                        st.pyplot(fig2)
+                    
+                    with col3:
+                        # Plot 3: Residual Normality
+                        fig3, ax3 = plt.subplots(figsize=(6, 4))
+                        sns.kdeplot(residuals, fill=True, color='blue', ax=ax3)
+                        ax3.set_title(f'{dataset_name}\nResidual Normality Plot (KDE)')
+                        ax3.set_xlabel('Residuals')
+                        plt.tight_layout()
+                        st.pyplot(fig3)
+                    
+                    # VIF Results
+                    success_check, message_check, vif_df = analyzer.run_ols_model(y_column, x_columns) if 'vif_df' not in locals() else (True, "", vif_df)
+                    if vif_df is not None:
+                        st.markdown("### 📊 Variance Inflation Factors (VIF)")
+                        st.dataframe(vif_df.style.format({'VIF': '{:.2f}'}), use_container_width=True)
+                        
+                        # VIF interpretation
+                        high_vif = vif_df[vif_df['VIF'] > 5]
+                        if not high_vif.empty:
+                            st.warning(f"High VIF detected (>5): {', '.join(high_vif['feature'].tolist())}")
+        
+        # FIXED: Export section in expandable container to prevent auto-scroll
+        with model_results_container:
+            if st.session_state.get('ols_model_trained', False) and analyzer.model is not None:
+                results = analyzer.get_model_results()
+                
+                if results:
+                    # Model metrics
+                    st.markdown("### 📊 Model Results")
 
+                    # Model summary
+                    with st.expander("📋 Detailed Model Summary", expanded=False):
+                        st.code(results['summary'])
+                    
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        st.metric("R-squared", f"{results['rsquared']:.4f}")
+                    with col2:
+                        st.metric("Adj. R-squared", f"{results['rsquared_adj']:.4f}")
+                    
+                    # Coefficients table
+                    st.markdown("### 📊 Model Coefficients")
+                    coef_df = pd.DataFrame({
+                        'Coefficient': results['params'],
+                        'P-value': results['pvalues'],
+                        'CI_Lower': results['conf_int'][0],
+                        'CI_Upper': results['conf_int'][1]
+                    })
+                    coef_df['Significant'] = coef_df['P-value'] < 0.05
+                    st.dataframe(coef_df.style.format({
+                        'Coefficient': '{:.4f}',
+                        'P-value': '{:.4f}',
+                        'CI_Lower': '{:.4f}',
+                        'CI_Upper': '{:.4f}'
+                    }), use_container_width=True)
+                    
+                    # Model diagnostics plots
+                    st.markdown("### 📈 Model Diagnostics")
+                    
+                    # Create diagnostic plots
+                    dataset_name = f"Real Estate Analysis - {len(analyzer.model_data)} observations"
+                    
+                    col1, col2, col3 = st.columns(3)
+                    
+                    with col1:
+                        # Plot 1: Actual vs Predicted
+                        fig1, ax1 = plt.subplots(figsize=(6, 4))
+                        y_pred = results['fitted_values']
+                        y_actual = results['actual_values']
+                        
+                        sns.regplot(x=y_actual, y=y_pred, line_kws={"color": "red"}, ax=ax1)
+                        ax1.set_xlabel('Actual Values')
+                        ax1.set_ylabel('Predicted Values')
+                        ax1.set_title(f'{dataset_name}\nActual vs Predicted')
+                        
+                        # Add perfect prediction line
+                        min_val = min(min(y_actual), min(y_pred))
+                        max_val = max(max(y_actual), max(y_pred))
+                        ax1.plot([min_val, max_val], [min_val, max_val], 'r--', alpha=0.8, linewidth=1, label='Perfect Prediction')
+                        ax1.legend()
+                        
+                        plt.tight_layout()
+                        st.pyplot(fig1)
+                    
+                    with col2:
+                        # Plot 2: Residuals vs Fitted
+                        fig2, ax2 = plt.subplots(figsize=(6, 4))
+                        residuals = results['residuals']
+                        fitted_values = results['fitted_values']
+                        
+                        sns.scatterplot(x=fitted_values, y=residuals, alpha=0.7, ax=ax2)
+                        ax2.axhline(0, color='gray', linestyle='--')
+                        ax2.set_xlabel('Fitted Values')
+                        ax2.set_ylabel('Residuals')
+                        ax2.set_title(f'{dataset_name}\nResiduals vs Fitted')
+                        plt.tight_layout()
+                        st.pyplot(fig2)
+                    
+                    with col3:
+                        # Plot 3: Residual Normality
+                        fig3, ax3 = plt.subplots(figsize=(6, 4))
+                        sns.kdeplot(residuals, fill=True, color='blue', ax=ax3)
+                        ax3.set_title(f'{dataset_name}\nResidual Normality Plot (KDE)')
+                        ax3.set_xlabel('Residuals')
+                        plt.tight_layout()
+                        st.pyplot(fig3)
+                    
+                    # VIF Results
+                    success_check, message_check, vif_df = analyzer.run_ols_model(y_column, x_columns) if 'vif_df' not in locals() else (True, "", vif_df)
+                    if vif_df is not None:
+                        st.markdown("### 📊 Variance Inflation Factors (VIF)")
+                        st.dataframe(vif_df.style.format({'VIF': '{:.2f}'}), use_container_width=True)
+                        
+                        # VIF interpretation
+                        high_vif = vif_df[vif_df['VIF'] > 5]
+                        if not high_vif.empty:
+                            st.warning(f"High VIF detected (>5): {', '.join(high_vif['feature'].tolist())}")
+        
+        # FIXED: Export section in expandable container to prevent auto-scroll
+        with model_export_container:
+            if st.session_state.get('ols_results_available', False) and analyzer.model is not None:
+                results = analyzer.get_model_results()
+                if results:
+                    # Use expander to contain export section and prevent auto-reload
+                    with st.expander("### 💾 Export Results", expanded=False):
+                        st.info("📁 Download various model outputs and datasets")
+                        
                         col1, col2, col3, col4 = st.columns(4)
 
                         with col1:
@@ -3544,6 +3672,14 @@ elif st.session_state.processing_step == 'model':
 
                         with col2:
                             # Export coefficients
+                            coef_df = pd.DataFrame({
+                                'Coefficient': results['params'],
+                                'P-value': results['pvalues'],
+                                'CI_Lower': results['conf_int'][0],
+                                'CI_Upper': results['conf_int'][1]
+                            })
+                            coef_df['Significant'] = coef_df['P-value'] < 0.05
+                            
                             st.download_button(
                                 label="📋 Coefficients",
                                 data=coef_df.to_csv(),
@@ -3555,7 +3691,7 @@ elif st.session_state.processing_step == 'model':
 
                         with col3:
                             # Export VIF if available
-                            if vif_df is not None:
+                            if 'vif_df' in locals() and vif_df is not None:
                                 st.download_button(
                                     label="📊 VIF Analysis",
                                     data=vif_df.to_csv(),
@@ -3568,10 +3704,9 @@ elif st.session_state.processing_step == 'model':
                                 st.info("VIF not available")
 
                         with col4:
-                            # FIXED: Use session state to prepare data without auto-reload
+                            # Dataset preparation and download
                             dataset_key = f"ols_dataset_{y_column}_{len(x_columns)}"
                             
-                            # Check if dataset is already prepared
                             if dataset_key not in st.session_state:
                                 if st.button("📁 Prepare Dataset", 
                                             help="Prepare Excel file with dataset, predictions, and residuals",
@@ -3735,16 +3870,15 @@ elif st.session_state.processing_step == 'model':
                                             }
                                             
                                             st.success("✅ Dataset prepared successfully!")
-                                            st.rerun()  # Only rerun after successful preparation
+                                            # st.rerun()  # Only rerun after successful preparation
                                             
                                         except Exception as e:
                                             st.error(f"❌ Failed to prepare dataset: {str(e)}")
                             
                             else:
-                                # Dataset is already prepared - show download button and stats
+                                # Dataset ready for download
                                 st.success("✅ Dataset ready!")
                                 
-                                # Show summary statistics
                                 stats = st.session_state[dataset_key]['stats']
                                 
                                 with st.expander("📊 Dataset Statistics", expanded=False):
@@ -3758,7 +3892,6 @@ elif st.session_state.processing_step == 'model':
                                         st.metric("Within 20%", f"{stats['within_20pct']:.1f}%")
                                         st.metric("High Errors", f"{stats['high_errors']:,}")
                                 
-                                # Download button
                                 st.download_button(
                                     label="📁 Download Dataset",
                                     data=st.session_state[dataset_key]['data'],
@@ -3769,25 +3902,11 @@ elif st.session_state.processing_step == 'model':
                                     type="primary"
                                 )
                                 
-                                # Option to re-prepare if needed
                                 if st.button("🔄 Re-prepare Dataset", 
                                             help="Regenerate the dataset with current model results",
                                             use_container_width=True):
                                     del st.session_state[dataset_key]
                                     st.rerun()
-                    
-                    else:
-                        st.error(message)
-            
-            if st.button("💾 Save Variables for ML", type="secondary", help="Save current variable selection for ML models"):
-                success, message = analyzer.save_ols_variables(y_column, x_columns)
-                if success:
-                    st.success(message)
-                    st.info(f"Saved: Y={y_column}, X={len(x_columns)} variables")
-                    # Show saved variables info
-                    st.session_state.show_saved_vars = True
-                else:
-                    st.error(message)
 
         # Show saved variables info if available
         if hasattr(st.session_state, 'show_saved_vars') and st.session_state.show_saved_vars:
@@ -3797,6 +3916,19 @@ elif st.session_state.processing_step == 'model':
                     st.write(f"**Target (Y):** {saved_vars['y_column']}")
                     st.write(f"**Features (X):** {', '.join(saved_vars['x_columns'])}")
                     st.write(f"**Saved at:** {saved_vars['timestamp']}")
+
+        # Reset button for this section
+        if st.button("🔄 Reset Model Section", help="Clear model results and start fresh"):
+            # Clear OLS-related session state
+            for key in ['ols_model_trained', 'ols_results_available', 'show_saved_vars']:
+                if key in st.session_state:
+                    del st.session_state[key]
+            
+            # Clear model from analyzer
+            analyzer.model = None
+            
+            st.success("Model section reset!")
+            st.rerun()
        
 elif st.session_state.processing_step == 'advanced':
     # Direct ML implementation with 3-tab structure
