@@ -3775,6 +3775,9 @@ elif st.session_state.processing_step == 'model':
                                             use_container_width=True):
                                     del st.session_state[dataset_key]
                                     st.rerun()
+                    
+                    else:
+                        st.error(message)
             
             if st.button("💾 Save Variables for ML", type="secondary", help="Save current variable selection for ML models"):
                 success, message = analyzer.save_ols_variables(y_column, x_columns)
