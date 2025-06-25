@@ -5579,31 +5579,58 @@ elif st.session_state.processing_step == 'advanced':
                             col1, col2 = st.columns(2)
                             
                             with col1:
-                                # Top features across all models
-                                avg_importance = importance_df.groupby('Feature')['Importance'].mean().sort_values(ascending=False)
-                                top_features = avg_importance.head(10)
+                                # Let user select which model to show feature importance from
+                                available_models = [name for name in results.keys() if name != 'OLS']
+                                selected_model_for_importance = st.selectbox(
+                                    "Select model for feature importance ranking:",
+                                    available_models,
+                                    key="importance_model_select"
+                                )
+                                
+                                # Get importance from selected model
+                                selected_result = results[selected_model_for_importance]
+                                model = selected_result['model']
+                                feature_names = selected_result['feature_names']
+                                
+                                if selected_model_for_importance == 'RERF':
+                                    importance = model['rf'].feature_importances_
+                                else:
+                                    importance = model.feature_importances_
+                                
+                                # Create importance DataFrame for selected model
+                                selected_importance_df = pd.DataFrame({
+                                    'Feature': feature_names,
+                                    'Importance': importance
+                                }).sort_values('Importance', ascending=False)
+                                
+                                top_features = selected_importance_df.head(10)
                                 
                                 fig_top = px.bar(
-                                    x=top_features.values,
-                                    y=top_features.index,
+                                    x=top_features['Importance'],
+                                    y=top_features['Feature'],
                                     orientation='h',
-                                    title='Top 10 Features (Average Importance)',
-                                    labels={'x': 'Average Importance', 'y': 'Features'}
+                                    title=f'Top 10 Features - {selected_model_for_importance}',
+                                    labels={'x': 'Importance', 'y': 'Features'}
                                 )
                                 fig_top.update_layout(height=500)
                                 st.plotly_chart(fig_top, use_container_width=True)
-                            
+                                
+                                # Show the actual values
+                                st.dataframe(top_features.style.format({'Importance': '{:.4f}'}), use_container_width=True)
+
                             with col2:
-                                # Feature importance heatmap
+                                # Feature importance heatmap (keep this for comparison)
+                                # Use top features from the selected model for heatmap
+                                top_feature_names = top_features['Feature'].tolist()
                                 pivot_df = importance_df.pivot(index='Feature', columns='Model', values='Importance')
-                                pivot_df = pivot_df.loc[top_features.index]  # Only show top features
+                                pivot_df = pivot_df.loc[top_feature_names]  # Show top features from selected model
                                 
                                 fig_heatmap = px.imshow(
                                     pivot_df.values,
                                     x=pivot_df.columns,
                                     y=pivot_df.index,
                                     aspect='auto',
-                                    title='Feature Importance Heatmap (Top 10 Features)',
+                                    title=f'Feature Importance Heatmap\n(Top 10 from {selected_model_for_importance})',
                                     color_continuous_scale='Viridis'
                                 )
                                 fig_heatmap.update_layout(height=500)
