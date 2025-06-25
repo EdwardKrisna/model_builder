@@ -3500,279 +3500,281 @@ elif st.session_state.processing_step == 'model':
                                 high_vif = vif_df[vif_df['VIF'] > 5]
                                 if not high_vif.empty:
                                     st.warning(f"High VIF detected (>5): {', '.join(high_vif['feature'].tolist())}")
+                    
+                    # MOVED: Export Results OUTSIDE the results block to prevent rerun issues
+                    # This section is now independent of the results rendering
+                    if success and results:  # Only show if model was successful and results exist
+                        st.markdown("### 💾 Export Results")
+
+                        col1, col2, col3, col4 = st.columns(4)
+
+                        with col1:
+                            # Export model summary
+                            actual_y = analyzer.transformed_columns.get(y_column, y_column)
+                            actual_x = [analyzer.transformed_columns.get(col, col) for col in x_columns]
                             
-                            # Export options
-                            st.markdown("### 💾 Export Results")
+                            model_summary = {
+                                'timestamp': datetime.now().isoformat(),
+                                'model_formula': f"{actual_y} ~ {' + '.join(actual_x)}",
+                                'original_variables': {
+                                    'y': y_column,
+                                    'x': x_columns
+                                },
+                                'transformed_variables': {
+                                    'y': actual_y,
+                                    'x': actual_x
+                                },
+                                'sample_size': len(analyzer.model_data),
+                                'r_squared': results['rsquared'],
+                                'adj_r_squared': results['rsquared_adj'],
+                                'f_statistic': results['fvalue'],
+                                'f_pvalue': results['f_pvalue'],
+                                'aic': results['aic'],
+                                'bic': results['bic']
+                            }
+                            
+                            st.download_button(
+                                label="📊 Model Summary",
+                                data=json.dumps(model_summary, indent=2),
+                                file_name=f"model_results_{datetime.now().strftime('%Y%m%d_%H%M')}.json",
+                                mime="application/json",
+                                help="Download model summary as JSON",
+                                use_container_width=True
+                            )
 
-                            col1, col2, col3, col4 = st.columns(4)
+                        with col2:
+                            # Export coefficients
+                            st.download_button(
+                                label="📋 Coefficients",
+                                data=coef_df.to_csv(),
+                                file_name=f"model_coefficients_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
+                                mime="text/csv",
+                                help="Download regression coefficients as CSV",
+                                use_container_width=True
+                            )
 
-                            with col1:
-                                # Export model summary
-                                actual_y = analyzer.transformed_columns.get(y_column, y_column)
-                                actual_x = [analyzer.transformed_columns.get(col, col) for col in x_columns]
-                                
-                                model_summary = {
-                                    'timestamp': datetime.now().isoformat(),
-                                    'model_formula': f"{actual_y} ~ {' + '.join(actual_x)}",
-                                    'original_variables': {
-                                        'y': y_column,
-                                        'x': x_columns
-                                    },
-                                    'transformed_variables': {
-                                        'y': actual_y,
-                                        'x': actual_x
-                                    },
-                                    'sample_size': len(analyzer.model_data),
-                                    'r_squared': results['rsquared'],
-                                    'adj_r_squared': results['rsquared_adj'],
-                                    'f_statistic': results['fvalue'],
-                                    'f_pvalue': results['f_pvalue'],
-                                    'aic': results['aic'],
-                                    'bic': results['bic']
-                                }
-                                
+                        with col3:
+                            # Export VIF if available
+                            if vif_df is not None:
                                 st.download_button(
-                                    label="📊 Model Summary",
-                                    data=json.dumps(model_summary, indent=2),
-                                    file_name=f"model_results_{datetime.now().strftime('%Y%m%d_%H%M')}.json",
-                                    mime="application/json",
-                                    help="Download model summary as JSON",
-                                    use_container_width=True
-                                )
-
-                            with col2:
-                                # Export coefficients
-                                st.download_button(
-                                    label="📋 Coefficients",
-                                    data=coef_df.to_csv(),
-                                    file_name=f"model_coefficients_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
+                                    label="📊 VIF Analysis",
+                                    data=vif_df.to_csv(),
+                                    file_name=f"vif_results_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
                                     mime="text/csv",
-                                    help="Download regression coefficients as CSV",
+                                    help="Download VIF analysis as CSV",
                                     use_container_width=True
                                 )
+                            else:
+                                st.info("VIF not available")
 
-                            with col3:
-                                # Export VIF if available
-                                if vif_df is not None:
-                                    st.download_button(
-                                        label="📊 VIF Analysis",
-                                        data=vif_df.to_csv(),
-                                        file_name=f"vif_results_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
-                                        mime="text/csv",
-                                        help="Download VIF analysis as CSV",
-                                        use_container_width=True
-                                    )
-                                else:
-                                    st.info("VIF not available")
-
-                            with col4:
-                                # FIXED: Use session state to prepare data without auto-reload
-                                dataset_key = f"ols_dataset_{y_column}_{len(x_columns)}"
-                                
-                                # Check if dataset is already prepared
-                                if dataset_key not in st.session_state:
-                                    if st.button("📁 Prepare Dataset", 
-                                                help="Prepare Excel file with dataset, predictions, and residuals",
-                                                use_container_width=True,
-                                                key="prepare_dataset_btn"):
-                                        
-                                        with st.spinner("Preparing comprehensive dataset..."):
-                                            try:
-                                                # Get the model data (same subset used for modeling)
-                                                export_data = analyzer.model_data.copy()
+                        with col4:
+                            # FIXED: Use session state to prepare data without auto-reload
+                            dataset_key = f"ols_dataset_{y_column}_{len(x_columns)}"
+                            
+                            # Check if dataset is already prepared
+                            if dataset_key not in st.session_state:
+                                if st.button("📁 Prepare Dataset", 
+                                            help="Prepare Excel file with dataset, predictions, and residuals",
+                                            use_container_width=True,
+                                            key="prepare_dataset_btn"):
+                                    
+                                    with st.spinner("Preparing comprehensive dataset..."):
+                                        try:
+                                            # Get the model data (same subset used for modeling)
+                                            export_data = analyzer.model_data.copy()
+                                            
+                                            # Get predictions and residuals from results
+                                            fitted_values = results['fitted_values']
+                                            residuals = results['residuals']
+                                            actual_values = results['actual_values']
+                                            
+                                            # Check if target is log-transformed
+                                            is_log_target = ('ln_' in y_column) or ('log_' in y_column.lower())
+                                            
+                                            if is_log_target:
+                                                # Target is in log scale, so we have log predictions
+                                                export_data['log_actual'] = actual_values
+                                                export_data['log_predicted'] = fitted_values
+                                                export_data['log_residuals'] = residuals
                                                 
-                                                # Get predictions and residuals from results
-                                                fitted_values = results['fitted_values']
-                                                residuals = results['residuals']
-                                                actual_values = results['actual_values']
+                                                # Convert to actual scale
+                                                export_data['actual_hpm'] = np.exp(actual_values)
+                                                export_data['predicted_hpm'] = np.exp(fitted_values)
+                                                export_data['actual_residuals'] = export_data['actual_hpm'] - export_data['predicted_hpm']
                                                 
-                                                # Check if target is log-transformed
-                                                is_log_target = ('ln_' in y_column) or ('log_' in y_column.lower())
+                                                # Calculate percentage error in actual scale
+                                                export_data['percentage_error'] = ((export_data['actual_hpm'] - export_data['predicted_hpm']) / export_data['actual_hpm']) * 100
+                                                export_data['absolute_percentage_error'] = np.abs(export_data['percentage_error'])
                                                 
-                                                if is_log_target:
-                                                    # Target is in log scale, so we have log predictions
-                                                    export_data['log_actual'] = actual_values
-                                                    export_data['log_predicted'] = fitted_values
-                                                    export_data['log_residuals'] = residuals
-                                                    
-                                                    # Convert to actual scale
-                                                    export_data['actual_hpm'] = np.exp(actual_values)
-                                                    export_data['predicted_hpm'] = np.exp(fitted_values)
-                                                    export_data['actual_residuals'] = export_data['actual_hpm'] - export_data['predicted_hpm']
-                                                    
-                                                    # Calculate percentage error in actual scale
-                                                    export_data['percentage_error'] = ((export_data['actual_hpm'] - export_data['predicted_hpm']) / export_data['actual_hpm']) * 100
-                                                    export_data['absolute_percentage_error'] = np.abs(export_data['percentage_error'])
-                                                    
-                                                else:
-                                                    # Target is already in actual scale
-                                                    export_data['actual_hpm'] = actual_values
-                                                    export_data['predicted_hpm'] = fitted_values
-                                                    export_data['actual_residuals'] = residuals
-                                                    
-                                                    # Also provide log versions for comparison
-                                                    export_data['log_actual'] = np.log(actual_values)
-                                                    export_data['log_predicted'] = np.log(fitted_values)
-                                                    export_data['log_residuals'] = export_data['log_actual'] - export_data['log_predicted']
-                                                    
-                                                    # Calculate percentage error
-                                                    export_data['percentage_error'] = ((actual_values - fitted_values) / actual_values) * 100
-                                                    export_data['absolute_percentage_error'] = np.abs(export_data['percentage_error'])
+                                            else:
+                                                # Target is already in actual scale
+                                                export_data['actual_hpm'] = actual_values
+                                                export_data['predicted_hpm'] = fitted_values
+                                                export_data['actual_residuals'] = residuals
                                                 
-                                                # Add model performance indicators
-                                                export_data['outlier_indicator'] = np.where(
-                                                    export_data['absolute_percentage_error'] > 20, 'High_Error', 
-                                                    np.where(export_data['absolute_percentage_error'] > 10, 'Medium_Error', 'Good_Prediction')
-                                                )
+                                                # Also provide log versions for comparison
+                                                export_data['log_actual'] = np.log(actual_values)
+                                                export_data['log_predicted'] = np.log(fitted_values)
+                                                export_data['log_residuals'] = export_data['log_actual'] - export_data['log_predicted']
                                                 
-                                                # Add standardized residuals
-                                                residual_std = np.std(residuals)
-                                                export_data['standardized_residuals'] = residuals / residual_std
-                                                export_data['standardized_outlier'] = np.where(
-                                                    np.abs(export_data['standardized_residuals']) > 2, 'Outlier', 'Normal'
-                                                )
+                                                # Calculate percentage error
+                                                export_data['percentage_error'] = ((actual_values - fitted_values) / actual_values) * 100
+                                                export_data['absolute_percentage_error'] = np.abs(export_data['percentage_error'])
+                                            
+                                            # Add model performance indicators
+                                            export_data['outlier_indicator'] = np.where(
+                                                export_data['absolute_percentage_error'] > 20, 'High_Error', 
+                                                np.where(export_data['absolute_percentage_error'] > 10, 'Medium_Error', 'Good_Prediction')
+                                            )
+                                            
+                                            # Add standardized residuals
+                                            residual_std = np.std(residuals)
+                                            export_data['standardized_residuals'] = residuals / residual_std
+                                            export_data['standardized_outlier'] = np.where(
+                                                np.abs(export_data['standardized_residuals']) > 2, 'Outlier', 'Normal'
+                                            )
+                                            
+                                            # Reorder columns for better readability
+                                            column_order = []
+                                            
+                                            # Original data columns first
+                                            original_cols = [col for col in export_data.columns if col not in [
+                                                'log_actual', 'log_predicted', 'log_residuals',
+                                                'actual_hpm', 'predicted_hpm', 'actual_residuals',
+                                                'percentage_error', 'absolute_percentage_error',
+                                                'outlier_indicator', 'standardized_residuals', 'standardized_outlier'
+                                            ]]
+                                            column_order.extend(original_cols)
+                                            
+                                            # Add prediction and residual columns in logical order
+                                            prediction_cols = [
+                                                'actual_hpm', 'predicted_hpm', 'actual_residuals',
+                                                'log_actual', 'log_predicted', 'log_residuals',
+                                                'percentage_error', 'absolute_percentage_error',
+                                                'standardized_residuals', 'outlier_indicator', 'standardized_outlier'
+                                            ]
+                                            
+                                            for col in prediction_cols:
+                                                if col in export_data.columns:
+                                                    column_order.append(col)
+                                            
+                                            export_data = export_data[column_order]
+                                            
+                                            # Create Excel file with multiple sheets
+                                            excel_buffer = io.BytesIO()
+                                            
+                                            with pd.ExcelWriter(excel_buffer, engine='xlsxwriter') as writer:
+                                                # Main dataset with predictions
+                                                export_data.to_excel(writer, sheet_name='Data_with_Predictions', index=False)
                                                 
-                                                # Reorder columns for better readability
-                                                column_order = []
+                                                # Model summary sheet
+                                                summary_df = pd.DataFrame([
+                                                    ['Model Formula', f"{actual_y} ~ {' + '.join(actual_x)}"],
+                                                    ['Sample Size', len(analyzer.model_data)],
+                                                    ['R-squared', results['rsquared']],
+                                                    ['Adj. R-squared', results['rsquared_adj']],
+                                                    ['F-statistic', results['fvalue']],
+                                                    ['F p-value', results['f_pvalue']],
+                                                    ['AIC', results['aic']],
+                                                    ['BIC', results['bic']],
+                                                    ['Target Variable', y_column],
+                                                    ['Is Log Transformed', is_log_target],
+                                                    ['Export Timestamp', datetime.now().isoformat()]
+                                                ], columns=['Metric', 'Value'])
+                                                summary_df.to_excel(writer, sheet_name='Model_Summary', index=False)
                                                 
-                                                # Original data columns first
-                                                original_cols = [col for col in export_data.columns if col not in [
-                                                    'log_actual', 'log_predicted', 'log_residuals',
-                                                    'actual_hpm', 'predicted_hpm', 'actual_residuals',
-                                                    'percentage_error', 'absolute_percentage_error',
-                                                    'outlier_indicator', 'standardized_residuals', 'standardized_outlier'
-                                                ]]
-                                                column_order.extend(original_cols)
+                                                # Coefficients sheet
+                                                coef_df.to_excel(writer, sheet_name='Coefficients', index=True)
                                                 
-                                                # Add prediction and residual columns in logical order
-                                                prediction_cols = [
-                                                    'actual_hpm', 'predicted_hpm', 'actual_residuals',
-                                                    'log_actual', 'log_predicted', 'log_residuals',
-                                                    'percentage_error', 'absolute_percentage_error',
-                                                    'standardized_residuals', 'outlier_indicator', 'standardized_outlier'
-                                                ]
+                                                # VIF sheet (if available)
+                                                if vif_df is not None:
+                                                    vif_df.to_excel(writer, sheet_name='VIF_Analysis', index=False)
                                                 
-                                                for col in prediction_cols:
-                                                    if col in export_data.columns:
-                                                        column_order.append(col)
+                                                # Performance statistics sheet
+                                                perf_stats = pd.DataFrame([
+                                                    ['Mean Absolute Error (Actual Scale)', np.mean(np.abs(export_data['actual_residuals']))],
+                                                    ['RMSE (Actual Scale)', np.sqrt(np.mean(export_data['actual_residuals']**2))],
+                                                    ['Mean Percentage Error', np.mean(export_data['percentage_error'])],
+                                                    ['Mean Absolute Percentage Error', np.mean(export_data['absolute_percentage_error'])],
+                                                    ['Median Absolute Percentage Error', np.median(export_data['absolute_percentage_error'])],
+                                                    ['% Predictions within 10%', (export_data['absolute_percentage_error'] <= 10).mean() * 100],
+                                                    ['% Predictions within 20%', (export_data['absolute_percentage_error'] <= 20).mean() * 100],
+                                                    ['% Standardized Outliers', (np.abs(export_data['standardized_residuals']) > 2).mean() * 100]
+                                                ], columns=['Metric', 'Value'])
+                                                perf_stats.to_excel(writer, sheet_name='Performance_Stats', index=False)
                                                 
-                                                export_data = export_data[column_order]
-                                                
-                                                # Create Excel file with multiple sheets
-                                                excel_buffer = io.BytesIO()
-                                                
-                                                with pd.ExcelWriter(excel_buffer, engine='xlsxwriter') as writer:
-                                                    # Main dataset with predictions
-                                                    export_data.to_excel(writer, sheet_name='Data_with_Predictions', index=False)
-                                                    
-                                                    # Model summary sheet
-                                                    summary_df = pd.DataFrame([
-                                                        ['Model Formula', f"{actual_y} ~ {' + '.join(actual_x)}"],
-                                                        ['Sample Size', len(analyzer.model_data)],
-                                                        ['R-squared', results['rsquared']],
-                                                        ['Adj. R-squared', results['rsquared_adj']],
-                                                        ['F-statistic', results['fvalue']],
-                                                        ['F p-value', results['f_pvalue']],
-                                                        ['AIC', results['aic']],
-                                                        ['BIC', results['bic']],
-                                                        ['Target Variable', y_column],
-                                                        ['Is Log Transformed', is_log_target],
-                                                        ['Export Timestamp', datetime.now().isoformat()]
-                                                    ], columns=['Metric', 'Value'])
-                                                    summary_df.to_excel(writer, sheet_name='Model_Summary', index=False)
-                                                    
-                                                    # Coefficients sheet
-                                                    coef_df.to_excel(writer, sheet_name='Coefficients', index=True)
-                                                    
-                                                    # VIF sheet (if available)
-                                                    if vif_df is not None:
-                                                        vif_df.to_excel(writer, sheet_name='VIF_Analysis', index=False)
-                                                    
-                                                    # Performance statistics sheet
-                                                    perf_stats = pd.DataFrame([
-                                                        ['Mean Absolute Error (Actual Scale)', np.mean(np.abs(export_data['actual_residuals']))],
-                                                        ['RMSE (Actual Scale)', np.sqrt(np.mean(export_data['actual_residuals']**2))],
-                                                        ['Mean Percentage Error', np.mean(export_data['percentage_error'])],
-                                                        ['Mean Absolute Percentage Error', np.mean(export_data['absolute_percentage_error'])],
-                                                        ['Median Absolute Percentage Error', np.median(export_data['absolute_percentage_error'])],
-                                                        ['% Predictions within 10%', (export_data['absolute_percentage_error'] <= 10).mean() * 100],
-                                                        ['% Predictions within 20%', (export_data['absolute_percentage_error'] <= 20).mean() * 100],
-                                                        ['% Standardized Outliers', (np.abs(export_data['standardized_residuals']) > 2).mean() * 100]
-                                                    ], columns=['Metric', 'Value'])
-                                                    perf_stats.to_excel(writer, sheet_name='Performance_Stats', index=False)
-                                                    
-                                                    # Data dictionary sheet
-                                                    data_dict = pd.DataFrame([
-                                                        ['actual_hpm', 'Actual HPM values (original scale)'],
-                                                        ['predicted_hpm', 'Predicted HPM values (original scale)'],
-                                                        ['actual_residuals', 'Residuals in original scale (actual - predicted)'],
-                                                        ['log_actual', 'Actual values in log scale'],
-                                                        ['log_predicted', 'Predicted values in log scale'],
-                                                        ['log_residuals', 'Residuals in log scale'],
-                                                        ['percentage_error', 'Percentage prediction error ((actual-predicted)/actual)*100'],
-                                                        ['absolute_percentage_error', 'Absolute percentage prediction error'],
-                                                        ['outlier_indicator', 'Prediction quality: Good_Prediction (<10%), Medium_Error (10-20%), High_Error (>20%)'],
-                                                        ['standardized_residuals', 'Residuals divided by standard deviation'],
-                                                        ['standardized_outlier', 'Outlier if |standardized_residual| > 2']
-                                                    ], columns=['Column_Name', 'Description'])
-                                                    data_dict.to_excel(writer, sheet_name='Data_Dictionary', index=False)
-                                                
-                                                excel_buffer.seek(0)
-                                                
-                                                # Store in session state with stats
-                                                st.session_state[dataset_key] = {
-                                                    'data': excel_buffer.getvalue(),
-                                                    'stats': {
-                                                        'total_records': len(export_data),
-                                                        'mean_abs_error': np.mean(export_data['absolute_percentage_error']),
-                                                        'within_10pct': (export_data['absolute_percentage_error'] <= 10).mean() * 100,
-                                                        'within_20pct': (export_data['absolute_percentage_error'] <= 20).mean() * 100,
-                                                        'high_errors': (export_data['absolute_percentage_error'] > 20).sum(),
-                                                        'r2_score': results['rsquared']
-                                                    }
+                                                # Data dictionary sheet
+                                                data_dict = pd.DataFrame([
+                                                    ['actual_hpm', 'Actual HPM values (original scale)'],
+                                                    ['predicted_hpm', 'Predicted HPM values (original scale)'],
+                                                    ['actual_residuals', 'Residuals in original scale (actual - predicted)'],
+                                                    ['log_actual', 'Actual values in log scale'],
+                                                    ['log_predicted', 'Predicted values in log scale'],
+                                                    ['log_residuals', 'Residuals in log scale'],
+                                                    ['percentage_error', 'Percentage prediction error ((actual-predicted)/actual)*100'],
+                                                    ['absolute_percentage_error', 'Absolute percentage prediction error'],
+                                                    ['outlier_indicator', 'Prediction quality: Good_Prediction (<10%), Medium_Error (10-20%), High_Error (>20%)'],
+                                                    ['standardized_residuals', 'Residuals divided by standard deviation'],
+                                                    ['standardized_outlier', 'Outlier if |standardized_residual| > 2']
+                                                ], columns=['Column_Name', 'Description'])
+                                                data_dict.to_excel(writer, sheet_name='Data_Dictionary', index=False)
+                                            
+                                            excel_buffer.seek(0)
+                                            
+                                            # Store in session state with stats
+                                            st.session_state[dataset_key] = {
+                                                'data': excel_buffer.getvalue(),
+                                                'stats': {
+                                                    'total_records': len(export_data),
+                                                    'mean_abs_error': np.mean(export_data['absolute_percentage_error']),
+                                                    'within_10pct': (export_data['absolute_percentage_error'] <= 10).mean() * 100,
+                                                    'within_20pct': (export_data['absolute_percentage_error'] <= 20).mean() * 100,
+                                                    'high_errors': (export_data['absolute_percentage_error'] > 20).sum(),
+                                                    'r2_score': results['rsquared']
                                                 }
-                                                
-                                                st.success("✅ Dataset prepared successfully!")
-                                                st.rerun()  # Only rerun after successful preparation
-                                                
-                                            except Exception as e:
-                                                st.error(f"❌ Failed to prepare dataset: {str(e)}")
+                                            }
+                                            
+                                            st.success("✅ Dataset prepared successfully!")
+                                            st.rerun()  # Only rerun after successful preparation
+                                            
+                                        except Exception as e:
+                                            st.error(f"❌ Failed to prepare dataset: {str(e)}")
+                            
+                            else:
+                                # Dataset is already prepared - show download button and stats
+                                st.success("✅ Dataset ready!")
                                 
-                                else:
-                                    # Dataset is already prepared - show download button and stats
-                                    st.success("✅ Dataset ready!")
-                                    
-                                    # Show summary statistics
-                                    stats = st.session_state[dataset_key]['stats']
-                                    
-                                    with st.expander("📊 Dataset Statistics", expanded=False):
-                                        col1, col2 = st.columns(2)
-                                        with col1:
-                                            st.metric("Total Records", f"{stats['total_records']:,}")
-                                            st.metric("Mean Abs % Error", f"{stats['mean_abs_error']:.1f}%")
-                                            st.metric("R² Score", f"{stats['r2_score']:.4f}")
-                                        with col2:
-                                            st.metric("Within 10%", f"{stats['within_10pct']:.1f}%")
-                                            st.metric("Within 20%", f"{stats['within_20pct']:.1f}%")
-                                            st.metric("High Errors", f"{stats['high_errors']:,}")
-                                    
-                                    # Download button
-                                    st.download_button(
-                                        label="📁 Download Dataset",
-                                        data=st.session_state[dataset_key]['data'],
-                                        file_name=f"ols_dataset_with_predictions_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
-                                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                                        help="Download complete dataset with predictions and residuals",
-                                        use_container_width=True,
-                                        type="primary"
-                                    )
-                                    
-                                    # Option to re-prepare if needed
-                                    if st.button("🔄 Re-prepare Dataset", 
-                                                help="Regenerate the dataset with current model results",
-                                                use_container_width=True):
-                                        del st.session_state[dataset_key]
-                                        st.rerun()
+                                # Show summary statistics
+                                stats = st.session_state[dataset_key]['stats']
+                                
+                                with st.expander("📊 Dataset Statistics", expanded=False):
+                                    col1, col2 = st.columns(2)
+                                    with col1:
+                                        st.metric("Total Records", f"{stats['total_records']:,}")
+                                        st.metric("Mean Abs % Error", f"{stats['mean_abs_error']:.1f}%")
+                                        st.metric("R² Score", f"{stats['r2_score']:.4f}")
+                                    with col2:
+                                        st.metric("Within 10%", f"{stats['within_10pct']:.1f}%")
+                                        st.metric("Within 20%", f"{stats['within_20pct']:.1f}%")
+                                        st.metric("High Errors", f"{stats['high_errors']:,}")
+                                
+                                # Download button
+                                st.download_button(
+                                    label="📁 Download Dataset",
+                                    data=st.session_state[dataset_key]['data'],
+                                    file_name=f"ols_dataset_with_predictions_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
+                                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                    help="Download complete dataset with predictions and residuals",
+                                    use_container_width=True,
+                                    type="primary"
+                                )
+                                
+                                # Option to re-prepare if needed
+                                if st.button("🔄 Re-prepare Dataset", 
+                                            help="Regenerate the dataset with current model results",
+                                            use_container_width=True):
+                                    del st.session_state[dataset_key]
+                                    st.rerun()
             
             if st.button("💾 Save Variables for ML", type="secondary", help="Save current variable selection for ML models"):
                 success, message = analyzer.save_ols_variables(y_column, x_columns)
