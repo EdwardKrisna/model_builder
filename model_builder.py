@@ -5686,6 +5686,96 @@ elif st.session_state.processing_step == 'advanced':
                             use_container_width=True
                         )
                     
+                    # Add this after the existing download buttons section
+                    st.markdown("#### 📊 Download Model Predictions")
+                    st.info("💡 Download model predictions in both actual and log scale")
+
+                    # Prepare predictions dataset
+                    if st.button("📁 Prepare Predictions Dataset", key=f"prepare_predictions_{selected_session}"):
+                        with st.spinner("Preparing predictions dataset..."):
+                            try:
+                                # Get the full dataset used for final model training
+                                first_result = list(results.values())[0]
+                                feature_names = first_result['feature_names']
+                                target_name = first_result['target_name']
+                                
+                                # Prepare data
+                                model_vars = [target_name] + feature_names
+                                df_model = analyzer.current_data[model_vars].dropna()
+                                X_full = df_model[feature_names]
+                                y_full = df_model[target_name]
+                                
+                                # Create predictions dataframe with only 6 columns
+                                predictions_df = pd.DataFrame()
+                                
+                                # Check if target is log-transformed
+                                is_log_target = ('ln_' in target_name) or ('log_' in target_name.lower())
+                                
+                                # Add predictions from each model (only the 3 main models)
+                                for model_name, result in results.items():
+                                    if model_name != 'OLS':  # Skip OLS if present
+                                        model = result['model']
+                                        
+                                        # Generate predictions
+                                        if model_name == 'RERF':
+                                            # RERF: Linear + RF predictions
+                                            lr_pred = model['linear'].predict(X_full)
+                                            rf_pred_residuals = model['rf'].predict(X_full)
+                                            y_pred = lr_pred + rf_pred_residuals
+                                        else:
+                                            # Standard sklearn models
+                                            y_pred = model.predict(X_full)
+                                        
+                                        # Add predictions in both scales
+                                        model_key = model_name.replace(" ", "_")
+                                        
+                                        if is_log_target:
+                                            # Predictions are in log scale, convert to actual
+                                            predictions_df[f'{model_key}_log'] = y_pred
+                                            predictions_df[f'{model_key}_actual'] = np.exp(y_pred)
+                                        else:
+                                            # Predictions are in actual scale, convert to log
+                                            predictions_df[f'{model_key}_actual'] = y_pred
+                                            predictions_df[f'{model_key}_log'] = np.log(y_pred)
+                                
+                                # Convert to Excel
+                                excel_buffer = io.BytesIO()
+                                predictions_df.to_excel(excel_buffer, index=False, engine='xlsxwriter')
+                                excel_buffer.seek(0)
+                                
+                                # Store in session state
+                                st.session_state[f'predictions_data_{selected_session}'] = {
+                                    'data': excel_buffer.getvalue(),
+                                    'record_count': len(predictions_df),
+                                    'columns': list(predictions_df.columns)
+                                }
+                                
+                                st.success("✅ Predictions dataset prepared successfully!")
+                                
+                            except Exception as e:
+                                st.error(f"❌ Failed to prepare predictions dataset: {str(e)}")
+
+                    # Download button (shows only if data is prepared)
+                    predictions_key = f'predictions_data_{selected_session}'
+                    if predictions_key in st.session_state:
+                        pred_data = st.session_state[predictions_key]
+                        
+                        st.download_button(
+                            label="📊 Download Predictions (.xlsx)",
+                            data=pred_data['data'],
+                            file_name=f"model_predictions_{selected_session}.xlsx",
+                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                            key=f"download_predictions_{selected_session}",
+                            type="primary",
+                            use_container_width=True
+                        )
+                        
+                        # Show column info
+                        st.success(f"✅ Ready: {pred_data['record_count']:,} rows × 6 columns")
+                        with st.expander("📋 Columns Included", expanded=False):
+                            for col in pred_data['columns']:
+                                st.write(f"• {col}")
+                    
                     # Clear session option
                     st.markdown("---")
                     if st.button("🗑️ Clear This Training Session", help="Remove this training session from history"):
