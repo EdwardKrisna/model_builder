@@ -5548,6 +5548,77 @@ elif st.session_state.processing_step == 'advanced':
                             else:
                                 st.write(f"**{rank}. {model}** (Avg Rank: {avg_rank:.1f})")
                     
+                    # Add this after the "Model Rankings" section in Tab 3
+                    st.markdown("#### 🌟 Feature Importance Comparison")
+
+                    if results:
+                        # Create combined feature importance plot
+                        importance_data = []
+                        
+                        for model_name, result in results.items():
+                            if model_name != 'OLS':  # Skip OLS
+                                model = result['model']
+                                feature_names = result['feature_names']
+                                
+                                if model_name == 'RERF':
+                                    importance = model['rf'].feature_importances_
+                                else:
+                                    importance = model.feature_importances_
+                                
+                                for feat, imp in zip(feature_names, importance):
+                                    importance_data.append({
+                                        'Model': model_name,
+                                        'Feature': feat,
+                                        'Importance': imp
+                                    })
+                        
+                        if importance_data:
+                            importance_df = pd.DataFrame(importance_data)
+                            
+                            # Side-by-side comparison
+                            col1, col2 = st.columns(2)
+                            
+                            with col1:
+                                # Top features across all models
+                                avg_importance = importance_df.groupby('Feature')['Importance'].mean().sort_values(ascending=False)
+                                top_features = avg_importance.head(10)
+                                
+                                fig_top = px.bar(
+                                    x=top_features.values,
+                                    y=top_features.index,
+                                    orientation='h',
+                                    title='Top 10 Features (Average Importance)',
+                                    labels={'x': 'Average Importance', 'y': 'Features'}
+                                )
+                                fig_top.update_layout(height=500)
+                                st.plotly_chart(fig_top, use_container_width=True)
+                            
+                            with col2:
+                                # Feature importance heatmap
+                                pivot_df = importance_df.pivot(index='Feature', columns='Model', values='Importance')
+                                pivot_df = pivot_df.loc[top_features.index]  # Only show top features
+                                
+                                fig_heatmap = px.imshow(
+                                    pivot_df.values,
+                                    x=pivot_df.columns,
+                                    y=pivot_df.index,
+                                    aspect='auto',
+                                    title='Feature Importance Heatmap (Top 10 Features)',
+                                    color_continuous_scale='Viridis'
+                                )
+                                fig_heatmap.update_layout(height=500)
+                                st.plotly_chart(fig_heatmap, use_container_width=True)
+                            
+                            # Download feature importance
+                            st.download_button(
+                                label="📊 Download Feature Importance (.csv)",
+                                data=importance_df.to_csv(index=False),
+                                file_name=f"feature_importance_{selected_session}.csv",
+                                mime="text/csv",
+                                key=f"download_importance_{selected_session}",
+                                use_container_width=True
+                            )
+                    
                     # Download comparison results
                     st.markdown("#### 💾 Download Comparison Results")
                     
