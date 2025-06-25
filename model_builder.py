@@ -5617,7 +5617,8 @@ elif st.session_state.processing_step == 'advanced':
                                 
                                 
 
-                            with col2:                                
+                            with col2:   
+                                st.markdown("---")                             
                                 # Show the actual values
                                 st.dataframe(top_features.style.format({'Importance': '{:.4f}'}), use_container_width=True)
                             
