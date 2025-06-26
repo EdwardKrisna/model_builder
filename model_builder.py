@@ -1512,7 +1512,9 @@ else:
 
 # Navigation buttons
 st.markdown("### 🧭 Analysis Workflow")
-workflow_steps = [
+
+# Base workflow steps (always visible)
+base_workflow_steps = [
     ('selection', '📍 Data Selection'),      # NEW - first step
     ('overview', '📊 Data Overview'),
     ('dtype', '🔧 Data Types'),
@@ -1524,11 +1526,26 @@ workflow_steps = [
     ('advanced', '🤖 Advanced Models')
 ]
 
+# Only add admin step if user is admin
+if st.session_state.get('is_admin', False):
+    # Insert sc_bc step before transform (position 5, after clean)
+    workflow_steps = base_workflow_steps[:5] + [('sc_bc', '🏛️ Small & Big City')] + base_workflow_steps[5:]
+else:
+    workflow_steps = base_workflow_steps
+
 # Disable other navigation if no data loaded
 if analyzer.current_data is None and st.session_state.processing_step != 'selection':
-    st.session_state.processing_step = 'selection'
-    st.warning("⚠️ Please select data first")
-    st.rerun()
+    # Special handling for admin section
+    if st.session_state.processing_step == 'sc_bc':
+        if not st.session_state.get('is_admin', False):
+            st.session_state.processing_step = 'selection'
+            st.warning("⚠️ Admin access required")
+            st.rerun()
+        # Admin can access sc_bc even without data if needed
+    else:
+        st.session_state.processing_step = 'selection'
+        st.warning("⚠️ Please select data first")
+        st.rerun()
 
 cols = st.columns(len(workflow_steps))
 for i, (step_key, step_name) in enumerate(workflow_steps):
@@ -2815,6 +2832,42 @@ elif st.session_state.processing_step == 'clean':
                         st.info("💡 **Suggestion**: Try adjusting the quantile parameters (P10/P90) to be less restrictive")
                     elif "Group column" in message:
                         st.info("💡 **Suggestion**: Check if your data has geographic columns like 'wadmkc' or 'wadmkd'")
+
+elif st.session_state.processing_step == 'sc_bc':
+    # First check: Ensure user is admin
+    if not st.session_state.get('is_admin', False):
+        st.error("🚫 Access Denied: Admin privileges required")
+        st.warning("⚠️ Redirecting to data selection...")
+        st.session_state.processing_step = 'selection'
+        st.rerun()
+        st.stop()
+    
+    if fun_mode:
+        st.markdown('## <img src="https://media.giphy.com/media/v1.Y2lkPWVjZjA1ZTQ3Y25yOXB5MDFqNGlmdmJnenFqandjMzl6YnJscnRseDlzN2poZG1wMiZlcD12MV9naWZzX3NlYXJjaCZjdD1n/EjLTU9HAnnskywtJ9j/giphy.gif" alt="data gif" style="height:96px; vertical-align:middle;"> Small & Big City Configuration', unsafe_allow_html=True)
+    else:
+        st.markdown('## 🏛️ Small & Big City Configuration')
+
+    if analyzer.current_data is None:
+        st.warning("⚠️ No data loaded. Please go back to Data Selection.")
+        if st.button("← Back to Data Selection"):
+            st.session_state.processing_step = 'selection'
+            st.rerun()
+        st.stop()
+
+    else:
+        # Display admin welcome message
+        st.success(f"🔐 **Admin Mode Active** - Welcome, {st.session_state.get('admin_name', 'Admin')}!")
+        
+        st.info("🚧 **Admin Feature**: Small & Big City configuration will be implemented here")
+        st.markdown("### Coming Soon...")
+        st.write("This section will contain admin-specific features for small and big city configurations.")
+        
+        # Placeholder for future features
+        st.markdown("**Future Features:**")
+        st.write("- City classification settings")
+        st.write("- Regional parameter adjustments") 
+        st.write("- Administrative data management")
+
 
 elif st.session_state.processing_step == 'transform':
     if fun_mode:
@@ -5815,6 +5868,48 @@ if analyzer.current_data is not None:
 
 # Sidebar with current status and quick actions
 with st.sidebar:
+    # Admin Authentication Section
+    st.markdown("### 🔐 Admin Access")
+    
+    # Initialize admin session state
+    if 'is_admin' not in st.session_state:
+        st.session_state.is_admin = False
+    
+    if not st.session_state.is_admin:
+        with st.expander("🔑 Admin Login", expanded=False):
+            admin_name = st.text_input("Admin Name", key="admin_name")
+            admin_password = st.text_input("Password", type="password", key="admin_password")
+            
+            if st.button("🔓 Login", key="admin_login"):
+                try:
+                    # Get credentials from Streamlit secrets
+                    expected_admin_name = st.secrets["admin"]["username"]
+                    expected_admin_password = st.secrets["admin"]["password"]
+                    
+                    if admin_name == expected_admin_name and admin_password == expected_admin_password:
+                        st.session_state.is_admin = True
+                        st.session_state.admin_name = admin_name
+                        st.success(f"✅ Welcome, {admin_name}!")
+                        st.rerun()
+                    else:
+                        st.error("❌ Invalid credentials")
+                except KeyError:
+                    st.error("❌ Admin credentials not configured. Please contact system administrator.")
+                except Exception as e:
+                    st.error(f"❌ Authentication error: {str(e)}")
+    else:
+        st.success(f"✅ Logged in as: {st.session_state.get('admin_name', 'Admin')}")
+        if st.button("🔒 Logout", key="admin_logout"):
+            st.session_state.is_admin = False
+            if 'admin_name' in st.session_state:
+                del st.session_state.admin_name
+            # If user was on admin page, redirect to selection
+            if st.session_state.processing_step == 'sc_bc':
+                st.session_state.processing_step = 'selection'
+            st.rerun()
+    
+    st.markdown("---")
+
     if fun_mode:
         st.markdown("""
         <h1 style="
