@@ -298,6 +298,107 @@ def get_data_metrics(data_shape, data_memory_usage_sum):
 def get_pyg_renderer(df: pd.DataFrame, spec_path: str) -> "StreamlitRenderer":
     return StreamlitRenderer(df, spec=spec_path, spec_io_mode="rw")
 
+# Add this right after st.set_page_config and before the workflow section
+
+def check_user_authentication():
+    """Check if user is authenticated"""
+    return st.session_state.get('user_authenticated', False)
+
+def user_login_page():
+    """Display user login page"""
+    # Center the login form
+    col1, col2, col3 = st.columns([1, 2, 1])
+    
+    with col2:
+        st.markdown("## 🔐 User Login Required")
+        st.info("Please login to access the RHR Model Builder")
+        
+        with st.form("user_login_form"):
+            username = st.text_input("👤 Username")
+            password = st.text_input("🔑 Password", type="password")
+            login_button = st.form_submit_button("🚀 Login", use_container_width=True)
+            
+            if login_button:
+                try:
+                    # Check user credentials from secrets
+                    user1_username = st.secrets["users"]["user1_username"]
+                    user1_password = st.secrets["users"]["user1_password"]
+                    user2_username = st.secrets["users"]["user2_username"] 
+                    user2_password = st.secrets["users"]["user2_password"]
+                    
+                    # Validate credentials
+                    if ((username == user1_username and password == user1_password) or
+                        (username == user2_username and password == user2_password)):
+                        
+                        st.session_state.user_authenticated = True
+                        st.session_state.current_username = username
+                        st.success(f"✅ Welcome, {username}!")
+                        st.rerun()
+                    else:
+                        st.error("❌ Invalid username or password")
+                        
+                except KeyError:
+                    st.error("❌ User authentication not configured. Please contact administrator.")
+                except Exception as e:
+                    st.error(f"❌ Login error: {str(e)}")
+        
+        # Demo credentials info (remove in production)
+        with st.expander("📋 Demo Credentials", expanded=False):
+            st.info("**Demo Users:**")
+            st.code("Username: user1, Password: pass123")
+            st.code("Username: user2, Password: pass456")
+
+# Initialize authentication session state
+if 'user_authenticated' not in st.session_state:
+    st.session_state.user_authenticated = False
+
+# Main authentication check
+if not check_user_authentication():
+    user_login_page()
+    
+    # Show only basic sidebar for admin login
+    with st.sidebar:
+        st.markdown("### 🔐 Admin Access")
+        
+        if 'is_admin' not in st.session_state:
+            st.session_state.is_admin = False
+        
+        if not st.session_state.is_admin:
+            with st.expander("🔑 Admin Login", expanded=False):
+                admin_name = st.text_input("Admin Name", key="admin_name_input")
+                admin_password = st.text_input("Password", type="password", key="admin_password_input")
+                
+                if st.button("🔓 Admin Login", key="admin_login"):
+                    try:
+                        expected_admin_name = st.secrets["admin"]["username"]
+                        expected_admin_password = st.secrets["admin"]["password"]
+                        
+                        if admin_name == expected_admin_name and admin_password == expected_admin_password:
+                            st.session_state.is_admin = True
+                            st.session_state.admin_name_stored = admin_name
+                            st.session_state.user_authenticated = True  # Admin bypass user auth
+                            st.session_state.current_username = f"Admin ({admin_name})"
+                            st.success(f"✅ Admin access granted!")
+                            st.rerun()
+                        else:
+                            st.error("❌ Invalid admin credentials")
+                    except KeyError:
+                        st.error("❌ Admin credentials not configured.")
+                    except Exception as e:
+                        st.error(f"❌ Admin login error: {str(e)}")
+        else:
+            st.success(f"✅ Admin: {st.session_state.get('admin_name_stored', 'Admin')}")
+            if st.button("🔒 Admin Logout", key="admin_logout"):
+                st.session_state.is_admin = False
+                st.session_state.user_authenticated = False
+                if 'admin_name_stored' in st.session_state:
+                    del st.session_state.admin_name_stored
+                if 'current_username' in st.session_state:
+                    del st.session_state.current_username
+                st.rerun()
+    
+    st.stop()  # Stop execution here if not authenticated
+
 class RealEstateAnalyzer:
     """Flexible Real Estate Analysis System"""
     
@@ -6605,45 +6706,21 @@ if analyzer.current_data is not None:
 
 # Sidebar with current status and quick actions
 with st.sidebar:
-    # Admin Authentication Section
-    st.markdown("### 🔐 Admin Access")
-    
-    # Initialize admin session state
-    if 'is_admin' not in st.session_state:
-        st.session_state.is_admin = False
-    
-    if not st.session_state.is_admin:
-        with st.expander("🔑 Admin Login", expanded=False):
-            admin_name = st.text_input("Admin Name", key="admin_name_input")  # Changed key
-            admin_password = st.text_input("Password", type="password", key="admin_password_input")  # Changed key
-            
-            if st.button("🔓 Login", key="admin_login"):
-                try:
-                    # Get credentials from Streamlit secrets
-                    expected_admin_name = st.secrets["admin"]["username"]
-                    expected_admin_password = st.secrets["admin"]["password"]
-                    
-                    if admin_name == expected_admin_name and admin_password == expected_admin_password:
-                        st.session_state.is_admin = True
-                        st.session_state.admin_name_stored = admin_name  # Changed key
-                        st.success(f"✅ Welcome, {admin_name}!")
-                        st.rerun()
-                    else:
-                        st.error("❌ Invalid credentials")
-                except KeyError:
-                    st.error("❌ Admin credentials not configured. Please contact system administrator.")
-                except Exception as e:
-                    st.error(f"❌ Authentication error: {str(e)}")
+    # User info section
+    st.markdown("### 👤 Current User")
+    current_user = st.session_state.get('current_username', 'Unknown')
+    if st.session_state.get('is_admin', False):
+        st.success(f"🔐 **Admin**: {current_user}")
     else:
-        st.success(f"✅ Logged in as: {st.session_state.get('admin_name_stored', 'Admin')}")  # Changed key
-        if st.button("🔒 Logout", key="admin_logout"):
-            st.session_state.is_admin = False
-            if 'admin_name_stored' in st.session_state:  # Changed key
-                del st.session_state.admin_name_stored  # Changed key
-            # If user was on admin page, redirect to selection
-            if st.session_state.processing_step == 'sc_bc':
-                st.session_state.processing_step = 'selection'
-            st.rerun()
+        st.info(f"👤 **User**: {current_user}")
+    
+    # Logout button
+    if st.button("🚪 Logout", key="user_logout"):
+        # Clear all session state
+        for key in ['user_authenticated', 'current_username', 'is_admin', 'admin_name_stored']:
+            if key in st.session_state:
+                del st.session_state[key]
+        st.rerun()
     
     st.markdown("---")
 
