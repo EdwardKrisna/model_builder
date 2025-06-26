@@ -344,8 +344,14 @@ def user_login_page():
         
         # Demo credentials info (remove in production)
         with st.expander("📋 Demo Credentials", expanded=False):
-            st.info("**Demo Users:**")
-            st.code("Username: jokowi, Password: lohkotanyasaya")
+            st.info("**Quiz: Bahan utama nasi goreng?**")
+            answer = st.text_input('Your answer:')
+            
+            if answer == "4":
+                st.success("Nice!")
+                st.code("Username: jokowi\nPassword: lohkotanyasaya")
+            elif answer:
+                st.error("Cmon bro.. , ya nasi lah")
 
 # Initialize authentication session state
 if 'user_authenticated' not in st.session_state:
