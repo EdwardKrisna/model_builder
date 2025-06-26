@@ -2867,7 +2867,7 @@ elif st.session_state.processing_step == 'sc_bc':
         st.write("- City classification settings")
         st.write("- Regional parameter adjustments") 
         st.write("- Administrative data management")
-        
+
 
 elif st.session_state.processing_step == 'transform':
     if fun_mode:
@@ -5910,23 +5910,23 @@ with st.sidebar:
     
     st.markdown("---")
 
-    if fun_mode:
-        st.markdown("""
-        <h1 style="
-            display: flex; 
-            flex-direction: column;   /* stack vertically */
-            align-items: center; 
-            gap: 10px; 
-            line-height: 1;
-        ">
-            <img src="https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExdWUybHNwbXV3cjd5eG9vbXBxcGs4Y3g1Y29neDdwNDQ2emdhYjd3cSZlcD12MV9naWZzX3NlYXJjaCZjdD1n/uSGobo6DnKmfqYygyk/giphy.gif" 
-                alt="GIF" 
-                style="height: 120px;">
-            <span style="display: inline-block; vertical-align: middle;">Current Status</span>
-        </h1>
-    """, unsafe_allow_html=True)
-    else:
-        st.markdown('## Current Status')
+    # if fun_mode:
+    #     st.markdown("""
+    #     <h1 style="
+    #         display: flex; 
+    #         flex-direction: column;   /* stack vertically */
+    #         align-items: center; 
+    #         gap: 10px; 
+    #         line-height: 1;
+    #     ">
+    #         <img src="https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExdWUybHNwbXV3cjd5eG9vbXBxcGs4Y3g1Y29neDdwNDQ2emdhYjd3cSZlcD12MV9naWZzX3NlYXJjaCZjdD1n/uSGobo6DnKmfqYygyk/giphy.gif" 
+    #             alt="GIF" 
+    #             style="height: 120px;">
+    #         <span style="display: inline-block; vertical-align: middle;">Current Status</span>
+    #     </h1>
+    # """, unsafe_allow_html=True)
+    # else:
+    st.markdown('## Current Status')
     
     
     if analyzer.current_data is not None:
