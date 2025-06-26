@@ -345,7 +345,7 @@ def user_login_page():
         # Demo credentials info (remove in production)
         with st.expander("📋 Demo Credentials", expanded=False):
             st.info("**Demo Users:**")
-            st.code("Username: user1, Password: pass123")
+            st.code("Username: jokowi, Password: lohkotanyasaya")
             st.code("Username: user2, Password: pass456")
 
 # Initialize authentication session state
