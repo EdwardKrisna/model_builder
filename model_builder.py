@@ -347,7 +347,7 @@ def user_login_page():
             st.info("**Quiz: Bahan utama nasi goreng?**")
             answer = st.text_input('Your answer:')
             
-            if answer == "4":
+            if answer == "nasi" or "Nasi":
                 st.success("Nice!")
                 st.code("Username: jokowi\nPassword: lohkotanyasaya")
             elif answer:
