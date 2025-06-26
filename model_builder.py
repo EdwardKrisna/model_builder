@@ -2865,7 +2865,7 @@ elif st.session_state.processing_step == 'sc_bc':
     col1, col2 = st.columns(2)
     
     with col1:
-        st.markdown("#### 📊 Select City Table to View:")
+        st.markdown("#### 📊 Select City Table:")
         table_choice = st.radio(
             "Choose table:",
             ["🏘️ Small Cities", "🏙️ Big Cities"],
@@ -2877,29 +2877,36 @@ elif st.session_state.processing_step == 'sc_bc':
         if "Small Cities" in table_choice:
             st.info("📋 **Table**: `small_city_indonesia`")
             st.write("Contains smaller cities and towns in Indonesia")
-        else:
-            st.info("📋 **Table**: `big_city_indonesia`")
-            st.write("Contains major cities and metropolitan areas in Indonesia")
-    
-    # Load and display selected table
-    st.markdown("---")
-    
-    if st.button("🔄 Load Selected Table", type="primary", use_container_width=True):
-        
-        # Determine table name based on selection
-        if "Small Cities" in table_choice:
             table_name = "small_city_indonesia"
             display_name = "Small Cities"
             icon = "🏘️"
         else:
+            st.info("📋 **Table**: `big_city_indonesia`")
+            st.write("Contains major cities and metropolitan areas in Indonesia")
             table_name = "big_city_indonesia"
             display_name = "Big Cities"
             icon = "🏙️"
-        
+    
+    # Initialize session state for current table data
+    table_key = f"current_{table_name}_data"
+    if table_key not in st.session_state:
+        st.session_state[table_key] = None
+    
+    # Load table data
+    st.markdown("---")
+    
+    if st.button("🔄 Load Table Data", type="primary", use_container_width=True):
         with st.spinner(f"Loading {display_name} data..."):
             try:
                 # Query the selected table
-                query = f"SELECT * FROM {table_name} ORDER BY id"
+                query = f"""
+                SELECT index, id, name, 
+                       ST_X(geometry::geometry) as longitude,
+                       ST_Y(geometry::geometry) as latitude,
+                       wadmpr, wadmkk, wadmkc
+                FROM {table_name} 
+                ORDER BY id
+                """
                 
                 with analyzer.engine.connect() as conn:
                     # Get count first
@@ -2909,178 +2916,469 @@ elif st.session_state.processing_step == 'sc_bc':
                     
                     if total_count == 0:
                         st.warning(f"⚠️ Table `{table_name}` is empty")
+                        st.session_state[table_key] = pd.DataFrame()
                     else:
                         st.success(f"✅ Found {total_count:,} records in {display_name} table")
                 
                 # Load the data
                 df = pd.read_sql(query, analyzer.engine)
+                st.session_state[table_key] = df
                 
-                if not df.empty:
-                    # Display table info
-                    st.markdown(f"### {icon} {display_name} Data")
-                    
-                    col1, col2, col3 = st.columns(3)
-                    with col1:
-                        st.metric("Total Records", f"{len(df):,}")
-                    with col2:
-                        st.metric("Columns", len(df.columns))
-                    with col3:
-                        if 'province' in df.columns or 'wadmpr' in df.columns:
-                            province_col = 'province' if 'province' in df.columns else 'wadmpr'
-                            unique_provinces = df[province_col].nunique()
-                            st.metric("Provinces", unique_provinces)
-                        else:
-                            st.metric("Data Type", "City List")
-                    
-                    # Display column information
-                    with st.expander("📋 Column Information", expanded=False):
-                        col_info = pd.DataFrame({
-                            'Column': df.columns,
-                            'Data Type': [str(dtype) for dtype in df.dtypes],
-                            'Non-Null Count': df.count(),
-                            'Sample Values': [str(df[col].dropna().iloc[0]) if len(df[col].dropna()) > 0 else 'N/A' for col in df.columns]
-                        })
-                        st.dataframe(col_info, use_container_width=True)
-                    
-                    # Search and filter functionality
-                    st.markdown("#### 🔍 Search & Filter")
-                    
-                    col1, col2 = st.columns(2)
-                    
-                    with col1:
-                        # Search functionality
-                        search_term = st.text_input(
-                            "🔍 Search cities:", 
-                            placeholder="Enter city name or keyword...",
-                            key=f"search_{table_name}"
-                        )
-                    
-                    with col2:
-                        # Filter by province if available
-                        province_col = None
-                        for col in ['province', 'wadmpr', 'provinsi']:
-                            if col in df.columns:
-                                province_col = col
-                                break
-                        
-                        if province_col:
-                            provinces = ['All'] + sorted(df[province_col].dropna().unique().tolist())
-                            selected_province = st.selectbox(
-                                f"Filter by {province_col}:",
-                                provinces,
-                                key=f"province_filter_{table_name}"
-                            )
-                        else:
-                            selected_province = 'All'
-                    
-                    # Apply filters
-                    filtered_df = df.copy()
-                    
-                    # Apply search filter
-                    if search_term:
-                        # Search across all string columns
-                        string_columns = df.select_dtypes(include=['object']).columns
-                        mask = False
-                        for col in string_columns:
-                            mask |= df[col].astype(str).str.contains(search_term, case=False, na=False)
-                        filtered_df = filtered_df[mask]
-                    
-                    # Apply province filter
-                    if province_col and selected_province != 'All':
-                        filtered_df = filtered_df[filtered_df[province_col] == selected_province]
-                    
-                    # Display filtered results
-                    if len(filtered_df) != len(df):
-                        st.info(f"📊 Showing {len(filtered_df):,} of {len(df):,} records")
-                    
-                    # Display the data table
-                    st.markdown(f"#### 📋 {display_name} Table")
-                    st.dataframe(filtered_df, use_container_width=True, height=400)
-                    
-                    # Download functionality
-                    st.markdown("#### 💾 Export Data")
-                    
-                    col1, col2, col3 = st.columns(3)
-                    
-                    with col1:
-                        # CSV download
-                        csv_data = filtered_df.to_csv(index=False)
-                        st.download_button(
-                            label="📄 Download CSV",
-                            data=csv_data,
-                            file_name=f"{table_name}_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
-                            mime="text/csv",
-                            key=f"download_csv_{table_name}",
-                            use_container_width=True
-                        )
-                    
-                    with col2:
-                        # Excel download
-                        excel_buffer = io.BytesIO()
-                        with pd.ExcelWriter(excel_buffer, engine='xlsxwriter') as writer:
-                            filtered_df.to_excel(writer, sheet_name=display_name, index=False)
-                        excel_buffer.seek(0)
-                        
-                        st.download_button(
-                            label="📊 Download Excel",
-                            data=excel_buffer.getvalue(),
-                            file_name=f"{table_name}_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
-                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                            key=f"download_excel_{table_name}",
-                            use_container_width=True
-                        )
-                    
-                    with col3:
-                        # JSON download
-                        json_data = filtered_df.to_json(orient='records', indent=2)
-                        st.download_button(
-                            label="🔗 Download JSON",
-                            data=json_data,
-                            file_name=f"{table_name}_{datetime.now().strftime('%Y%m%d_%H%M')}.json",
-                            mime="application/json",
-                            key=f"download_json_{table_name}",
-                            use_container_width=True
-                        )
-                    
-                    # Quick stats if numeric columns exist
-                    numeric_cols = filtered_df.select_dtypes(include=[np.number]).columns
-                    if len(numeric_cols) > 0:
-                        with st.expander("📊 Quick Statistics", expanded=False):
-                            st.dataframe(filtered_df[numeric_cols].describe(), use_container_width=True)
-                    
-                else:
-                    st.warning(f"⚠️ No data found in table `{table_name}`")
-                    
             except Exception as e:
                 st.error(f"❌ Failed to load {display_name} data: {str(e)}")
-                st.info("💡 Please ensure the database tables exist and are accessible")
-                
-                # Show helpful debugging info
-                with st.expander("🔧 Debug Information", expanded=False):
-                    st.code(f"Table name: {table_name}")
-                    st.code(f"Query: {query}")
-                    st.code(f"Error: {str(e)}")
+                st.session_state[table_key] = None
     
-    # Future features placeholder
-    st.markdown("---")
-    st.markdown("### 🚧 Coming Soon")
-    st.info("**Future Features:**")
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.write("🔧 **Table Editing Features:**")
-        st.write("- Add new cities")
-        st.write("- Edit existing records")
-        st.write("- Delete records")
-        st.write("- Bulk import/export")
-    
-    with col2:
-        st.write("⚙️ **Advanced Features:**")
-        st.write("- City classification rules")
-        st.write("- Population thresholds")
-        st.write("- Geographic boundaries")
-        st.write("- Administrative hierarchy")
+    # Display current data and management options
+    if st.session_state[table_key] is not None:
+        df = st.session_state[table_key]
         
+        if not df.empty:
+            # Display table info
+            st.markdown(f"### {icon} {display_name} Management")
+            
+            col1, col2, col3, col4 = st.columns(4)
+            with col1:
+                st.metric("Total Records", f"{len(df):,}")
+            with col2:
+                st.metric("Last ID", df['id'].max() if len(df) > 0 else 0)
+            with col3:
+                unique_provinces = df['wadmpr'].nunique()
+                st.metric("Provinces", unique_provinces)
+            with col4:
+                unique_regencies = df['wadmkk'].nunique()
+                st.metric("Regencies", unique_regencies)
+            
+            # Management Tabs
+            tab1, tab2, tab3, tab4 = st.tabs(["📋 View Data", "➕ Add Record", "✏️ Edit Record", "🗑️ Delete Record"])
+            
+            with tab1:
+                st.markdown("#### 📊 Current Table Data")
+                
+                # Search and filter functionality
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    search_term = st.text_input(
+                        "🔍 Search cities:", 
+                        placeholder="Enter city name...",
+                        key=f"search_{table_name}"
+                    )
+                
+                with col2:
+                    provinces = ['All'] + sorted(df['wadmpr'].dropna().unique().tolist())
+                    selected_province = st.selectbox(
+                        "Filter by Province:",
+                        provinces,
+                        key=f"province_filter_{table_name}"
+                    )
+                
+                # Apply filters
+                filtered_df = df.copy()
+                
+                if search_term:
+                    filtered_df = filtered_df[filtered_df['name'].str.contains(search_term, case=False, na=False)]
+                
+                if selected_province != 'All':
+                    filtered_df = filtered_df[filtered_df['wadmpr'] == selected_province]
+                
+                if len(filtered_df) != len(df):
+                    st.info(f"📊 Showing {len(filtered_df):,} of {len(df):,} records")
+                
+                # Display the data table
+                st.dataframe(filtered_df, use_container_width=True, height=400)
+                
+                # Export functionality
+                col1, col2, col3 = st.columns(3)
+                
+                with col1:
+                    csv_data = filtered_df.to_csv(index=False)
+                    st.download_button(
+                        label="📄 Download CSV",
+                        data=csv_data,
+                        file_name=f"{table_name}_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
+                        mime="text/csv",
+                        key=f"download_csv_{table_name}",
+                        use_container_width=True
+                    )
+                
+                with col2:
+                    excel_buffer = io.BytesIO()
+                    with pd.ExcelWriter(excel_buffer, engine='xlsxwriter') as writer:
+                        filtered_df.to_excel(writer, sheet_name=display_name, index=False)
+                    excel_buffer.seek(0)
+                    
+                    st.download_button(
+                        label="📊 Download Excel",
+                        data=excel_buffer.getvalue(),
+                        file_name=f"{table_name}_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        key=f"download_excel_{table_name}",
+                        use_container_width=True
+                    )
+                
+                with col3:
+                    json_data = filtered_df.to_json(orient='records', indent=2)
+                    st.download_button(
+                        label="🔗 Download JSON",
+                        data=json_data,
+                        file_name=f"{table_name}_{datetime.now().strftime('%Y%m%d_%H%M')}.json",
+                        mime="application/json",
+                        key=f"download_json_{table_name}",
+                        use_container_width=True
+                    )
+            
+            with tab2:
+                st.markdown("#### ➕ Add New Record")
+                st.info("💡 Enter coordinates to automatically fetch administrative data")
+                
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    add_name = st.text_input("City Name:", key=f"add_name_{table_name}")
+                    add_longitude = st.number_input(
+                        "Longitude:", 
+                        min_value=-180.0, max_value=180.0, 
+                        value=0.0, step=0.000001, format="%.6f",
+                        key=f"add_longitude_{table_name}"
+                    )
+                    add_latitude = st.number_input(
+                        "Latitude:", 
+                        min_value=-90.0, max_value=90.0, 
+                        value=0.0, step=0.000001, format="%.6f",
+                        key=f"add_latitude_{table_name}"
+                    )
+                
+                with col2:
+                    max_id = df['id'].max() if len(df) > 0 else 0
+                    after_row = st.number_input(
+                        "Insert after row ID:", 
+                        min_value=0, max_value=max_id, 
+                        value=max_id,
+                        key=f"after_row_{table_name}",
+                        help=f"New record will be inserted after this ID. Max ID: {max_id}"
+                    )
+                    
+                    st.markdown("**📍 Administrative Data:**")
+                    if add_longitude != 0.0 or add_latitude != 0.0:
+                        if st.button("🔍 Preview WADM Data", key=f"preview_wadm_{table_name}"):
+                            try:
+                                wadm_query = f"""
+                                SELECT "WADMPR", "WADMKK", "WADMKC", "WADMKD"
+                                FROM wadm_indonesia_
+                                WHERE ST_Intersects(
+                                    geometry,
+                                    ST_SetSRID(ST_MakePoint({add_longitude}, {add_latitude}), 4326)
+                                )
+                                LIMIT 1;
+                                """
+                                
+                                with analyzer.engine.connect() as conn:
+                                    result = conn.execute(text(wadm_query))
+                                    wadm_data = result.fetchone()
+                                    
+                                    if wadm_data:
+                                        st.success("✅ Found administrative data:")
+                                        st.write(f"**Province:** {wadm_data[0]}")
+                                        st.write(f"**Regency:** {wadm_data[1]}")
+                                        st.write(f"**District:** {wadm_data[2]}")
+                                        st.write(f"**Village:** {wadm_data[3]}")
+                                    else:
+                                        st.warning("⚠️ No administrative data found for these coordinates")
+                                        
+                            except Exception as e:
+                                st.error(f"❌ WADM lookup failed: {str(e)}")
+                
+                if st.button("➕ Add Record", type="primary", key=f"add_record_{table_name}"):
+                    if not add_name.strip():
+                        st.error("❌ City name cannot be empty")
+                    elif add_longitude == 0.0 and add_latitude == 0.0:
+                        st.error("❌ Please enter valid coordinates")
+                    else:
+                        try:
+                            with st.spinner("Adding new record..."):
+                                # First, get WADM data
+                                wadm_query = f"""
+                                SELECT "WADMPR", "WADMKK", "WADMKC"
+                                FROM wadm_indonesia_
+                                WHERE ST_Intersects(
+                                    geometry,
+                                    ST_SetSRID(ST_MakePoint({add_longitude}, {add_latitude}), 4326)
+                                )
+                                LIMIT 1;
+                                """
+                                
+                                with analyzer.engine.connect() as conn:
+                                    result = conn.execute(text(wadm_query))
+                                    wadm_data = result.fetchone()
+                                    
+                                    if not wadm_data:
+                                        st.error("❌ Cannot find administrative data for these coordinates")
+                                    else:
+                                        # Update IDs for records after the insertion point
+                                        update_query = f"""
+                                        UPDATE {table_name} 
+                                        SET id = id + 1, index = index + 1
+                                        WHERE id > {after_row}
+                                        """
+                                        conn.execute(text(update_query))
+                                        
+                                        # Insert new record
+                                        new_id = after_row + 1
+                                        new_index = new_id  # Assuming index follows id
+                                        
+                                        insert_query = f"""
+                                        INSERT INTO {table_name} (index, id, name, geometry, wadmpr, wadmkk, wadmkc)
+                                        VALUES (
+                                            {new_index},
+                                            {new_id},
+                                            '{add_name.strip()}',
+                                            ST_SetSRID(ST_MakePoint({add_longitude}, {add_latitude}), 4326),
+                                            '{wadm_data[0]}',
+                                            '{wadm_data[1]}',
+                                            '{wadm_data[2]}'
+                                        )
+                                        """
+                                        conn.execute(text(insert_query))
+                                        conn.commit()
+                                        
+                                        st.success(f"✅ Successfully added '{add_name}' as ID {new_id}")
+                                        st.info("🔄 Please reload the table to see changes")
+                                        
+                        except Exception as e:
+                            st.error(f"❌ Failed to add record: {str(e)}")
+            
+            with tab3:
+                st.markdown("#### ✏️ Edit Record")
+                st.info("💡 Edit coordinates and automatically update administrative data")
+                
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    edit_id = st.number_input(
+                        "Select ID to edit:", 
+                        min_value=1, max_value=df['id'].max() if len(df) > 0 else 1, 
+                        value=1,
+                        key=f"edit_id_{table_name}"
+                    )
+                    
+                    # Show current data for selected ID
+                    if edit_id in df['id'].values:
+                        current_row = df[df['id'] == edit_id].iloc[0]
+                        st.markdown("**📋 Current Data:**")
+                        st.write(f"**Name:** {current_row['name']}")
+                        st.write(f"**Longitude:** {current_row['longitude']:.6f}")
+                        st.write(f"**Latitude:** {current_row['latitude']:.6f}")
+                        st.write(f"**Province:** {current_row['wadmpr']}")
+                        st.write(f"**Regency:** {current_row['wadmkk']}")
+                        st.write(f"**District:** {current_row['wadmkc']}")
+                    else:
+                        st.warning("⚠️ ID not found")
+                
+                with col2:
+                    edit_longitude = st.number_input(
+                        "New Longitude:", 
+                        min_value=-180.0, max_value=180.0, 
+                        value=current_row['longitude'] if edit_id in df['id'].values else 0.0, 
+                        step=0.000001, format="%.6f",
+                        key=f"edit_longitude_{table_name}"
+                    )
+                    edit_latitude = st.number_input(
+                        "New Latitude:", 
+                        min_value=-90.0, max_value=90.0, 
+                        value=current_row['latitude'] if edit_id in df['id'].values else 0.0, 
+                        step=0.000001, format="%.6f",
+                        key=f"edit_latitude_{table_name}"
+                    )
+                    
+                    st.markdown("**📍 New Administrative Data:**")
+                    if edit_longitude != 0.0 or edit_latitude != 0.0:
+                        if st.button("🔍 Preview New WADM Data", key=f"preview_edit_wadm_{table_name}"):
+                            try:
+                                wadm_query = f"""
+                                SELECT "WADMPR", "WADMKK", "WADMKC"
+                                FROM wadm_indonesia_
+                                WHERE ST_Intersects(
+                                    geometry,
+                                    ST_SetSRID(ST_MakePoint({edit_longitude}, {edit_latitude}), 4326)
+                                )
+                                LIMIT 1;
+                                """
+                                
+                                with analyzer.engine.connect() as conn:
+                                    result = conn.execute(text(wadm_query))
+                                    wadm_data = result.fetchone()
+                                    
+                                    if wadm_data:
+                                        st.success("✅ New administrative data:")
+                                        st.write(f"**Province:** {wadm_data[0]}")
+                                        st.write(f"**Regency:** {wadm_data[1]}")
+                                        st.write(f"**District:** {wadm_data[2]}")
+                                    else:
+                                        st.warning("⚠️ No administrative data found for new coordinates")
+                                        
+                            except Exception as e:
+                                st.error(f"❌ WADM lookup failed: {str(e)}")
+                
+                if st.button("✏️ Update Record", type="primary", key=f"edit_record_{table_name}"):
+                    if edit_id not in df['id'].values:
+                        st.error("❌ Invalid ID selected")
+                    elif edit_longitude == 0.0 and edit_latitude == 0.0:
+                        st.error("❌ Please enter valid coordinates")
+                    else:
+                        try:
+                            with st.spinner("Updating record..."):
+                                # Get new WADM data
+                                wadm_query = f"""
+                                SELECT "WADMPR", "WADMKK", "WADMKC"
+                                FROM wadm_indonesia_
+                                WHERE ST_Intersects(
+                                    geometry,
+                                    ST_SetSRID(ST_MakePoint({edit_longitude}, {edit_latitude}), 4326)
+                                )
+                                LIMIT 1;
+                                """
+                                
+                                with analyzer.engine.connect() as conn:
+                                    result = conn.execute(text(wadm_query))
+                                    wadm_data = result.fetchone()
+                                    
+                                    if not wadm_data:
+                                        st.error("❌ Cannot find administrative data for these coordinates")
+                                    else:
+                                        # Update record
+                                        update_query = f"""
+                                        UPDATE {table_name} 
+                                        SET 
+                                            geometry = ST_SetSRID(ST_MakePoint({edit_longitude}, {edit_latitude}), 4326),
+                                            wadmpr = '{wadm_data[0]}',
+                                            wadmkk = '{wadm_data[1]}',
+                                            wadmkc = '{wadm_data[2]}'
+                                        WHERE id = {edit_id}
+                                        """
+                                        conn.execute(text(update_query))
+                                        conn.commit()
+                                        
+                                        st.success(f"✅ Successfully updated record ID {edit_id}")
+                                        st.info("🔄 Please reload the table to see changes")
+                                        
+                        except Exception as e:
+                            st.error(f"❌ Failed to update record: {str(e)}")
+            
+            with tab4:
+                st.markdown("#### 🗑️ Delete Record")
+                st.warning("⚠️ **Caution:** This action cannot be undone!")
+                
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    delete_id = st.number_input(
+                        "Select ID to delete:", 
+                        min_value=1, max_value=df['id'].max() if len(df) > 0 else 1, 
+                        value=1,
+                        key=f"delete_id_{table_name}"
+                    )
+                    
+                    # Show data for selected ID
+                    if delete_id in df['id'].values:
+                        delete_row = df[df['id'] == delete_id].iloc[0]
+                        st.markdown("**📋 Record to Delete:**")
+                        st.write(f"**ID:** {delete_row['id']}")
+                        st.write(f"**Name:** {delete_row['name']}")
+                        st.write(f"**Province:** {delete_row['wadmpr']}")
+                        st.write(f"**Regency:** {delete_row['wadmkk']}")
+                        st.write(f"**District:** {delete_row['wadmkc']}")
+                    else:
+                        st.warning("⚠️ ID not found")
+                
+                with col2:
+                    st.markdown("**⚠️ Deletion Impact:**")
+                    if delete_id in df['id'].values:
+                        records_after = len(df[df['id'] > delete_id])
+                        st.info(f"📊 {records_after} records will be renumbered")
+                        st.write("**What happens:**")
+                        st.write("1. Selected record will be deleted")
+                        st.write("2. All records with higher IDs will shift down")
+                        st.write("3. Index numbers will be recalculated")
+                    
+                    # Confirmation checkbox
+                    confirm_delete = st.checkbox(
+                        f"I confirm deletion of ID {delete_id}",
+                        key=f"confirm_delete_{table_name}"
+                    )
+                
+                if st.button("🗑️ Delete Record", type="secondary", key=f"delete_record_{table_name}", disabled=not confirm_delete):
+                    if delete_id not in df['id'].values:
+                        st.error("❌ Invalid ID selected")
+                    else:
+                        try:
+                            with st.spinner("Deleting record..."):
+                                with analyzer.engine.connect() as conn:
+                                    # Delete the record
+                                    delete_query = f"DELETE FROM {table_name} WHERE id = {delete_id}"
+                                    conn.execute(text(delete_query))
+                                    
+                                    # Update IDs and indexes for records after the deleted one
+                                    update_query = f"""
+                                    UPDATE {table_name} 
+                                    SET id = id - 1, index = index - 1
+                                    WHERE id > {delete_id}
+                                    """
+                                    conn.execute(text(update_query))
+                                    conn.commit()
+                                    
+                                    st.success(f"✅ Successfully deleted record ID {delete_id}")
+                                    st.info("🔄 Please reload the table to see changes")
+                                    
+                        except Exception as e:
+                            st.error(f"❌ Failed to delete record: {str(e)}")
+        
+        else:
+            st.info(f"📋 Table `{table_name}` is empty. Use the Add Record tab to create the first entry.")
+    
+    else:
+        st.info("👆 Click 'Load Table Data' to begin managing city records")
+    
+    # Help section
+    st.markdown("---")
+    with st.expander("❓ Help & Information", expanded=False):
+        st.markdown("### 📚 How to Use This System")
+        st.markdown("""
+        **🔍 View Data Tab:**
+        - Browse and search existing city records
+        - Filter by province
+        - Export data in multiple formats
+        
+        **➕ Add Record Tab:**
+        - Enter city name and coordinates
+        - System automatically finds administrative boundaries
+        - Choose insertion position using "after row ID"
+        
+        **✏️ Edit Record Tab:**
+        - Select record by ID
+        - Update coordinates
+        - Administrative data updates automatically
+        
+        **🗑️ Delete Record Tab:**
+        - Select record to delete
+        - All subsequent records renumber automatically
+        - Requires confirmation checkbox
+        
+        **📊 Important Notes:**
+        - ID and Index numbers auto-adjust after changes
+        - Administrative data (WADMPR, WADMKK, WADMKC) fetched from `wadm_indonesia_` table
+        - Always reload table data after making changes
+        """)
+        
+        st.markdown("### 🔧 Technical Details")
+        st.markdown("""
+        **Database Tables:**
+        - `small_city_indonesia` - Small cities and towns
+        - `big_city_indonesia` - Major cities and metropolitan areas
+        - `wadm_indonesia_` - Administrative boundary reference
+        
+        **Coordinate System:** WGS84 (EPSG:4326)
+        **Geometry Format:** PostGIS Point geometry
+        """)
 
 elif st.session_state.processing_step == 'transform':
     if fun_mode:
