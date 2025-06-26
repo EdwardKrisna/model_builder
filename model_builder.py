@@ -3028,6 +3028,210 @@ elif st.session_state.processing_step == 'sc_bc':
                         key=f"download_json_{table_name}",
                         use_container_width=True
                     )
+                
+                # Add this code after the download buttons in the View Data tab
+                # Distance Recalculation Section
+                st.markdown("---")
+                st.markdown("#### 🔄 Recalculate Distances")
+
+                # Determine distance column name based on selected table
+                if "Small Cities" in table_choice:
+                    distance_column = "distance_to_small_city"
+                    city_type = "small cities"
+                else:
+                    distance_column = "distance_to_big_city" 
+                    city_type = "big cities"
+
+                st.info(f"💡 Update `{distance_column}` in both database and current dataset")
+
+                col1, col2 = st.columns(2)
+
+                with col1:
+                    st.markdown(f"**🎯 Target:**")
+                    st.write(f"- Database: `engineered_property_data.{distance_column}`")
+                    st.write(f"- Current dataset: Update distance values")
+                    st.write(f"- Source: Latest `{table_name}` data")
+
+                with col2:
+                    st.markdown("**📊 Current Dataset Info:**")
+                    if analyzer.current_data is not None:
+                        total_properties = len(analyzer.current_data)
+                        st.write(f"- Properties loaded: {total_properties:,}")
+                        
+                        # Check if distance column exists in current dataset
+                        if distance_column in analyzer.current_data.columns:
+                            current_mean = analyzer.current_data[distance_column].mean()
+                            st.write(f"- Current avg distance: {current_mean:.0f}m")
+                            st.success("✅ Distance column found")
+                        else:
+                            st.error(f"❌ Column `{distance_column}` not found in current dataset")
+                    else:
+                        st.warning("⚠️ No current dataset loaded")
+
+                # Recalculation button
+                if st.button(f"🔄 Recalculate Distance to {city_type.title()}", 
+                            type="primary", 
+                            use_container_width=True,
+                            key=f"recalc_distance_{table_name}"):
+                    
+                    # Validation checks
+                    if analyzer.current_data is None:
+                        st.error("❌ No current dataset loaded. Please load data first.")
+                    elif distance_column not in analyzer.current_data.columns:
+                        st.error(f"❌ Column `{distance_column}` not found in current dataset")
+                    elif 'id' not in analyzer.current_data.columns:
+                        st.error("❌ Column `id` not found in current dataset") 
+                    else:
+                        try:
+                            with st.spinner("🔄 Recalculating distances..."):
+                                
+                                # Step 1: Update database
+                                st.info("📊 Step 1: Updating database...")
+                                
+                                update_query = f"""
+                                UPDATE engineered_property_data 
+                                SET {distance_column} = (
+                                    SELECT MIN(ST_Distance_Sphere(
+                                        engineered_property_data.geometry,
+                                        {table_name}.geometry
+                                    ))
+                                    FROM {table_name}
+                                    WHERE {table_name}.geometry IS NOT NULL
+                                )
+                                WHERE engineered_property_data.geometry IS NOT NULL;
+                                """
+                                
+                                with analyzer.engine.connect() as conn:
+                                    result = conn.execute(text(update_query))
+                                    conn.commit()
+                                    
+                                    # Get count of updated records
+                                    count_query = f"""
+                                    SELECT COUNT(*) 
+                                    FROM engineered_property_data 
+                                    WHERE {distance_column} IS NOT NULL
+                                    """
+                                    count_result = conn.execute(text(count_query))
+                                    updated_count = count_result.scalar()
+                                    
+                                st.success(f"✅ Database updated: {updated_count:,} records")
+                                
+                                # Step 2: Update current Streamlit dataset
+                                st.info("📱 Step 2: Updating current dataset...")
+                                
+                                # Get property IDs from current dataset
+                                property_ids = analyzer.current_data['id'].tolist()
+                                
+                                if len(property_ids) > 0:
+                                    # Bulk query to get updated distances for current dataset properties
+                                    ids_str = ','.join(map(str, property_ids))
+                                    
+                                    fetch_query = f"""
+                                    SELECT id, {distance_column}
+                                    FROM engineered_property_data 
+                                    WHERE id IN ({ids_str})
+                                    AND {distance_column} IS NOT NULL
+                                    """
+                                    
+                                    with analyzer.engine.connect() as conn:
+                                        updated_distances = pd.read_sql(fetch_query, conn)
+                                    
+                                    if len(updated_distances) > 0:
+                                        # Merge updated distances with current dataset
+                                        # Save the original distance values for comparison
+                                        original_distances = analyzer.current_data[distance_column].copy()
+                                        
+                                        # Update the distance column
+                                        analyzer.current_data = analyzer.current_data.merge(
+                                            updated_distances.rename(columns={distance_column: f'{distance_column}_new'}),
+                                            on='id', 
+                                            how='left'
+                                        )
+                                        
+                                        # Replace the distance column with new values where available
+                                        mask = analyzer.current_data[f'{distance_column}_new'].notna()
+                                        analyzer.current_data.loc[mask, distance_column] = analyzer.current_data.loc[mask, f'{distance_column}_new']
+                                        
+                                        # Drop the temporary column
+                                        analyzer.current_data = analyzer.current_data.drop(columns=[f'{distance_column}_new'])
+                                        
+                                        # Calculate statistics
+                                        updated_properties = mask.sum()
+                                        new_mean = analyzer.current_data[distance_column].mean()
+                                        old_mean = original_distances.mean()
+                                        change_pct = ((new_mean - old_mean) / old_mean) * 100
+                                        
+                                        st.success(f"✅ Current dataset updated: {updated_properties:,} properties")
+                                        
+                                        # Show comparison statistics
+                                        st.markdown("### 📊 Distance Update Summary")
+                                        
+                                        col1, col2, col3 = st.columns(3)
+                                        
+                                        with col1:
+                                            st.metric(
+                                                "Properties Updated", 
+                                                f"{updated_properties:,}",
+                                                delta=f"{updated_properties}/{len(analyzer.current_data)} properties"
+                                            )
+                                        
+                                        with col2:
+                                            st.metric(
+                                                "New Avg Distance", 
+                                                f"{new_mean:.0f}m",
+                                                delta=f"{change_pct:+.1f}%" if abs(change_pct) >= 0.1 else "~0%"
+                                            )
+                                        
+                                        with col3:
+                                            st.metric(
+                                                "Distance Range",
+                                                f"{analyzer.current_data[distance_column].min():.0f}m - {analyzer.current_data[distance_column].max():.0f}m"
+                                            )
+                                        
+                                        # Mark data as changed for cache refresh
+                                        st.session_state.data_changed = True
+                                        
+                                        # Show detailed comparison if significant changes
+                                        if abs(change_pct) >= 1.0:
+                                            with st.expander("📈 Detailed Changes", expanded=False):
+                                                change_data = pd.DataFrame({
+                                                    'Metric': ['Before', 'After', 'Change'],
+                                                    'Average Distance (m)': [old_mean, new_mean, new_mean - old_mean],
+                                                    'Min Distance (m)': [
+                                                        original_distances.min(), 
+                                                        analyzer.current_data[distance_column].min(),
+                                                        analyzer.current_data[distance_column].min() - original_distances.min()
+                                                    ],
+                                                    'Max Distance (m)': [
+                                                        original_distances.max(),
+                                                        analyzer.current_data[distance_column].max(), 
+                                                        analyzer.current_data[distance_column].max() - original_distances.max()
+                                                    ]
+                                                })
+                                                st.dataframe(change_data.round(2), use_container_width=True)
+                                        
+                                        st.info("🔄 Distances have been recalculated based on the latest city data!")
+                                        
+                                    else:
+                                        st.warning("⚠️ No updated distances found for current dataset properties")
+                                        
+                                else:
+                                    st.error("❌ No property IDs found in current dataset")
+                                    
+                        except Exception as e:
+                            st.error(f"❌ Distance recalculation failed: {str(e)}")
+                            
+                            # Show debug information
+                            with st.expander("🔧 Debug Information", expanded=False):
+                                st.code(f"Table: {table_name}")
+                                st.code(f"Distance column: {distance_column}")
+                                st.code(f"Error: {str(e)}")
+                                if analyzer.current_data is not None:
+                                    st.code(f"Current dataset shape: {analyzer.current_data.shape}")
+                                    st.code(f"Available columns: {list(analyzer.current_data.columns)}")
+
+                # Warning note
+                st.warning("⚠️ **Note:** This operation updates the database permanently. Make sure the city data is correct before recalculating.")
             
             with tab2:
                 st.markdown("#### ➕ Add New Record")
