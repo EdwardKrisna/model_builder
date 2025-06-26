@@ -4102,6 +4102,19 @@ elif st.session_state.processing_step == 'model':
                 lat_col = col
             elif any(term in col_lower for term in ['lon', 'lng']) and not lon_col:
                 lon_col = col
+
+        map_style = st.selectbox(
+            "Map Style",
+            options=[
+                ("OpenStreetMap", "open-street-map"),
+                ("CartoDB Positron", "carto-positron"),
+                ("CartoDB Dark", "carto-darkmatter"),
+                ("Satellite", "satellite-streets"),
+                ("Satellite Basic", "satellite")
+            ],
+            format_func=lambda x: x[0]
+        )
+        map_style_value = map_style[1]
         
         if lat_col and lon_col and 'hpm' in analyzer.current_data.columns:
             if st.button("🗺️ Show Property Map", type="secondary"):
@@ -4196,10 +4209,10 @@ elif st.session_state.processing_step == 'model':
                         # Map layout
                         center_lat = map_data[lat_col].mean()
                         center_lon = map_data[lon_col].mean()
-                        
+                    
                         fig.update_layout(
                             mapbox=dict(
-                                style="open-street-map",
+                                style=map_style_value,
                                 center=dict(lat=center_lat, lon=center_lon),
                                 zoom=10
                             ),
