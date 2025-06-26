@@ -348,10 +348,10 @@ def user_login_page():
             answer = st.text_input('Your answer:')
             
             if answer == "nasi" or "Nasi":
-                st.success("Nice!")
+                st.success("Kalo salah kebangetan sih!")
                 st.code("Username: jokowi\nPassword: lohkotanyasaya")
             elif answer:
-                st.error("Cmon bro.. , ya nasi lah")
+                st.error("Cmon bro.. , ya nasi lah!")
 
 # Initialize authentication session state
 if 'user_authenticated' not in st.session_state:
