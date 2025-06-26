@@ -2855,8 +2855,8 @@ elif st.session_state.processing_step == 'sc_bc':
         st.stop()
 
     else:
-        # Display admin welcome message
-        st.success(f"🔐 **Admin Mode Active** - Welcome, {st.session_state.get('admin_name', 'Admin')}!")
+        # Display admin welcome message - Updated key
+        st.success(f"🔐 **Admin Mode Active** - Welcome, {st.session_state.get('admin_name_stored', 'Admin')}!")
         
         st.info("🚧 **Admin Feature**: Small & Big City configuration will be implemented here")
         st.markdown("### Coming Soon...")
@@ -2867,7 +2867,7 @@ elif st.session_state.processing_step == 'sc_bc':
         st.write("- City classification settings")
         st.write("- Regional parameter adjustments") 
         st.write("- Administrative data management")
-
+        
 
 elif st.session_state.processing_step == 'transform':
     if fun_mode:
@@ -5877,8 +5877,8 @@ with st.sidebar:
     
     if not st.session_state.is_admin:
         with st.expander("🔑 Admin Login", expanded=False):
-            admin_name = st.text_input("Admin Name", key="admin_name")
-            admin_password = st.text_input("Password", type="password", key="admin_password")
+            admin_name = st.text_input("Admin Name", key="admin_name_input")  # Changed key
+            admin_password = st.text_input("Password", type="password", key="admin_password_input")  # Changed key
             
             if st.button("🔓 Login", key="admin_login"):
                 try:
@@ -5888,7 +5888,7 @@ with st.sidebar:
                     
                     if admin_name == expected_admin_name and admin_password == expected_admin_password:
                         st.session_state.is_admin = True
-                        st.session_state.admin_name = admin_name
+                        st.session_state.admin_name_stored = admin_name  # Changed key
                         st.success(f"✅ Welcome, {admin_name}!")
                         st.rerun()
                     else:
@@ -5898,11 +5898,11 @@ with st.sidebar:
                 except Exception as e:
                     st.error(f"❌ Authentication error: {str(e)}")
     else:
-        st.success(f"✅ Logged in as: {st.session_state.get('admin_name', 'Admin')}")
+        st.success(f"✅ Logged in as: {st.session_state.get('admin_name_stored', 'Admin')}")  # Changed key
         if st.button("🔒 Logout", key="admin_logout"):
             st.session_state.is_admin = False
-            if 'admin_name' in st.session_state:
-                del st.session_state.admin_name
+            if 'admin_name_stored' in st.session_state:  # Changed key
+                del st.session_state.admin_name_stored  # Changed key
             # If user was on admin page, redirect to selection
             if st.session_state.processing_step == 'sc_bc':
                 st.session_state.processing_step = 'selection'
