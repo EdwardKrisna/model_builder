@@ -2984,10 +2984,10 @@ elif st.session_state.processing_step == 'sc_bc':
                 if len(filtered_df) != len(df):
                     st.info(f"📊 Showing {len(filtered_df):,} of {len(df):,} records")
                 
-                # Display the data table - only show specific columns
+                # Display the data table - hide pandas index (older Streamlit)
                 display_columns = ['id', 'name', 'longitude', 'latitude', 'wadmpr', 'wadmkk', 'wadmkc']
                 display_df = filtered_df[display_columns]
-                st.dataframe(display_df, use_container_width=True, height=400)
+                st.dataframe(display_df.reset_index(drop=True), use_container_width=True, height=400)
                 
                 # Export functionality
                 col1, col2, col3 = st.columns(3)
