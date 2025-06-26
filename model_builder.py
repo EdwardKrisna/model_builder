@@ -4207,7 +4207,7 @@ elif st.session_state.processing_step == 'model':
                         
                         # Determine map style based on selection
                         if map_style == "Satellite":
-                            mapbox_style = "satellite-streets"
+                            mapbox_style = "stamen-terrain"
                         else:
                             mapbox_style = "open-street-map"
                         
