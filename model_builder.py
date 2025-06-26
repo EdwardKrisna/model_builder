@@ -2847,27 +2847,240 @@ elif st.session_state.processing_step == 'sc_bc':
     else:
         st.markdown('## 🏛️ Small & Big City Configuration')
 
-    if analyzer.current_data is None:
-        st.warning("⚠️ No data loaded. Please go back to Data Selection.")
-        if st.button("← Back to Data Selection"):
-            st.session_state.processing_step = 'selection'
-            st.rerun()
-        st.stop()
-
-    else:
-        # Display admin welcome message - Updated key
-        st.success(f"🔐 **Admin Mode Active** - Welcome, {st.session_state.get('admin_name_stored', 'Admin')}!")
+    # Display admin welcome message
+    st.success(f"🔐 **Admin Mode Active** - Welcome, {st.session_state.get('admin_name_stored', 'Admin')}!")
+    
+    # Check database connection
+    if not analyzer.connection_status:
+        with st.spinner("Connecting to database..."):
+            success, message = analyzer.connect_database()
+            if not success:
+                st.error(f"❌ Database connection failed: {message}")
+                st.stop()
+    
+    st.markdown("### 🏙️ City Management System")
+    st.info("📋 **View and manage city classifications for Indonesia**")
+    
+    # City table selection
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown("#### 📊 Select City Table to View:")
+        table_choice = st.radio(
+            "Choose table:",
+            ["🏘️ Small Cities", "🏙️ Big Cities"],
+            key="city_table_choice"
+        )
+    
+    with col2:
+        st.markdown("#### ℹ️ Table Information:")
+        if "Small Cities" in table_choice:
+            st.info("📋 **Table**: `small_city_indonesia`")
+            st.write("Contains smaller cities and towns in Indonesia")
+        else:
+            st.info("📋 **Table**: `big_city_indonesia`")
+            st.write("Contains major cities and metropolitan areas in Indonesia")
+    
+    # Load and display selected table
+    st.markdown("---")
+    
+    if st.button("🔄 Load Selected Table", type="primary", use_container_width=True):
         
-        st.info("🚧 **Admin Feature**: Small & Big City configuration will be implemented here")
-        st.markdown("### Coming Soon...")
-        st.write("This section will contain admin-specific features for small and big city configurations.")
+        # Determine table name based on selection
+        if "Small Cities" in table_choice:
+            table_name = "small_city_indonesia"
+            display_name = "Small Cities"
+            icon = "🏘️"
+        else:
+            table_name = "big_city_indonesia"
+            display_name = "Big Cities"
+            icon = "🏙️"
         
-        # Placeholder for future features
-        st.markdown("**Future Features:**")
-        st.write("- City classification settings")
-        st.write("- Regional parameter adjustments") 
-        st.write("- Administrative data management")
-
+        with st.spinner(f"Loading {display_name} data..."):
+            try:
+                # Query the selected table
+                query = f"SELECT * FROM {table_name} ORDER BY id"
+                
+                with analyzer.engine.connect() as conn:
+                    # Get count first
+                    count_query = f"SELECT COUNT(*) FROM {table_name}"
+                    result = conn.execute(text(count_query))
+                    total_count = result.scalar()
+                    
+                    if total_count == 0:
+                        st.warning(f"⚠️ Table `{table_name}` is empty")
+                    else:
+                        st.success(f"✅ Found {total_count:,} records in {display_name} table")
+                
+                # Load the data
+                df = pd.read_sql(query, analyzer.engine)
+                
+                if not df.empty:
+                    # Display table info
+                    st.markdown(f"### {icon} {display_name} Data")
+                    
+                    col1, col2, col3 = st.columns(3)
+                    with col1:
+                        st.metric("Total Records", f"{len(df):,}")
+                    with col2:
+                        st.metric("Columns", len(df.columns))
+                    with col3:
+                        if 'province' in df.columns or 'wadmpr' in df.columns:
+                            province_col = 'province' if 'province' in df.columns else 'wadmpr'
+                            unique_provinces = df[province_col].nunique()
+                            st.metric("Provinces", unique_provinces)
+                        else:
+                            st.metric("Data Type", "City List")
+                    
+                    # Display column information
+                    with st.expander("📋 Column Information", expanded=False):
+                        col_info = pd.DataFrame({
+                            'Column': df.columns,
+                            'Data Type': [str(dtype) for dtype in df.dtypes],
+                            'Non-Null Count': df.count(),
+                            'Sample Values': [str(df[col].dropna().iloc[0]) if len(df[col].dropna()) > 0 else 'N/A' for col in df.columns]
+                        })
+                        st.dataframe(col_info, use_container_width=True)
+                    
+                    # Search and filter functionality
+                    st.markdown("#### 🔍 Search & Filter")
+                    
+                    col1, col2 = st.columns(2)
+                    
+                    with col1:
+                        # Search functionality
+                        search_term = st.text_input(
+                            "🔍 Search cities:", 
+                            placeholder="Enter city name or keyword...",
+                            key=f"search_{table_name}"
+                        )
+                    
+                    with col2:
+                        # Filter by province if available
+                        province_col = None
+                        for col in ['province', 'wadmpr', 'provinsi']:
+                            if col in df.columns:
+                                province_col = col
+                                break
+                        
+                        if province_col:
+                            provinces = ['All'] + sorted(df[province_col].dropna().unique().tolist())
+                            selected_province = st.selectbox(
+                                f"Filter by {province_col}:",
+                                provinces,
+                                key=f"province_filter_{table_name}"
+                            )
+                        else:
+                            selected_province = 'All'
+                    
+                    # Apply filters
+                    filtered_df = df.copy()
+                    
+                    # Apply search filter
+                    if search_term:
+                        # Search across all string columns
+                        string_columns = df.select_dtypes(include=['object']).columns
+                        mask = False
+                        for col in string_columns:
+                            mask |= df[col].astype(str).str.contains(search_term, case=False, na=False)
+                        filtered_df = filtered_df[mask]
+                    
+                    # Apply province filter
+                    if province_col and selected_province != 'All':
+                        filtered_df = filtered_df[filtered_df[province_col] == selected_province]
+                    
+                    # Display filtered results
+                    if len(filtered_df) != len(df):
+                        st.info(f"📊 Showing {len(filtered_df):,} of {len(df):,} records")
+                    
+                    # Display the data table
+                    st.markdown(f"#### 📋 {display_name} Table")
+                    st.dataframe(filtered_df, use_container_width=True, height=400)
+                    
+                    # Download functionality
+                    st.markdown("#### 💾 Export Data")
+                    
+                    col1, col2, col3 = st.columns(3)
+                    
+                    with col1:
+                        # CSV download
+                        csv_data = filtered_df.to_csv(index=False)
+                        st.download_button(
+                            label="📄 Download CSV",
+                            data=csv_data,
+                            file_name=f"{table_name}_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
+                            mime="text/csv",
+                            key=f"download_csv_{table_name}",
+                            use_container_width=True
+                        )
+                    
+                    with col2:
+                        # Excel download
+                        excel_buffer = io.BytesIO()
+                        with pd.ExcelWriter(excel_buffer, engine='xlsxwriter') as writer:
+                            filtered_df.to_excel(writer, sheet_name=display_name, index=False)
+                        excel_buffer.seek(0)
+                        
+                        st.download_button(
+                            label="📊 Download Excel",
+                            data=excel_buffer.getvalue(),
+                            file_name=f"{table_name}_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
+                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                            key=f"download_excel_{table_name}",
+                            use_container_width=True
+                        )
+                    
+                    with col3:
+                        # JSON download
+                        json_data = filtered_df.to_json(orient='records', indent=2)
+                        st.download_button(
+                            label="🔗 Download JSON",
+                            data=json_data,
+                            file_name=f"{table_name}_{datetime.now().strftime('%Y%m%d_%H%M')}.json",
+                            mime="application/json",
+                            key=f"download_json_{table_name}",
+                            use_container_width=True
+                        )
+                    
+                    # Quick stats if numeric columns exist
+                    numeric_cols = filtered_df.select_dtypes(include=[np.number]).columns
+                    if len(numeric_cols) > 0:
+                        with st.expander("📊 Quick Statistics", expanded=False):
+                            st.dataframe(filtered_df[numeric_cols].describe(), use_container_width=True)
+                    
+                else:
+                    st.warning(f"⚠️ No data found in table `{table_name}`")
+                    
+            except Exception as e:
+                st.error(f"❌ Failed to load {display_name} data: {str(e)}")
+                st.info("💡 Please ensure the database tables exist and are accessible")
+                
+                # Show helpful debugging info
+                with st.expander("🔧 Debug Information", expanded=False):
+                    st.code(f"Table name: {table_name}")
+                    st.code(f"Query: {query}")
+                    st.code(f"Error: {str(e)}")
+    
+    # Future features placeholder
+    st.markdown("---")
+    st.markdown("### 🚧 Coming Soon")
+    st.info("**Future Features:**")
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.write("🔧 **Table Editing Features:**")
+        st.write("- Add new cities")
+        st.write("- Edit existing records")
+        st.write("- Delete records")
+        st.write("- Bulk import/export")
+    
+    with col2:
+        st.write("⚙️ **Advanced Features:**")
+        st.write("- City classification rules")
+        st.write("- Population thresholds")
+        st.write("- Geographic boundaries")
+        st.write("- Administrative hierarchy")
+        
 
 elif st.session_state.processing_step == 'transform':
     if fun_mode:
