@@ -4091,22 +4091,33 @@ elif st.session_state.processing_step == 'model':
         # Map Visualization Section
         st.markdown("### 🗺️ Property Location Map")
         st.info("📍 Visualize your dataset's geographic distribution before modeling")
-        
+
+        # Add map style selector
+        col1, col2 = st.columns([3, 1])
+        with col1:
+            pass  # Keep the button here
+        with col2:
+            map_style = st.selectbox(
+                "Map Style:",
+                ["Street Map", "Satellite"],
+                key="map_style_selector"
+            )
+
         # Check for latitude and longitude columns
         lat_col = None
         lon_col = None
-        
+
         for col in analyzer.current_data.columns:
             col_lower = col.lower()
             if 'lat' in col_lower and not lat_col:
                 lat_col = col
             elif any(term in col_lower for term in ['lon', 'lng']) and not lon_col:
                 lon_col = col
-        
+
         if lat_col and lon_col and 'hpm' in analyzer.current_data.columns:
             if st.button("🗺️ Show Property Map", type="secondary"):
                 try:
-                    # Prepare map data - include all geographic columns if available
+                    # [Keep all your existing data preparation code here - unchanged]
                     map_columns = [lat_col, lon_col, 'hpm']
                     geo_cols = {}
                     
@@ -4134,10 +4145,9 @@ elif st.session_state.processing_step == 'model':
                     ]
                     
                     if not map_data.empty:
-                        # Create quantiles for HPM
+                        # [Keep all your existing quantile and color mapping code - unchanged]
                         map_data['hpm_quantile'] = pd.qcut(map_data['hpm'], q=5, labels=['Q1', 'Q2', 'Q3', 'Q4', 'Q5'])
                         
-                        # Color mapping (Viridis)
                         color_map = {
                             'Q1': '#440154',  # Dark purple
                             'Q2': '#31688e',  # Dark blue
@@ -4151,16 +4161,14 @@ elif st.session_state.processing_step == 'model':
                         # Create the map
                         fig = go.Figure()
                         
-                        # Add points for each quantile
+                        # [Keep all your existing trace creation code - unchanged]
                         for quantile in ['Q1', 'Q2', 'Q3', 'Q4', 'Q5']:
                             quantile_data = map_data[map_data['hpm_quantile'] == quantile]
                             if not quantile_data.empty:
-                                # Create tooltip text for THIS quantile's data only
                                 tooltip_text = []
                                 for idx, row in quantile_data.iterrows():
                                     tooltip = f"HPM: {row['hpm']:,.0f}<br>Quantile: {quantile}"
                                     
-                                    # Add geographic info if available
                                     if 'wadmpr' in geo_cols:
                                         prov = row[geo_cols['wadmpr']] if geo_cols['wadmpr'] in row else 'N/A'
                                         tooltip += f"<br>Province: {prov}"
@@ -4193,32 +4201,25 @@ elif st.session_state.processing_step == 'model':
                                     name=f'{quantile} (HPM: {quantile_data["hpm"].min():,.0f} - {quantile_data["hpm"].max():,.0f})'
                                 ))
                         
-                        # Map layout
+                        # Map layout with style selection
                         center_lat = map_data[lat_col].mean()
                         center_lon = map_data[lon_col].mean()
-
-                        # map_style = st.selectbox(
-                        #     "Map Style",
-                        #     options=[
-                        #         ("OpenStreetMap", "open-street-map"),
-                        #         ("CartoDB Positron", "carto-positron"),
-                        #         ("CartoDB Dark", "carto-darkmatter"),
-                        #         ("Satellite", "satellite-streets"),
-                        #         ("Satellite Basic", "satellite")
-                        #     ],
-                        #     format_func=lambda x: x[0]
-                        # )
-                        # map_style_value = map_style[1]
+                        
+                        # Determine map style based on selection
+                        if map_style == "Satellite":
+                            mapbox_style = "satellite"
+                        else:
+                            mapbox_style = "open-street-map"
                         
                         fig.update_layout(
                             mapbox=dict(
-                                style="open-street-map",
+                                style=mapbox_style,  # This is the key change!
                                 center=dict(lat=center_lat, lon=center_lon),
                                 zoom=10
                             ),
                             height=600,
                             margin=dict(l=0, r=0, t=30, b=0),
-                            title=f"Property HPM Distribution - {len(map_data):,} properties (Quantiles, Viridis Colormap)",
+                            title=f"Property HPM Distribution - {len(map_data):,} properties (Quantiles, {map_style})",
                             legend=dict(
                                 yanchor="top",
                                 y=0.99,
@@ -4229,7 +4230,7 @@ elif st.session_state.processing_step == 'model':
                         
                         st.plotly_chart(fig, use_container_width=True)
                         
-                        # Map statistics
+                        # [Keep all your existing statistics code - unchanged]
                         col1, col2, col3, col4 = st.columns(4)
                         with col1:
                             st.metric("Properties Mapped", f"{len(map_data):,}")
@@ -4251,6 +4252,7 @@ elif st.session_state.processing_step == 'model':
                     
                 except Exception as e:
                     st.error(f"Map generation failed: {str(e)}")
+
         else:
             st.info("📍 Map visualization requires latitude, longitude, and hpm columns")
         
