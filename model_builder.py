@@ -346,7 +346,6 @@ def user_login_page():
         with st.expander("📋 Demo Credentials", expanded=False):
             st.info("**Demo Users:**")
             st.code("Username: jokowi, Password: lohkotanyasaya")
-            st.code("Username: user2, Password: pass456")
 
 # Initialize authentication session state
 if 'user_authenticated' not in st.session_state:
