@@ -2984,10 +2984,10 @@ elif st.session_state.processing_step == 'sc_bc':
                 if len(filtered_df) != len(df):
                     st.info(f"📊 Showing {len(filtered_df):,} of {len(df):,} records")
                 
-                # Display the data table - hide pandas index (older Streamlit)
+                # Display the data table - only show specific columns
                 display_columns = ['id', 'name', 'longitude', 'latitude', 'wadmpr', 'wadmkk', 'wadmkc']
                 display_df = filtered_df[display_columns]
-                st.dataframe(display_df.reset_index(drop=True), use_container_width=True, height=400)
+                st.dataframe(display_df, use_container_width=True, height=400)
                 
                 # Export functionality
                 col1, col2, col3 = st.columns(3)
@@ -3151,7 +3151,7 @@ elif st.session_state.processing_step == 'sc_bc':
             
             with tab3:
                 st.markdown("#### ✏️ Edit Record")
-                st.info("💡 Edit coordinates and automatically update administrative data")
+                st.info("💡 Edit name and/or coordinates - administrative data updates automatically")
                 
                 col1, col2 = st.columns(2)
                 
@@ -3177,6 +3177,14 @@ elif st.session_state.processing_step == 'sc_bc':
                         st.warning("⚠️ ID not found")
                 
                 with col2:
+                    # Add new name field
+                    edit_name = st.text_input(
+                        "New Name (leave blank to keep current):",
+                        value="",
+                        key=f"edit_name_{table_name}",
+                        help="Enter new city name or leave blank to keep existing name"
+                    )
+                    
                     edit_longitude = st.number_input(
                         "New Longitude:", 
                         min_value=-180.0, max_value=180.0, 
@@ -3247,10 +3255,15 @@ elif st.session_state.processing_step == 'sc_bc':
                                     if not wadm_data:
                                         st.error("❌ Cannot find administrative data for these coordinates")
                                     else:
+                                        # Prepare name update
+                                        current_row = df[df['id'] == edit_id].iloc[0]
+                                        final_name = edit_name.strip() if edit_name.strip() else current_row['name']
+                                        
                                         # Update record
                                         update_query = f"""
                                         UPDATE {table_name} 
                                         SET 
+                                            name = '{final_name}',
                                             geometry = ST_SetSRID(ST_MakePoint({edit_longitude}, {edit_latitude}), 4326),
                                             wadmpr = '{wadm_data[0]}',
                                             wadmkk = '{wadm_data[1]}',
@@ -3260,7 +3273,14 @@ elif st.session_state.processing_step == 'sc_bc':
                                         conn.execute(text(update_query))
                                         conn.commit()
                                         
-                                        st.success(f"✅ Successfully updated record ID {edit_id}")
+                                        # Show what was updated
+                                        update_msg = f"✅ Successfully updated record ID {edit_id}:"
+                                        if edit_name.strip():
+                                            update_msg += f"\n- Name: '{current_row['name']}' → '{final_name}'"
+                                        update_msg += f"\n- Coordinates updated"
+                                        update_msg += f"\n- Administrative data refreshed"
+                                        
+                                        st.success(update_msg)
                                         st.info("🔄 Please reload the table to see changes")
                                         
                         except Exception as e:
