@@ -133,12 +133,12 @@ if fun_mode:
     <style>
       /* Main app area */
       [data-testid="stAppViewContainer"] {
-        background-color: #8FBC8F !important;
+        background-color: #FFEFD5 !important;
       }
 
       /* Sidebar */
       section[data-testid="stSidebar"] {
-        background-color: #8FBC8F !important;
+        background-color: #F6F4F0 !important;
       }
     </style>
     """,
