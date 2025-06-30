@@ -68,6 +68,46 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
+# --- NEWS TICKER / CRAWL AT BOTTOM ---
+ticker_items = [
+    "Breaking: Market hits all-time high",
+    "Weather update: Light showers expected",
+    "Tip: Remember to back up your data",
+    # …or dynamically build from your news DataFrame…
+]
+ticker_text = "   ⚫   ".join(ticker_items)
+
+st.markdown(f"""
+  <style>
+    .news-ticker {{
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      width: 100%;
+      background: rgba(23,48,28,0.9);
+      color: #F6F4F0;
+      font-family: 'Heebo', sans-serif;
+      overflow: hidden;
+      white-space: nowrap;
+      padding: 0.5rem 0;
+      z-index: 9999;
+    }}
+    .news-ticker__text {{
+      display: inline-block;
+      padding-left: 100%;
+      animation: ticker 30s linear infinite;
+    }}
+    @keyframes ticker {{
+      0%   {{ transform: translateX(0); }}
+      100% {{ transform: translateX(-100%); }}
+    }}
+  </style>
+  <div class="news-ticker">
+    <div class="news-ticker__text">{ticker_text}</div>
+  </div>
+""", unsafe_allow_html=True)
+# --- END TICKER ---
+
 def initialize_session_state():
     """Initialize session state variables"""
     defaults = {
