@@ -115,23 +115,28 @@ st.markdown("""
 
     /* custom top header bar */
   header[data-testid="stHeader"] {
+    position: relative !important;
     background-image: none !important;
-    background-color: #17301C;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    height: 5rem;
-    padding: 0;
-  }
+    background-color: #17301C !important;
+    height: 5rem !important;
+    padding: 0 !important;
+    }
+
 
   /* 2) inject new title */
-  header[data-testid="stHeader"]::after {
+  header[data-testid="stHeader"]::before {
     content: "RHR MODEL BUILDER";
-    color: #F6F4F0;
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    white-space: nowrap;
     font-family: "Heebo", sans-serif;
     font-size: 1.75rem;
     font-weight: 800;
-  }
+    color: #F6F4F0;
+    }
+
 
 
 
