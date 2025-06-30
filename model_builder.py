@@ -41,6 +41,30 @@ from skl2onnx import convert_sklearn
 from skl2onnx.common.data_types import FloatTensorType
 import onnx
 
+# --- ADD THIS: CUSTOM BACKGROUND STYLE ---
+st.markdown(
+    """
+    <style>
+      /* The main app container: */
+      .appview-container, .main, .block-container {
+        /* a soft gradient; swap to a solid color if you prefer */
+        background: radial-gradient(
+          circle at top left,
+          rgba(23, 48, 28, 0.7),
+          #F6F4F0
+        ) !important;
+      }
+      /* Optionally: make sidebar match or complement the main bg */
+      section[data-testid="stSidebar"] {
+        background: rgba(23, 48, 28, 0.1) !important;
+      }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+# --- END STYLE OVERRIDE ---
+
+
 warnings.filterwarnings('ignore')
 
 def initialize_session_state():
