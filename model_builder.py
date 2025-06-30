@@ -43,128 +43,6 @@ import onnx
 
 warnings.filterwarnings('ignore')
 
-# Set page config
-st.set_page_config(
-    page_title="RHR MODEL BUILDER 𓀒 𓀓 𓀔",
-    page_icon="🏠",
-    layout="wide"
-)
-
-# ————— Global Styling ———————————————
-st.markdown("""
-<style>
-  /* ————————————— Global Fonts & Smoothing ————————————— */
-  @import url('https://fonts.googleapis.com/css?family=Heebo:400,600,800,900');
-  @import url('https://fonts.googleapis.com/css?family=Georgia');
-  body * {
-    -webkit-font-smoothing: subpixel-antialiased !important;
-    text-rendering: optimizeLegibility !important;
-  }
-
-  /* ————————————— Hide Default Streamlit Branding ————————————— */
-  div[data-testid="stToolbarActions"],
-  footer {
-    visibility: hidden;
-  }
-
-  /* ————————————— Buttons & Link-Buttons ————————————— */
-  div.stButton > button:first-child,
-  div.stLinkButton > a:first-child {
-    width: 200px;
-    background-color: rgba(23, 48, 28, 0.95);
-    color: #F6F4F0 !important;
-    font-family: "Heebo";
-    font-weight: 600;
-    font-size: 15px;
-    letter-spacing: 0.25px;
-  }
-
-  /* ————————————— Sidebar Styling ————————————— */
-  section[data-testid="stSidebar"] {
-    top: 5rem;            /* push below fixed header */
-    width: 200px !important;
-    background: #F6F4F0;
-    border-right: 1.5px solid rgba(23, 48, 28, 0.5);
-  }
-  /* Sidebar collapse button */
-  div[data-testid="collapsedControl"] {
-    position: fixed;
-    top: 0.5rem;
-    left: 200px;
-    z-index: 101;
-    background-color: #17301C !important;
-    border-radius: 0 0.25rem 0.25rem 0 !important;
-  }
-  div[data-testid="collapsedControl"] svg {
-    color: #F6F4F0 !important;
-  }
-
-  /* ————————————— Dropdowns & Selectboxes ————————————— */
-  div[data-baseweb="select"] {
-    font-family: "Heebo"; font-weight: 600; font-size: 15px; letter-spacing: 0.25px;
-  }
-  ul[data-testid="stVirtualDropdown"] li {
-    text-align: center; font-family: "Heebo";
-  }
-  ul[data-testid="stVirtualDropdown"] li:hover {
-    background-color: #B3BCB4; color: rgba(23, 48, 28, 0.95);
-  }
-
-  /* ————————————— Tab Panels Spacing ————————————— */
-  div[data-baseweb="tab-panel"] {
-    padding-top: 2rem;
-  }
-
-  /* ————————————— Expanders ————————————— */
-  div[data-testid="stExpander"] {
-    background-color: rgba(247, 250, 248, 0.45);
-    border: 0;
-  }
-
-  /* ————————————— Markdown Headers ————————————— */
-  div[data-testid="stMarkdownContainer"] h2 {
-    font-family: "Heebo"; font-weight: 800; letter-spacing: 0.25px;
-  }
-
-  /* ————————————— Fixed Full-Width Header ————————————— */
-  header[data-testid="stHeader"] {
-    position: fixed !important;
-    top: 0;
-    left: 0;
-    width: 100vw !important;
-    z-index: 100;
-    background-color: #17301C !important;
-    height: 5rem !important;
-    padding: 0 !important;
-  }
-  /* Center the title on one line */
-  header[data-testid="stHeader"]::before {
-    content: "RHR MODEL BUILDER";
-    position: absolute;
-    top: 50%; left: 50%;
-    transform: translate(-50%, -50%);
-    white-space: nowrap;
-    font-family: "Heebo", sans-serif;
-    font-size: 1.75rem;
-    font-weight: 800;
-    color: #F6F4F0;
-  }
-  /* Ensure no hidden bits inside header */
-  header[data-testid="stHeader"] * {
-    visibility: visible !important;
-  }
-
-  /* ————————— Push App Content Below Header ————————— */
-  div[data-testid="stAppViewContainer"] > section {
-    padding-top: 5rem !important;
-  }
-</style>
-""", unsafe_allow_html=True)
-
-
-# ————————————————————————————————————————
-
-
 def initialize_session_state():
     """Initialize session state variables"""
     defaults = {
@@ -1718,25 +1596,25 @@ if 'processing_step' not in st.session_state:
 analyzer = st.session_state.analyzer
 
 
-# # Main App Header
-# if fun_mode:
-#     st.markdown(
-#         """
-#         <div style='text-align: center; font-weight: bold; font-size: 3rem; margin-bottom: 1rem;'>
-#             RHR MODEL BUILDER 𓀒 𓀓 𓀔
-#         </div>
-#         """,
-#         unsafe_allow_html=True
-#     )
-# else:
-#     st.markdown(
-#         """
-#         <div style='text-align: center; font-weight: bold; font-size: 3rem; margin-bottom: 1rem;'>
-#             RHR MODEL BUILDER 
-#         </div>
-#         """,
-#         unsafe_allow_html=True
-#     )
+# Main App Header
+if fun_mode:
+    st.markdown(
+        """
+        <div style='text-align: center; font-weight: bold; font-size: 3rem; margin-bottom: 1rem;'>
+            RHR MODEL BUILDER 𓀒 𓀓 𓀔
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+else:
+    st.markdown(
+        """
+        <div style='text-align: center; font-weight: bold; font-size: 3rem; margin-bottom: 1rem;'>
+            RHR MODEL BUILDER 
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
 
 # Navigation buttons
 st.markdown("### 🧭 Analysis Workflow")
