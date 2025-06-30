@@ -131,28 +131,19 @@ if fun_mode:
     st.markdown(
     """
     <style>
-      /* 1) Define a very gentle pastel cycle */
-      @keyframes pastelCycle {
-        0%   { background-color: #c0c0c0; }
-        25%  { background-color: #8FBC8F; }
-        50%  { background-color: #6B8E23; }
-        75%  { background-color: #3CB371; }
-        100% { background-color: #90EE90; }
-      }
-
-      /* 2) Apply to main app container with a very long duration */
+      /* Main app area */
       [data-testid="stAppViewContainer"] {
-        animation: pastelCycle 120s ease-in-out infinite;
+        background-color: #8FBC8F !important;
       }
 
-      /* 3) Sidebar uses same cycle to stay in sync */
+      /* Sidebar */
       section[data-testid="stSidebar"] {
-        animation: pastelCycle 120s ease-in-out infinite;
+        background-color: #8FBC8F !important;
       }
     </style>
     """,
     unsafe_allow_html=True,
-    )
+)
 
     almaz_logo = "https://bikincabang.id/wp-content/uploads/2024/07/WhatsApp_Image_2024-07-31_at_14.31.47_-_Damar_BikinCabang-removebg-preview.png"
 
