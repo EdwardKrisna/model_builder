@@ -48,7 +48,7 @@ st.markdown(
     <style>
       /* 1) Main app background */
       [data-testid="stAppViewContainer"] {
-        background-color: #F6F4F0 !important;
+        background-color: #8c8c8c !important;
       }
 
       /* 2) Sidebar background (keeps toggle & buttons intact) */
