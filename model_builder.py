@@ -45,13 +45,16 @@ import onnx
 st.markdown(
     """
     <style>
-      /* Change main app background */
-      .appview-container, 
-      .main, 
-      .block-container {
+      /* 1) Color the very page root so it always fills */
+      html, body, #root {
         background-color: #F6F4F0 !important;
       }
-      /* Change sidebar background */
+      /* 2) Allow the main Streamlit container to expand */
+      .block-container {
+        max-width: 100% !important;
+        padding: 1rem 2rem !important;
+      }
+      /* 3) Style the sidebar too */
       section[data-testid="stSidebar"] {
         background-color: #CDD4D0 !important;
       }
