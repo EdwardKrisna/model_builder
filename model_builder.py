@@ -45,41 +45,21 @@ import onnx
 st.markdown(
     """
     <style>
-      /* 1) Main app background: radial gradient */
+      /* Change main app background */
       .appview-container, 
       .main, 
       .block-container {
-        background: radial-gradient(
-          circle at top left,
-          rgba(23, 48, 28, 0.7),
-          #F6F4F0
-        ) !important;
+        background-color: #F6F4F0 !important;
       }
-
-      /* 2) Sidebar background (preserve buttons) */
+      /* Change sidebar background */
       section[data-testid="stSidebar"] {
-        background: #F6F4F0 !important;
-        border-right: 1.5px solid rgba(23, 48, 28, 0.5) !important;
-      }
-
-      /* 3) Remove top white header bar */
-      header[data-testid="stHeader"] {
-        display: none !important;
-      }
-
-      /* 4) Remove top toolbar actions */
-      div[data-testid="stToolbarActions"] {
-        display: none !important;
-      }
-
-      /* 5) Pull content up to fill gap left by header */
-      .appview-container > section:nth-child(2) {
-        padding-top: 1rem !important;
+        background-color: #CDD4D0 !important;
       }
     </style>
     """,
-    unsafe_allow_html=True,
+    unsafe_allow_html=True
 )
+
 
 # --- END STYLE OVERRIDE ---
 
