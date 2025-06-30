@@ -51,71 +51,85 @@ st.set_page_config(
 )
 
 # ————— Global Styling ———————————————
-st.markdown('''
+st.markdown("""
 <style>
-@import url('https://fonts.googleapis.com/css?family=Heebo:400,600,800,900');  
-@import url('https://fonts.googleapis.com/css?family=Georgia');
+    @import url('https://fonts.googleapis.com/css?family=Heebo:400,600,800,900');
+    @import url('https://fonts.googleapis.com/css?family=Georgia');
 
-/* Smooth text, custom fonts */
-body * { 
-    -webkit-font-smoothing: subpixel-antialiased !important; 
-    text-rendering: optimizeLegibility !important;
-}
+    /* Smooth text, custom fonts */
+    body * { 
+        -webkit-font-smoothing: subpixel-antialiased !important; 
+        text-rendering: optimizeLegibility !important;
+    }
 
-/* Hide Streamlit branding & toolbar */
-div[data-testid="stToolbarActions"],
-footer {
-    visibility: hidden;
-}
+    /* Hide Streamlit branding & toolbar */
+    div[data-testid="stToolbarActions"],
+    footer {
+        visibility: hidden;
+    }
 
-/* Buttons */
-div.stButton > button:first-child,
-div.stLinkButton > a:first-child {
-    width: 200px;
-    background-color: rgba(23, 48, 28, 0.95);
-    color: #F6F4F0 !important;
-    font-family: "Heebo";
-    font-weight: 600;
-    font-size: 15px;
-    letter-spacing: 0.25px;
-}
+    /* Buttons */
+    div.stButton > button:first-child,
+    div.stLinkButton > a:first-child {
+        width: 200px;
+        background-color: rgba(23, 48, 28, 0.95);
+        color: #F6F4F0 !important;
+        font-family: "Heebo";
+        font-weight: 600;
+        font-size: 15px;
+        letter-spacing: 0.25px;
+    }
 
-/* Sidebar */
-section[data-testid="stSidebar"] {
-    top: 5rem;
-    width: 200px !important; 
-    background: #F6F4F0;
-    border-right: 1.5px solid rgba(23, 48, 28, 0.5);
-}
+    /* Sidebar */
+    section[data-testid="stSidebar"] {
+        top: 5rem;
+        width: 200px !important; 
+        background: #F6F4F0;
+        border-right: 1.5px solid rgba(23, 48, 28, 0.5);
+    }
 
-/* Selectboxes & dropdowns */
-div[data-baseweb="select"] {
-    font-family: "Heebo"; font-weight: 600; font-size: 15px; letter-spacing: 0.25px;
-}
-ul[data-testid="stVirtualDropdown"] li {
-    text-align: center; font-family: "Heebo";
-}
-ul[data-testid="stVirtualDropdown"] li:hover {
-    background-color: #B3BCB4; color: rgba(23, 48, 28, 0.95);
-}
+    /* Selectboxes & dropdowns */
+    div[data-baseweb="select"] {
+        font-family: "Heebo"; font-weight: 600; font-size: 15px; letter-spacing: 0.25px;
+    }
+    ul[data-testid="stVirtualDropdown"] li {
+        text-align: center; font-family: "Heebo";
+    }
+    ul[data-testid="stVirtualDropdown"] li:hover {
+        background-color: #B3BCB4; color: rgba(23, 48, 28, 0.95);
+    }
 
-/* Tab panels spacing */
-div[data-baseweb="tab-panel"] { padding-top: 2rem; }
+    /* Tab panels spacing */
+    div[data-baseweb="tab-panel"] { padding-top: 2rem; }
 
-/* Sidebar expander backgrounds */
-div[data-testid="stExpander"] {
-    background-color: rgba(247, 250, 248, 0.45);
-    border: 0;
-}
+    /* Sidebar expander backgrounds */
+    div[data-testid="stExpander"] {
+        background-color: rgba(247, 250, 248, 0.45);
+        border: 0;
+    }
 
-/* Custom headers & markdown */
-div[data-testid="stMarkdownContainer"] h2 {
-    font-family: "Heebo"; font-weight: 800; letter-spacing: 0.25px;
-}
+    /* Custom headers & markdown */
+    div[data-testid="stMarkdownContainer"] h2 {
+        font-family: "Heebo"; font-weight: 800; letter-spacing: 0.25px;
+    }
 
-/* And any other selectors from your news app… */
+    /* custom top header bar */
+  header[data-testid="stHeader"] {
+      background: url('https://res.cloudinary.com/drwsupfyj/image/upload/v1700734920/environmentalnewsscraper/gaymiakzqtkjyafo5ov3.png') 
+                  no-repeat center left;
+      background-size: contain;
+      background-color: rgb(23, 48, 28);
+      height: 5rem;
+      padding: 0;      /* override any default padding */
+  }
+
+  /* make sure you haven’t hidden the header itself: */
+  header[data-testid="stHeader"] * {
+      visibility: visible !important;
+  }
 </style>
-''', unsafe_allow_html=True)
+""", unsafe_allow_html=True)
+
 # ————————————————————————————————————————
 
 
