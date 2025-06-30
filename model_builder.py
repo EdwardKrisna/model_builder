@@ -70,9 +70,10 @@ st.markdown(
 
 # --- NEWS TICKER / CRAWL AT BOTTOM ---
 ticker_items = [
-    "Breaking: Market hits all-time high",
-    "Weather update: Light showers expected",
-    "Tip: Remember to back up your data",
+    "Breaking News Hari Ini"
+    "We wok the tok,not only tok the tok",
+    "Hari ini sepertinya hujan, jangan lupa bersedekah!",
+    "Lalu lintas terlihat macet, selamat bermacet ria!",
     # …or dynamically build from your news DataFrame…
 ]
 ticker_text = "   ⚫   ".join(ticker_items)
