@@ -133,9 +133,10 @@ if fun_mode:
     <style>
       /* 1) Define a very gentle pastel cycle */
       @keyframes pastelCycle {
-        0%   { background-color: #FAF3F3; }
-        33%  { background-color: #F3FAF7; }
-        66%  { background-color: #F3F5FA; }
+        0%   { background-color: #000000; }
+        25%  { background-color: #F3FAF7; }
+        50%  { background-color: #F3FAF7; }
+        75%  { background-color: #F3F5FA; }
         100% { background-color: #FAF3F3; }
       }
 
