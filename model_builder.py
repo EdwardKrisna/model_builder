@@ -138,7 +138,7 @@ if fun_mode:
 
       /* Sidebar */
       section[data-testid="stSidebar"] {
-        background-color: #17301C !important;
+        background-color: #F6F4F0 !important;
       }
     </style>
     """,
