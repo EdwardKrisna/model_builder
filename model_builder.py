@@ -68,12 +68,18 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
+almaz_logo = "https://bikincabang.id/wp-content/uploads/2024/07/WhatsApp_Image_2024-07-31_at_14.31.47_-_Damar_BikinCabang-removebg-preview.png"
+
 # --- NEWS TICKER / CRAWL AT BOTTOM ---
 ticker_items = [
     "Breaking News Hari Ini",
     "We wok the tok,not only tok the tok",
     "Hari ini sepertinya hujan, jangan lupa bersedekah!",
     "Lalu lintas terlihat macet, selamat bermacet ria!",
+    # Here’s your sponsor item, with an inline image:
+    f"Today’s Sponsor&nbsp;"
+    f"<img src='{almaz_logo}' "
+    f"style='height:1rem; vertical-align:middle; margin:0 0.5rem;'/>",
     # …or dynamically build from your news DataFrame…
 ]
 ticker_text = "   ⚫   ".join(ticker_items)
