@@ -61,10 +61,6 @@ st.markdown(
       header[data-testid="stHeader"] {
         display: none !important;
       }
-      /* Remove top toolbar actions */
-      div[data-testid="stToolbarActions"] {
-        display: none !important;
-      }
       /* Shift content up to fill gap */
       .appview-container > section:nth-child(2) {
         padding-top: 1rem !important;
