@@ -41,38 +41,6 @@ from skl2onnx import convert_sklearn
 from skl2onnx.common.data_types import FloatTensorType
 import onnx
 
-# --- ADD THIS: CUSTOM BACKGROUND STYLE ---
-st.markdown(
-    """
-    <style>
-      /* 1) Color the very page behind everything */
-      body, 
-      [data-testid="stAppViewContainer"] {
-        background-color: #F6F4F0 !important;
-      }
-      /* 2) Color the main content section behind blocks */
-      section[data-testid="stAppViewContainer"] > section:nth-child(2) {
-        background-color: #F6F4F0 !important;
-      }
-      /* 3) Make the inner block-container fill the width (wide layout) */
-      div.block-container {
-        max-width: none !important;
-        width: auto !important;
-        background-color: transparent !important;
-      }
-      /* 4) Sidebar background */
-      section[data-testid="stSidebar"] {
-        background-color: #CDD4D0 !important;
-      }
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
-
-
-# --- END STYLE OVERRIDE ---
-
-
 warnings.filterwarnings('ignore')
 
 def initialize_session_state():
