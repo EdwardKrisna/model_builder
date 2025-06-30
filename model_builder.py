@@ -134,10 +134,10 @@ if fun_mode:
       /* 1) Define a very gentle pastel cycle */
       @keyframes pastelCycle {
         0%   { background-color: #c0c0c0; }
-        25%  { background-color: #F3FAF7; }
-        50%  { background-color: #F3FAF7; }
-        75%  { background-color: #F3F5FA; }
-        100% { background-color: #FAF3F3; }
+        25%  { background-color: #8FBC8F; }
+        50%  { background-color: #6B8E23; }
+        75%  { background-color: #3CB371; }
+        100% { background-color: #90EE90; }
       }
 
       /* 2) Apply to main app container with a very long duration */
