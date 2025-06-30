@@ -115,14 +115,13 @@ st.markdown("""
 
     /* custom top header bar */
   header[data-testid="stHeader"] {
-    background: url('…END banner URL…') no-repeat left center;
-      background: url('https://res.cloudinary.com/drwsupfyj/image/upload/v1700734920/environmentalnewsscraper/gaymiakzqtkjyafo5ov3.png') 
-                  no-repeat center left;
-      background-size: contain;
-      background-color: rgb(23, 48, 28);
-      height: 5rem;
-      padding: 0;      /* override any default padding */
-  }
+    background: url('https://your-image-hosting.com/path/to/rhr_model_builder_banner.png') no-repeat center left;
+    background-size: contain;
+    background-color: rgb(23, 48, 28);
+    height: 5rem;
+    padding: 0;
+    }
+
 
   /* make sure you haven’t hidden the header itself: */
   header[data-testid="stHeader"] * {
