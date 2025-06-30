@@ -79,7 +79,7 @@ ticker_items = [
     # Here’s your sponsor item, with an inline image:
     f"Today’s Sponsor&nbsp;"
     f"<img src='{almaz_logo}' "
-    f"style='height:2rem; vertical-align:middle; margin:0 0.5rem;'/>",
+    f"style='height:3rem; vertical-align:middle; margin:0 0.5rem;'/>",
     # …or dynamically build from your news DataFrame…
 ]
 ticker_text = "   ⚫   ".join(ticker_items)
