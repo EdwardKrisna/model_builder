@@ -122,7 +122,10 @@ st.set_page_config(
 #     unsafe_allow_html=True
 # )
 
-fun_mode = st.sidebar.checkbox("DONT CHECK THIS BOX !!!!!!!!", value=False, disabled=True)
+fun_mode = st.sidebar.checkbox("DONT CHECK THIS BOX !!!!!!!!", 
+                               value=False, 
+                            #    disabled=True
+                               )
 
 if fun_mode:
     st.markdown(
