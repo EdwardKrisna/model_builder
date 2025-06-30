@@ -43,6 +43,23 @@ import onnx
 
 warnings.filterwarnings('ignore')
 
+st.markdown(
+    """
+    <style>
+      /* 1) Main app background */
+      [data-testid="stAppViewContainer"] {
+        background-color: #F6F4F0 !important;
+      }
+
+      /* 2) Sidebar background (keeps toggle & buttons intact) */
+      section[data-testid="stSidebar"] {
+        background-color: #CDD4D0 !important;
+      }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
 def initialize_session_state():
     """Initialize session state variables"""
     defaults = {
