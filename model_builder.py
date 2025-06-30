@@ -45,12 +45,15 @@ import onnx
 st.markdown(
     """
     <style>
-      /* 1) Main app background */
+      /* 1) Page background (behind everything) */
+      body {
+        background-color: #F6F4F0 !important;
+      }
+      /* 2) Main app container */
       [data-testid="stAppViewContainer"] {
         background-color: #F6F4F0 !important;
       }
-
-      /* 2) Sidebar background (keeps toggle & buttons intact) */
+      /* 3) Sidebar background (preserves collapse button & scrolling) */
       section[data-testid="stSidebar"] {
         background-color: #CDD4D0 !important;
       }
