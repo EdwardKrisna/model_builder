@@ -46,14 +46,21 @@ warnings.filterwarnings('ignore')
 st.markdown(
     """
     <style>
-      /* 1) Main app background */
-      [data-testid="stAppViewContainer"] {
-        background-color: #8c8c8c !important;
+      /* Define the color‐changing keyframes */
+      @keyframes bgColorCycle {
+        0%   { background-color: #F6F4F0; }
+        50%  { background-color: #DFE3E0; }
+        100% { background-color: #CDD4D0; }
       }
 
-      /* 2) Sidebar background (keeps toggle & buttons intact) */
+      /* Apply the animation to the main app container */
+      [data-testid="stAppViewContainer"] {
+        animation: bgColorCycle 20s ease-in-out infinite alternate;
+      }
+
+      /* (Optional) Sidebar can also gently shift if you like */
       section[data-testid="stSidebar"] {
-        background-color: #CDD4D0 !important;
+        animation: bgColorCycle 20s ease-in-out infinite alternate-reverse;
       }
     </style>
     """,
