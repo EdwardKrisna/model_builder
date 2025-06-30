@@ -109,12 +109,12 @@ def evaluate(actual, predicted, squared=False, model=None):
     }
     return metrics
 
-# # Set page config
-# st.set_page_config(
-#     page_title="RHR MODEL BUILDER 𓀒 𓀓 𓀔",
-#     page_icon="🏠",
-#     layout="wide"
-# )
+# Set page config
+st.set_page_config(
+    page_title="RHR MODEL BUILDER 𓀒 𓀓 𓀔",
+    page_icon="🏠",
+    layout="wide"
+)
 
 # Custom CSS
 # st.markdown(
