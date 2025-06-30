@@ -46,21 +46,22 @@ warnings.filterwarnings('ignore')
 st.markdown(
     """
     <style>
-      /* Define the color‐changing keyframes */
-      @keyframes bgColorCycle {
-        0%   { background-color: #F6F4F0; }
-        50%  { background-color: #DFE3E0; }
-        100% { background-color: #CDD4D0; }
+      /* 1) Define a very gentle pastel cycle */
+      @keyframes pastelCycle {
+        0%   { background-color: #FAF3F3; }
+        33%  { background-color: #F3FAF7; }
+        66%  { background-color: #F3F5FA; }
+        100% { background-color: #FAF3F3; }
       }
 
-      /* Apply the animation to the main app container */
+      /* 2) Apply to main app container with a very long duration */
       [data-testid="stAppViewContainer"] {
-        animation: bgColorCycle 20s ease-in-out infinite alternate;
+        animation: pastelCycle 120s ease-in-out infinite;
       }
 
-      /* (Optional) Sidebar can also gently shift if you like */
+      /* 3) Sidebar uses same cycle to stay in sync */
       section[data-testid="stSidebar"] {
-        animation: bgColorCycle 20s ease-in-out infinite alternate-reverse;
+        animation: pastelCycle 120s ease-in-out infinite;
       }
     </style>
     """,
