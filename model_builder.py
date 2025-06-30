@@ -45,21 +45,15 @@ import onnx
 st.markdown(
     """
     <style>
-      /* 1) Make sure html/body/root all fill the viewport: */
-      html, body, #root {
-        height: 100%;
-        width: 100%;
-        margin: 0;
-        padding: 0;
+      /* 1) Body behind everything */
+      body {
+        background-color: #F6F4F0 !important;
       }
-
-      /* 2) Color the main app area and ensure it’s at least full-height: */
+      /* 2) Main app content area */
       [data-testid="stAppViewContainer"] {
         background-color: #F6F4F0 !important;
-        min-height: 100vh;
       }
-
-      /* 3) Color the sidebar (keeps collapse button & scrolling intact): */
+      /* 3) Sidebar panel */
       section[data-testid="stSidebar"] {
         background-color: #CDD4D0 !important;
       }
