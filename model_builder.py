@@ -115,6 +115,7 @@ st.markdown("""
 
     /* custom top header bar */
   header[data-testid="stHeader"] {
+    background: url('…END banner URL…') no-repeat left center;
       background: url('https://res.cloudinary.com/drwsupfyj/image/upload/v1700734920/environmentalnewsscraper/gaymiakzqtkjyafo5ov3.png') 
                   no-repeat center left;
       background-size: contain;
@@ -1686,25 +1687,25 @@ if 'processing_step' not in st.session_state:
 analyzer = st.session_state.analyzer
 
 
-# Main App Header
-if fun_mode:
-    st.markdown(
-        """
-        <div style='text-align: center; font-weight: bold; font-size: 3rem; margin-bottom: 1rem;'>
-            RHR MODEL BUILDER 𓀒 𓀓 𓀔
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
-else:
-    st.markdown(
-        """
-        <div style='text-align: center; font-weight: bold; font-size: 3rem; margin-bottom: 1rem;'>
-            RHR MODEL BUILDER 
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
+# # Main App Header
+# if fun_mode:
+#     st.markdown(
+#         """
+#         <div style='text-align: center; font-weight: bold; font-size: 3rem; margin-bottom: 1rem;'>
+#             RHR MODEL BUILDER 𓀒 𓀓 𓀔
+#         </div>
+#         """,
+#         unsafe_allow_html=True
+#     )
+# else:
+#     st.markdown(
+#         """
+#         <div style='text-align: center; font-weight: bold; font-size: 3rem; margin-bottom: 1rem;'>
+#             RHR MODEL BUILDER 
+#         </div>
+#         """,
+#         unsafe_allow_html=True
+#     )
 
 # Navigation buttons
 st.markdown("### 🧭 Analysis Workflow")
