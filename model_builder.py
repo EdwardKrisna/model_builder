@@ -115,12 +115,24 @@ st.markdown("""
 
     /* custom top header bar */
   header[data-testid="stHeader"] {
-    background: url('https://your-image-hosting.com/path/to/rhr_model_builder_banner.png') no-repeat center left;
-    background-size: contain;
-    background-color: rgb(23, 48, 28);
+    background-image: none !important;
+    background-color: #17301C;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     height: 5rem;
     padding: 0;
-    }
+  }
+
+  /* 2) inject new title */
+  header[data-testid="stHeader"]::after {
+    content: "RHR MODEL BUILDER";
+    color: #F6F4F0;
+    font-family: "Heebo", sans-serif;
+    font-size: 1.75rem;
+    font-weight: 800;
+  }
+
 
 
   /* make sure you haven’t hidden the header itself: */
