@@ -45,15 +45,22 @@ import onnx
 st.markdown(
     """
     <style>
-      /* 1) Body behind everything */
-      body {
-        background-color: #F6F4F0 !important;
-      }
-      /* 2) Main app content area */
+      /* 1) Color the very page behind everything */
+      body, 
       [data-testid="stAppViewContainer"] {
         background-color: #F6F4F0 !important;
       }
-      /* 3) Sidebar panel */
+      /* 2) Color the main content section behind blocks */
+      section[data-testid="stAppViewContainer"] > section:nth-child(2) {
+        background-color: #F6F4F0 !important;
+      }
+      /* 3) Make the inner block-container fill the width (wide layout) */
+      div.block-container {
+        max-width: none !important;
+        width: auto !important;
+        background-color: transparent !important;
+      }
+      /* 4) Sidebar background */
       section[data-testid="stSidebar"] {
         background-color: #CDD4D0 !important;
       }
