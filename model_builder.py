@@ -43,78 +43,6 @@ import onnx
 
 warnings.filterwarnings('ignore')
 
-st.markdown(
-    """
-    <style>
-      /* 1) Define a very gentle pastel cycle */
-      @keyframes pastelCycle {
-        0%   { background-color: #FAF3F3; }
-        33%  { background-color: #F3FAF7; }
-        66%  { background-color: #F3F5FA; }
-        100% { background-color: #FAF3F3; }
-      }
-
-      /* 2) Apply to main app container with a very long duration */
-      [data-testid="stAppViewContainer"] {
-        animation: pastelCycle 120s ease-in-out infinite;
-      }
-
-      /* 3) Sidebar uses same cycle to stay in sync */
-      section[data-testid="stSidebar"] {
-        animation: pastelCycle 120s ease-in-out infinite;
-      }
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
-
-almaz_logo = "https://bikincabang.id/wp-content/uploads/2024/07/WhatsApp_Image_2024-07-31_at_14.31.47_-_Damar_BikinCabang-removebg-preview.png"
-
-# --- NEWS TICKER / CRAWL AT BOTTOM ---
-ticker_items = [
-    "Breaking News Hari Ini",
-    "We wok the tok,not only tok the tok",
-    "Hari ini sepertinya hujan, jangan lupa bersedekah!",
-    "Lalu lintas terlihat macet, selamat bermacet ria!",
-    # Here’s your sponsor item, with an inline image:
-    f"Today’s Sponsor : Almaz Fried Chicken&nbsp;"
-    f"<img src='{almaz_logo}' "
-    f"style='height:3rem; vertical-align:middle; margin:0 0.5rem;'/>",
-    # …or dynamically build from your news DataFrame…
-]
-ticker_text = "   ⚫   ".join(ticker_items)
-
-st.markdown(f"""
-  <style>
-    .news-ticker {{
-      position: fixed;
-      bottom: 0;
-      left: 0;
-      width: 100%;
-      background: rgba(23,48,28,0.9);
-      color: #F6F4F0;
-      font-family: 'Heebo', sans-serif;
-      overflow: hidden;
-      white-space: nowrap;
-      padding: 0.5rem 0;
-      z-index: 9999;
-    }}
-    .news-ticker__text {{
-      display: inline-block;
-      padding-left: 100%;
-      animation: ticker 30s linear infinite;
-    }}
-    @keyframes ticker {{
-      0%   {{ transform: translateX(0); }}
-      100% {{ transform: translateX(-100%); }}
-    }}
-  </style>
-  <div class="news-ticker">
-    <div class="news-ticker__text">{ticker_text}</div>
-  </div>
-""", unsafe_allow_html=True)
-# --- END TICKER ---
-
 def initialize_session_state():
     """Initialize session state variables"""
     defaults = {
@@ -195,6 +123,79 @@ st.set_page_config(
 # )
 
 fun_mode = st.sidebar.checkbox("DONT CHECK THIS BOX !!!!!!!!", value=False, disabled=True)
+
+if fun_mode:
+    st.markdown(
+    """
+    <style>
+      /* 1) Define a very gentle pastel cycle */
+      @keyframes pastelCycle {
+        0%   { background-color: #FAF3F3; }
+        33%  { background-color: #F3FAF7; }
+        66%  { background-color: #F3F5FA; }
+        100% { background-color: #FAF3F3; }
+      }
+
+      /* 2) Apply to main app container with a very long duration */
+      [data-testid="stAppViewContainer"] {
+        animation: pastelCycle 120s ease-in-out infinite;
+      }
+
+      /* 3) Sidebar uses same cycle to stay in sync */
+      section[data-testid="stSidebar"] {
+        animation: pastelCycle 120s ease-in-out infinite;
+      }
+    </style>
+    """,
+    unsafe_allow_html=True,
+    )
+
+    almaz_logo = "https://bikincabang.id/wp-content/uploads/2024/07/WhatsApp_Image_2024-07-31_at_14.31.47_-_Damar_BikinCabang-removebg-preview.png"
+
+    # --- NEWS TICKER / CRAWL AT BOTTOM ---
+    ticker_items = [
+        "Breaking News Hari Ini",
+        "We wok the tok,not only tok the tok",
+        "Hari ini sepertinya hujan, jangan lupa bersedekah!",
+        "Lalu lintas terlihat macet, selamat bermacet ria!",
+        # Here’s your sponsor item, with an inline image:
+        f"Today’s Sponsor : Almaz Fried Chicken&nbsp;"
+        f"<img src='{almaz_logo}' "
+        f"style='height:3rem; vertical-align:middle; margin:0 0.5rem;'/>",
+        # …or dynamically build from your news DataFrame…
+    ]
+    ticker_text = "   ⚫   ".join(ticker_items)
+
+    st.markdown(f"""
+    <style>
+        .news-ticker {{
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        width: 100%;
+        background: rgba(23,48,28,0.9);
+        color: #F6F4F0;
+        font-family: 'Heebo', sans-serif;
+        overflow: hidden;
+        white-space: nowrap;
+        padding: 0.5rem 0;
+        z-index: 9999;
+        }}
+        .news-ticker__text {{
+        display: inline-block;
+        padding-left: 100%;
+        animation: ticker 30s linear infinite;
+        }}
+        @keyframes ticker {{
+        0%   {{ transform: translateX(0); }}
+        100% {{ transform: translateX(-100%); }}
+        }}
+    </style>
+    <div class="news-ticker">
+        <div class="news-ticker__text">{ticker_text}</div>
+    </div>
+    """, unsafe_allow_html=True)
+    # --- END TICKER ---
 
 if fun_mode:
     st.markdown(
