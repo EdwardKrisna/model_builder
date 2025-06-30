@@ -77,7 +77,7 @@ ticker_items = [
     "Hari ini sepertinya hujan, jangan lupa bersedekah!",
     "Lalu lintas terlihat macet, selamat bermacet ria!",
     # Here’s your sponsor item, with an inline image:
-    f"Today’s Sponsor&nbsp;"
+    f"Today’s Sponsor : Almaz Fried Chicken&nbsp;"
     f"<img src='{almaz_logo}' "
     f"style='height:3rem; vertical-align:middle; margin:0 0.5rem;'/>",
     # …or dynamically build from your news DataFrame…
