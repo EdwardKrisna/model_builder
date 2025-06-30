@@ -45,18 +45,29 @@ import onnx
 st.markdown(
     """
     <style>
-      /* The main app container: */
+      /* Main app background (gradient or single color) */
       .appview-container, .main, .block-container {
-        /* a soft gradient; swap to a solid color if you prefer */
         background: radial-gradient(
           circle at top left,
           rgba(23, 48, 28, 0.7),
           #F6F4F0
         ) !important;
       }
-      /* Optionally: make sidebar match or complement the main bg */
+      /* Sidebar background */
       section[data-testid="stSidebar"] {
         background: rgba(23, 48, 28, 0.1) !important;
+      }
+      /* Remove default white header bar */
+      header[data-testid="stHeader"] {
+        display: none !important;
+      }
+      /* Remove top toolbar actions */
+      div[data-testid="stToolbarActions"] {
+        display: none !important;
+      }
+      /* Shift content up to fill gap */
+      .appview-container > section:nth-child(2) {
+        padding-top: 1rem !important;
       }
     </style>
     """,
